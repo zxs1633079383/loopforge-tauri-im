@@ -62,6 +62,13 @@ export interface PostSendingData {
 /** im:post:sending 单列 channel（瘦形态，单独分支，非 message-row fat 集） */
 export const POST_SENDING_CHANNEL = "im:post:sending";
 
+/**
+ * 会话列表投影 channel —— helix `im_query_dialog_list` Scan 回报（query.rs emit_dialog_list_result）。
+ * data 形态 = `{ dialogList: [{ id, display_name, unread_count, last_post_at, ... }] }`（channel 表行）。
+ * 壳就绪后拉一次，取首行 `id` 设 activeChannel（send 族 UC 决定性发送目标）。
+ */
+export const CHANNELS_PROJECTION_CHANNEL = "im:channels:projection";
+
 /** message-row 类 channel（携 message_item_data fat 完整集） */
 export const MESSAGE_ROW_CHANNELS: ReadonlySet<string> = new Set([
   "im:post:received",

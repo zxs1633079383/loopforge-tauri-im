@@ -3,6 +3,7 @@ import { TauriBridgeService } from "./tauri-bridge.service";
 import { MessageRow } from "./message-row.model";
 import {
   BusEnvelope,
+  CHANNELS_PROJECTION_CHANNEL,
   MESSAGE_ROW_CHANNELS,
   MessageItemData,
   POST_SENDING_CHANNEL,
@@ -54,6 +55,17 @@ export class ImStoreService {
     // 就绪 probe：W1 契约 = 轮询 invoke('im_ready') -> bool（非 bus 事件）。
     // increment_end 收齐 + inflight0 + cursor 稳 后返 true → 置 data-ready，供 e2e before 轮询。
     this.pollReady();
+    // 会话列表 bootstrap：主动拉一次本地 dialogList → 设 activeChannel（send 族 UC 决定性发送目标）。
+    // 早于就绪 probe 触发（probe 等增量静默 ~1.5s+），回报到时 activeChannel 已就位。
+    this.bootstrapDialogList();
+  }
+
+  /** 拉一次本地会话列表（im_query_dialog_list → im:channels:projection 回报设 activeChannel）。
+   *  非 Tauri / 命令缺失 → 静默（dev 浏览器单独调 UI 不卡）。 */
+  private bootstrapDialogList(): void {
+    this.bridge.invoke<void>("im_query_dialog_list").catch(() => {
+      // 非 Tauri / 命令缺失 → 忽略
+    });
   }
 
   stop(): void {
@@ -115,6 +127,13 @@ export class ImStoreService {
     const channel = env?.channel;
     if (!channel) return;
 
+    // 会话列表 bootstrap 投影：从 dialogList 首行设 activeChannel（决定性发送目标，
+    // 不依赖增量流是否恰有新活动）。单独分支，非 message-row fat 集。
+    if (channel === CHANNELS_PROJECTION_CHANNEL) {
+      this.applyDialogList(env.payload?.data);
+      return;
+    }
+
     // 活动频道锚定（在任何早退过滤之前）：stream 第一个真实频道胜出，含 im:channel:increment。
     // 兼容 snake(channel_id) 与 camel(channelId)；只在尚未锚定时 set（第一个胜出，不被后续覆盖）。
     this.captureActiveChannel(env.payload?.data);
@@ -147,6 +166,25 @@ export class ImStoreService {
       (typeof d["channelId"] === "string" && d["channelId"]) ||
       "";
     if (id) this._activeChannel.set(id);
+  }
+
+  /**
+   * 会话列表回报（im:channels:projection）→ 取首行 `id` 设 activeChannel（已锚定则不覆盖）。
+   * dialogList 行 = channel 表行，主键列名 `id`（helix query_tests 实证）；按 last_post_at 降序，
+   * 首行即最近活跃会话——作 send 族 UC 的决定性发送目标。纯渲染层（选哪个会话），不碰业务。
+   */
+  private applyDialogList(data: unknown): void {
+    if (this._activeChannel()) return;
+    const list = (data as { dialogList?: unknown } | undefined)?.dialogList;
+    if (!Array.isArray(list)) return;
+    const first = list.find(
+      (r): r is { id: string } =>
+        !!r &&
+        typeof r === "object" &&
+        typeof (r as Record<string, unknown>)["id"] === "string" &&
+        !!(r as Record<string, unknown>)["id"],
+    );
+    if (first) this._activeChannel.set(first.id);
   }
 
   /**

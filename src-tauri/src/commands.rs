@@ -51,6 +51,22 @@ pub async fn im_send(
         .map_err(|e| format!("im_send: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// 会话列表 bootstrap：拉本地 `channel` 表 dialogList（helix emit `im:channels:projection`）。
+///
+/// 最简壳只靠增量流冒频道，而增量是严格 cursor delta——清/旧 DB 无新活动时拿不到 active
+/// channel，send 族 UC 全卡。本命令低频按需 Scan 本地 channel 表（off hot-path），前端就绪后
+/// 调一次设 activeChannel，为发送提供**决定性目标**（不依赖后端是否恰有新活动）。payload 可空
+/// （全量拉），对齐 helix `build_dialog_list_query`（limit 缺省走默认）。
+#[tauri::command]
+pub async fn im_query_dialog_list(state: State<'_, AppState>) -> Result<(), String> {
+    let tick = command("im_query_dialog_list", serde_json::json!({}));
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_query_dialog_list: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// 就绪 probe：前端轮询此命令直到返回 `true`（increment 流动 + 静默窗口达成）。
 ///
 /// 返回值真精确度的边界见 `state::ReadinessProbe` 注释 + integration_todos（inflight==0

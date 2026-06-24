@@ -123,11 +123,15 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::im_send,
         commands::im_ready,
+        commands::im_query_dialog_list,
         commands::set_uc
     ]);
     #[cfg(not(feature = "webdriver"))]
-    let builder =
-        builder.invoke_handler(tauri::generate_handler![commands::im_send, commands::im_ready]);
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        commands::im_send,
+        commands::im_ready,
+        commands::im_query_dialog_list
+    ]);
 
     // Record 模式退出落盘：app 退出（RunEvent::Exit）时把录好的 tape 存到 tape_path。
     // live/replay 模式无副作用（save 只在 Record 触发）。
