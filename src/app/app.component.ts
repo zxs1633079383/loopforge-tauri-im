@@ -42,6 +42,7 @@ import { ImStoreService } from "./im/im-store.service";
             [attr.data-send-status]="m.sendStatus"
             [attr.data-read-bits]="m.readBits"
             [attr.data-revoke]="m.revoked ? '1' : null"
+            [attr.data-type]="m.type"
             [class.msg--revoked]="m.revoked"
           >{{ m.text }}</div>
         }
@@ -64,6 +65,13 @@ import { ImStoreService } from "./im/im-store.service";
           [disabled]="!store.activeChannel()"
           (click)="onSend()"
         >发送</button>
+        <button
+          class="im__send"
+          type="button"
+          data-testid="send-document-btn"
+          [disabled]="!store.activeChannel()"
+          (click)="onSendDocument()"
+        >文档</button>
       </footer>
     </main>
   `,
@@ -124,5 +132,14 @@ export class AppComponent implements OnInit, OnDestroy {
     const text = this.draft;
     this.draft = "";
     void this.store.send(channelId, text);
+  }
+
+  onSendDocument(): void {
+    const channelId = this.store.activeChannel();
+    if (!channelId) return;
+    // 文档内容：草稿非空取草稿，否则给个默认 doc 文本（UC-1.2 验 type=DOCUMENT 透传）。
+    const text = this.draft.trim() || `doc-${Math.random().toString(36).slice(2, 8)}`;
+    this.draft = "";
+    void this.store.sendDocument(channelId, text);
   }
 }

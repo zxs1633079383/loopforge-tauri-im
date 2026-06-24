@@ -45,6 +45,9 @@ export class ImStoreService {
   /** 本地暂存：temporaryId → 发送文本（瘦投影 im:post:sending 不带 text，渲染 sending 行需要）。 */
   private readonly pendingText = new Map<string, string>();
 
+  /** 本地暂存：temporaryId → 消息类型（瘦投影 im:post:sending 不带 type，乐观 sending 行 data-type 需要）。 */
+  private readonly pendingType = new Map<string, string>();
+
   /** 订阅单总线 + 启动就绪 probe 轮询。组件 ngOnInit 调一次。 */
   async start(): Promise<void> {
     if (this.unlisten) return;
@@ -118,6 +121,32 @@ export class ImStoreService {
       // 出站失败（非 Tauri dev 环境也会走这里）→ 标 failed（若投影已插行）+ 清暂存。
       this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "failed" }));
       this.pendingText.delete(temporaryId);
+    }
+  }
+
+  /**
+   * 发 DOCUMENT 消息（UC-1.2）：同 send 流，但 type=DOCUMENT（helix send_build 透传真值非降级 TEXT）。
+   * 瘦投影 im:post:sending 不带 type → pendingType 暂存供乐观 sending 行 data-type 渲染；
+   * echo（im:post:received data.type=DOCUMENT）覆写后 row.type 仍 DOCUMENT。
+   */
+  async sendDocument(channelId: string, text: string): Promise<void> {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const temporaryId = this.genTempId();
+    this.pendingText.set(temporaryId, trimmed);
+    this.pendingType.set(temporaryId, "DOCUMENT");
+
+    try {
+      await this.bridge.invoke<void>("im_send", {
+        channelId,
+        text: trimmed,
+        temporaryId,
+        msgType: "DOCUMENT",
+      });
+    } catch {
+      this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "failed" }));
+      this.pendingText.delete(temporaryId);
+      this.pendingType.delete(temporaryId);
     }
   }
 
@@ -249,6 +278,7 @@ export class ImStoreService {
         sendStatus: "sending",
         readBits: "",
         text: this.pendingText.get(temporaryId) ?? "",
+        type: this.pendingType.get(temporaryId) ?? "TEXT",
       },
     ]);
   }
@@ -279,11 +309,15 @@ export class ImStoreService {
           sendStatus: "sent",
           readBits,
           text: d.message ?? prev.text,
+          type: d.type || prev.type,
         };
         return next;
       });
-      // echo 已对账 → 清本地暂存（pendingText 仅用于 sending 行渲染）。
-      if (temporaryId) this.pendingText.delete(temporaryId);
+      // echo 已对账 → 清本地暂存（pendingText/pendingType 仅用于 sending 行渲染）。
+      if (temporaryId) {
+        this.pendingText.delete(temporaryId);
+        this.pendingType.delete(temporaryId);
+      }
       return;
     }
 
@@ -298,6 +332,7 @@ export class ImStoreService {
         sendStatus: "sent",
         readBits,
         text: d.message ?? "",
+        type: d.type || "TEXT",
       },
     ]);
   }

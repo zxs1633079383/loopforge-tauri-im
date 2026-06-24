@@ -29,6 +29,7 @@ pub async fn im_send(
     channel_id: String,
     text: String,
     temporary_id: String,
+    msg_type: Option<String>,
 ) -> Result<(), String> {
     if channel_id.is_empty() {
         return Err("im_send: channelId 为空".into());
@@ -36,12 +37,15 @@ pub async fn im_send(
     if temporary_id.is_empty() {
         return Err("im_send: temporaryId 为空（薄壳须生成）".into());
     }
+    // type 缺省由 helix send_build 容错为 "TEXT"；DOCUMENT 等富媒体显式透传真值（UC-1.2）。
+    let msg_type = msg_type.unwrap_or_else(|| "TEXT".into());
     let tick = command(
         "im_send_message",
         serde_json::json!({
             "channel_id": channel_id,
             "temporary_id": temporary_id,
             "text": text,
+            "type": msg_type,
         }),
     );
     state
