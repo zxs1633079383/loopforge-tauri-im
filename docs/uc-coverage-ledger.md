@@ -238,7 +238,7 @@
 - **③ DOM**：单 channel 增量渲染。
 - **④ 落库**：`channel`（自动注册行）+ cursor。
 
-### UC-5.1 创建群聊 — `⬜ pending`（认领 M）
+### UC-5.1 创建群聊 — `🟡 blocked-on-#7`（认领 M·Blocked by #7 UC-4.1 未绿·artifacts 未 author）
 
 - **① 出站 HTTP**：`POST /api/cses/channel/create`，body 锚 `真机curl真源 §4`——`{teamId, displayName, orient:"", type:"P", users:[{id,teamId,role}]（自己 CREATOR + 他人 MEMBER）, picturetype:"USER", picture:{userIds}, forceCreate:true}`。
 - **① WS 推送**：action=`channel_created`（type:P·data.id 命中·helix ledger 实证）+ `channel_member_update` + `post`。
