@@ -92,6 +92,12 @@
 
 ---
 
+## Tag 与测试用例策略（2026-06-24 立）
+- **每个阶段全部 UC 四面全绿 → 立即打 tag**：`v0.x-phaseN-<slug>`（带 message：覆盖 commit 范围 + 该阶段 UC 列表 + 验证状态）。
+- **每阶段完成需补全该阶段自动化测试用例**：确保该阶段每个 UC 有 `test/specs/uc-X.e2e.mjs` + `test/expect/uc-X.expect.json`，e2e 真跑过。
+- **basic 基线（当前起点）**：foundation（build/probe/dialog bootstrap）+ 阶段2/3 竖切 3 绿（UC-1.1 发文本 / 1.2 文档 / 1.5 撤回）→ tag `v0.1-basic`。
+- 阶段 tag 进度：`v0.1-basic`✅ → 阶段0 `v0.x-phase0-ready` → 阶段1 `…-phase1-channel` → … → 阶段7 `…-phase7-teams`。
+
 ## 进度统计
 - **真绿 3**：1.1、1.2、1.5。
 - 本清单管理：阶段 0–7 共 **31 UC**（含 🟡6、🌙1、阶段7 新增 4：5.8/11.1/11.2/12.1）+ L2 **4 UC**。⛔ 阻塞/gap 不管理。
