@@ -13,7 +13,15 @@
 - ✅ **`helix-driver-instrument` 完整代码**（6 port 装饰器 + Tape + LogSink + InstrumentCtx；10/10 测试绿，含 Record→Replay 往返）
 - ✅ **W1-W4 并行落地 + 集成**（src-tauri 宿主 / Angular 薄壳 / 四面 reducer / 录放脚本 / CI / gate 闸门 / UC rollout 蓝图）
 - ✅ **配置 profile 系统**（dev-local/pre/prod JSON，src-tauri config loader 读，替掉 env creds）
-- ✅ 🎯 **竖切 UC-send-1 ②③ 端到端绿**（真 Tauri+WKWebView+WebdriverIO 对真 Go）：点发送 → helix `im:post:sending` 乐观转圈 → 真出站打 Go → `im:post:received` echo 覆写**真 server id** + status=sent；② fat 投影字段集对齐冻结 projection-schema；全程 dev-local 配置驱动、壳零业务逻辑。①④ `it.skip` 诚实留红待泛型壳 rewire。护栏三闸（契约只读/镜像/结构）全绿无作弊。
+- ✅ 🎯 **竖切 UC-send-1 四面契约全绿端到端**（真 Tauri+WKWebView+WebdriverIO 对真 Go，真实严格数据）：
+  - **① 出站体**严格对齐冻结真机curl真源（`POST /api/cses/posts/create` body）
+  - **② 投影**fat `im:post:received` 13 键对齐 projection-schema
+  - **③ DOM**点发送→`im:post:sending`乐观转圈→真出站→echo 覆写**真 Go server id**+sent
+  - **④ 落库**message 表真落行（storage 装饰器加 corr 列关联到 send 束）
+  - 引擎装配走 helix-driver-host 泛型壳 + 5 port 装饰器（RecordingSink<EventSink> + Recording<Storage/Http/Transport/Clock>）；helix 引擎零逻辑改；dev-local 配置驱动；壳零业务逻辑。
+  - corr_key 四维全串（ch+tmp+sid+seq）；护栏三闸全绿无作弊。
+  - ✅ DONE 竖切 UC-send-1 四面全绿 @run7 | commit 79cae9f | 真 Go server id srd4dk7j8j89xbuaju3jkuqgcy | loopforge/main
+  - 待续：tape 回放确定性（send UC 需 tmp 控制，receive/sync UC 更自然）+ IdSource 注入缝（core 侧）+ UC rollout（39 UC）
 
 ---
 
