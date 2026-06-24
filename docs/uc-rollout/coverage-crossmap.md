@@ -98,7 +98,7 @@
 | 23 | POST `/api/cses/channel/load/notice` | covered | UC-5.4（公告栏回读·改 notice 后读）| ✅ |
 | 24 | POST `/api/cses/channel/load/postPinned` | covered | UC-5.5 | ✅ |
 | 25 | POST `/api/cses/channel/load/admin` | covered | UC-6.2（管理员列表读路径）| ✅ |
-| 26 | POST `/api/cses/channel/query` | covered | — | ❓ 真漏网（条件分页查询频道·无 UC·非 ⛔/🚫/🌙）|
+| 26 | POST `/api/cses/channel/query` | covered | UC-5.8 | ✅（2026-06-24 新增 UC）|
 | 27 | POST `/api/cses/channel/close` | covered | UC-5.3 | ✅ |
 | 28 | POST `/api/cses/channel/onlineStatus` | partial | UC-5.7 | ⛔（5.7 在线·后端真阻塞）|
 | 29 | POST `/api/cses/channel/member/change/role` | partial | UC-6.2 | ✅ |
@@ -108,7 +108,7 @@
 | 33 | POST `/api/cses/channel/member/leave` | partial | UC-5.3（退群·5.3 退出群映射）| ✅ |
 | 34 | POST `/api/cses/channel/sync/notify` | covered | UC-4.2 | ✅ |
 
-> 域 B 小计：✅ 32 · ⛔ 1（onlineStatus·UC-5.7）· ❓ 1（channel/query）。
+> 域 B 小计：✅ 33（含 UC-5.8 channel/query 新增）· ⛔ 1（onlineStatus·UC-5.7）· ❓ 0。
 
 ### 域 C — user-misc（15 接口，文件 partials/3）
 
@@ -117,9 +117,9 @@
 | 1 | POST `/api/cses/users/list` | covered | UC-6.4（拉成员用户·成员全量读路径）| ✅ |
 | 2 | POST `/api/cses/users/status/ids` | missing（真阻塞·statusCache）| UC-5.7 | ⛔（5.7 在线·后端真阻塞 P1-2）|
 | 3 | POST `/api/cses/users` | missing（真阻塞·createUser）| — | ❓ 真漏网（开户深耦合原生·客户端无 invoke·非 ⛔/🚫/🌙 任一类·gap=真阻塞）|
-| 4 | POST `/api/cses/teams/upsert` | covered | — | ❓ 真漏网（维护公司大群·客户端无对应 invoke·非 ⛔/🚫/🌙）|
+| 4 | POST `/api/cses/teams/upsert` | covered | UC-11.1 | ✅（2026-06-24 新增 UC）|
 | 5 | POST `/api/cses/teams/member/add` | covered | UC-6.1（team 域复用 channel ChannelMemberChange·与 channel#32 同 app 方法）| ✅ |
-| 6 | DELETE `/api/cses/teams/member/quit` | covered | — | ❓ 真漏网（退出 team 所有群·客户端无对应 invoke·非 ⛔/🚫/🌙）|
+| 6 | DELETE `/api/cses/teams/member/quit` | covered | UC-11.2 | ✅（2026-06-24 新增 UC·配 WS quit_company）|
 | 7 | POST `/api/cses/groups` | missing（uncertain·空骨架）| — | ❓ 真漏网（空骨架从未实现·无 UC）|
 | 8 | POST `/api/cses/modules/getAll` | covered | UC-5.7（modules/getAll·5.7 在线状态/分组节列出）| ⛔（归 5.7·后端裁决前阻塞）|
 | 9 | POST `/api/cses/notification/loadSend` | partial | — | ❓ 真漏网（加载通知发送侧·无 UC·非 ⛔/🚫/🌙）|
@@ -128,9 +128,9 @@
 | 12 | POST `/api/cses/search/user` | partial | UC-7.x | ⛔（7.x·store 桩）|
 | 13 | POST `/api/cses/search/channel` | partial | UC-7.x | ⛔（7.x·store 桩）|
 | 14 | POST `/api/cses/search/do` | covered | UC-7.x | ⛔（7.x·聚合搜索）|
-| 15 | GET `/api/cses/health` | covered | — | ❓ 真漏网（健康探针·框架层·无 UC；K8s liveness 用，非业务 UC 范围）|
+| 15 | GET `/api/cses/health` | covered | UC-12.1 | ✅（2026-06-24 新增 UC·连通性 1 面）|
 
-> 域 C 小计：✅ 2 · ⛔ 5（status/ids·modules·search 4 件）· ❓ 8（users / teams/upsert / teams/quit / groups / loadSend / loadTarget / health·+createMock 在域 A）。
+> 域 C 小计：✅ 5（+UC-11.1 teams/upsert·UC-11.2 teams/quit·UC-12.1 health 新增）· ⛔ 5（status/ids·modules·search 4 件）· ❓ 4（users / groups / loadSend / loadTarget）。
 
 ### 域 D — bot-agent / webhook / cross-repo demo（40 接口，文件 partials/4）
 
@@ -206,10 +206,10 @@
 | 15 | `update_channel_notice` | UC-5.4（改公告 content.text）| `emit_channel_update`（thin）| ✅ |
 | 16 | `update_channel_member_nickName` | UC-6.3 | `emit_member_nickname` | ✅ |
 | 17 | `change_channel_approval` | UC-5.4（开/关审批·channels/enableApproval）| `emit_channel_update`（thin）| ✅ |
-| 18 | `quit_company` | — | （无对应 emit·客户端无退出公司 invoke）| ❓ 漏网（退出公司·teams/member/quit 端点本身也漏网·无 UC 触发）|
+| 18 | `quit_company` | UC-11.2 | （退公司·member/channel 移除）| ✅（2026-06-24 新增 UC）|
 | 19 | `post`（agent/bot 变体）| — | `emit_post_received` | 🚫 bot移除（bot/agent 回复·与 #1 同 action·触发源是 bot 链路）|
 
-> WS 小计：✅ 15 · ⛔ 1（post_pin·UC-5.5 子项）· 🚫 1（post agent/bot 变体）· ❓ 1（quit_company）。
+> WS 小计：✅ 16（含 quit_company→UC-11.2 新增）· ⛔ 1（post_pin·UC-5.5 子项）· 🚫 1（post agent/bot 变体）· ❓ 0。
 > 注：#1 与 #19 是同一 action 字符串 `post`，按触发源拆两行（业务发消息 ✅ / bot 变体 🚫），去重后不同 action 字符串 18 个。
 
 ---
@@ -253,19 +253,19 @@
 > - 若按「🚫 仅指 bot/agent 业务移除」严口径：demo 3 条归 ❓ → 🚫=37，❓=12。
 > 本表采**严口径**（demo 单列 ❓），故 **❓ 真漏网 = 12（含 demo 3）；剔除 demo 的"真业务漏网" = 9**。
 
-**HTTP 最终计数（严口径）**：✅ 62 · 🌙 0 · ⛔ 13 · 🚫 37 · ❓ 12（其中 demo 3·真业务漏网 9）= 124 ✓
+**HTTP 最终计数（严口径·2026-06-24 +4 新增 UC 后）**：✅ 66 · 🌙 0 · ⛔ 13 · 🚫 37 · ❓ 8（demo 3 + 真业务漏网 5）= 124 ✓
 
 ### WS（19 action）
 
 | 判定 | 数量 | action |
 |---|---|---|
-| ✅ 被 UC 触发 | 15 | post / posts_update / post_update / post_read / post_schedule_created / post_schedule_canceled / increment_channel / increment_channel_end / channel_created / channel_member_update / channel_member_role_updated / channel_close / update_channel / update_channel_notice / update_channel_member_nickName / change_channel_approval（共 16 条目，含同 action 复用）|
+| ✅ 被 UC 触发 | 15 | post / posts_update / post_update / post_read / post_schedule_created / post_schedule_canceled / increment_channel / increment_channel_end / channel_created / channel_member_update / channel_member_role_updated / channel_close / update_channel / update_channel_notice / update_channel_member_nickName / change_channel_approval / quit_company（共 17 条目，含同 action 复用）|
 | ⛔ 阻塞 | 1 | post_pin（UC-5.5 消息置顶子项·data-dep）|
 | 🚫 bot移除 | 1 | post（agent/bot 变体）|
-| ❓ 漏网 | 1 | quit_company（退出公司·端点 teams/member/quit 也漏网·无 UC）|
+| ❓ 漏网 | 0 | （quit_company 2026-06-24 已转 UC-11.2）|
 
 > 去重后 18 个不同 action 字符串（`post` 业务+bot 两变体共用）。
-> **WS 漏网逐个**：`quit_company` 1 个 —— 客户端无「退出公司」invoke，其触发端点 `DELETE /teams/member/quit` 同步漏网，端到端无 UC 覆盖。
+> **WS 漏网逐个**：无（`quit_company` 2026-06-24 已转 UC-11.2，配端点 `DELETE /teams/member/quit`）。
 
 ---
 
@@ -274,14 +274,17 @@
 **不是「所有可达 HTTP+WS 都对得上某 UC」。** 逐个对完，可达面（剔除 🚫 bot + ⛔ 阻塞 + 🌙 后）仍有**真漏网**：
 
 1. **HTTP 真业务漏网 9 个**（剔除 demo 3）：
-   - **客户端根本无对应 invoke 的后台/运维链路**：`users`（开户）/ `teams/upsert`（公司大群）/ `teams/member/quit`（退公司）/ `groups`（空骨架）/ `notification/loadSend` / `notification/loadTarget` / `health`（探针）。这些是**服务端/运维侧能力**，loopforge 薄壳客户端无 UI 触发它们 —— 不是测试遗漏，是**职责不在客户端 testbed**。
+   - **客户端根本无对应 invoke 的后台链路（剩余漏网）**：`users`（开户）/ `groups`（空骨架）/ `notification/loadSend` / `notification/loadTarget`。
+   - **2026-06-24 用户裁决转 UC（已 ✅）**：`teams/upsert`→UC-11.1（公司大群）/ `teams/member/quit`+WS`quit_company`→UC-11.2（退公司）/ `channel/query`→UC-5.8 / `health`→UC-12.1。
    - **被新架构取代**：`posts/getUpdatedPosts`（旧时间游标增量，已被 channel_event v2 cursor sync = UC-4.2 取代）/ `posts/createMock`（压测旁路·已废弃）。
    - **客户端无 invoke 的服务端动作**：`post/approval/approval`（消息审批动作）/ `channel/query`（条件分页查频道）。
 
 2. **WS 漏网 1 个**：`quit_company` —— 与端点 `teams/member/quit` 配套，客户端无退出公司用例，端到端无 UC。
 
+2b. **WS**：无漏网（quit_company 已转 UC-11.2）。
+
 3. **demo 3 条**（cross-repo trace 合成 handler）：有意排除，非业务非 bot，严格归 ❓ 但应理解为「不应被任何 UC 覆盖」。
 
-**一句话**：loopforge 客户端 UC 集对**客户端可触发的业务面**做到了逐个对得上（域A 28/B 32/C 2 = 62 ✅，外加 13 ⛔ 也都挂到了对应 UC 编号只是物理够不到）；真漏网的 9 个真业务接口**全部是「客户端无 invoke 的服务端/运维/废弃/被取代」链路**，不是 UC 漏铺 —— 它们本就不在「最小可测客户端宿主」的职责范围内。WS 侧唯一漏网 `quit_company` 同根（无客户端退公司用例）。
+**一句话**：loopforge 客户端 UC 集对**客户端可触发的业务面**做到了逐个对得上（域A 28/B 33/C 5 = 66 ✅，外加 13 ⛔ 也都挂到了对应 UC 编号只是物理够不到）；真漏网的 5 个真业务接口**全部是「客户端无 invoke 的服务端/运维/废弃/被取代」链路**，不是 UC 漏铺 —— 它们本就不在「最小可测客户端宿主」的职责范围内。WS 侧 `quit_company` 已于 2026-06-24 转 UC-11.2。剩余 HTTP 漏网仅 users/groups/notification×2（+废弃 getUpdatedPosts/createMock + 服务端 post/approval），均非客户端职责。
 
 > **可验证性**：本表每行 gap 状态 verbatim 自 30-capability-gap-matrix，触发 UC verbatim 自 rollout-checklist / uc-coverage-ledger，端点 path verbatim 自 partials/1-5。任一行可回溯真源逐字核对。

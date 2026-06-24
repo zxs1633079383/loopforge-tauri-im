@@ -74,6 +74,14 @@
 | [~] | 8.x 平均分 CRUD | `average/{publish,attend,read,close,delete}`(:3399) | `partials/6 集合八` | `emit_post_updated`(fat) | data-average | `message.props` | M |
 | [ ] | 10.2 系统通知 | (WS 帧触发·无独立 HTTP) | — | `emit_post_received`/`updated`(系统消息) | data-system-notice | `message`(SYSTEM/SYSTEN 类型) | M |
 
+## 阶段 7 · teams / 运维（2026-06-24 新增·原端点漏网→用户确认要测）
+| 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
+|---|---|---|---|---|---|---|---|
+| [ ] | 5.8 条件查频道 | `im_query_channels`→`channel/query` | `partials/2 channel/query`(条件分页) | `query::emit_read_result`/`channels:projection`(透传) | data-channel-id 列表 | `Scan channel` | S |
+| [ ] | 11.1 维护公司大群 | `im_team_upsert`→`teams/upsert` | `partials/3 teams/upsert` | `emit_channel_created`/`emit_channel_update`(公司大群) | data-channel-id(team 大群) | `channel` | M |
+| [ ] | 11.2 退出公司 | `im_team_quit`→`teams/member/quit`(DELETE) + WS `quit_company` | `partials/3 teams/member/quit` | (member/channel 移除投影) | channel/member 行移除 | `channel_member` 删 | M |
+| [ ] | 12.1 健康探针(1 面①) | `im_health`→`GET /health` | `partials/3 health` | (无投影) | data-health(可选) | (无落库) | S·连通性(①+200) |
+
 ## 阶段 L2 · 双账号广播（需第二真实连接·feasible·L1 稳后专批）
 | 勾 | UC | 触发 → 观测 | ② 投影工厂 | ③ DOM data-* | 说明 |
 |---|---|---|---|---|---|
@@ -86,5 +94,5 @@
 
 ## 进度统计
 - **真绿 3**：1.1、1.2、1.5。
-- 本清单管理：阶段 0–6 共 **27 UC**（含 🟡6、🌙1）+ L2 **4 UC**。⛔ 阻塞/gap 6 项不管理。
+- 本清单管理：阶段 0–7 共 **31 UC**（含 🟡6、🌙1、阶段7 新增 4：5.8/11.1/11.2/12.1）+ L2 **4 UC**。⛔ 阻塞/gap 不管理。
 - **闭环模式**：接最简 UI → `run.sh -- --spec test/specs/uc-X.e2e.mjs`(seeded db) → reducer 断面 → 修(多为校正草拟契约/复用 corr-key posts[]、storage rows‖keys) → 复跑全绿 → 翻台账 + commit + tag + **本清单打钩**。
