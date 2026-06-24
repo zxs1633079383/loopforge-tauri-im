@@ -211,17 +211,17 @@
 
 > 认领需 increment 就绪 probe（M）。① 出站锚 `真机curl真源 §4/§6` + full-map partial 8 sync wire 契约。
 
-### UC-4.1 hello 根群全量增量 — `🟡 partial`（认领 M·就绪 probe 锚点·契约+UI 已 author·live 四面 + ① batch 面 blocked）
+### UC-4.1 hello 根群全量增量 — `🟡 partial`（③ DOM 实跑转绿·①②④ contract-vs-environment 失配·待人审 C004）
 
 - **① 出站 HTTP**：WS hello 自动 / `channels/load/increment`，body `{timestamp, cursors:[{channelId, fromSeq}]}`（**已核**·真源 = helix `acl/sync_http_effects.rs::increment_http_trigger`·全 camelCase·与 partial 8 http.rs:25 锚一致）。
 - **① WS 推送**：hello + channels + `increment_channel`（data 携 `lastEventSeq`·helix ledger 实证真推）+ `increment_channel_end`（批次结束·就绪 probe 锚）。
 - **② 投影**：`emit_channels_loaded`（`{items}`·瘦·无 channel_id）+ `emit_channel_increment`（`{channel_id, increment}`·**reducer 锚此 keyed 面**）+ `emit_channel_update`（`{channel_id}`·thin·批次结束触发）。
-- **③ DOM**：`data-ready` 标志 + channel 行 `data-channel-id`（已接 UI：store `applyChannelIncrement`/`applyChannelUpdate` 由 `im:channel:increment`/`update` 投影填 `_channels` → CL 区渲染）。
-- **④ 落库**：`channel`（`batch_upsert` upsert_channel_full）+ `channel_event_cursor`（`monotonic_upsert` advance_cursor）。
+- **③ DOM**：`data-ready` 标志 + channel 行 `data-channel-id`（**✅ 实跑转绿·commit f72fdf2**：current-cursor 冷启动真实产出者是 `im:channels:projection` dialogList·store `applyDialogList` 改为 upsert 每行 → CL 区渲染。此前只 `applyChannelIncrement`/`Update` 喂 `_channels`·这俩无增量 delta 时不触发·CL 区永空）。
+- **④ 落库**：expect `channel`（`batch_upsert` upsert_channel_full）+ `channel_event_cursor`（`monotonic_upsert`）；**实测 current-cursor 走 `op=scan channel rows=93` + `scan channel_event_cursor rows=49`（读非写·无 upsert）→ 失配**。
 
-> **状态（诚实出账·C011）**：契约 `test/expect/uc-4.1.expect.json` + e2e `test/specs/uc-4.1.e2e.mjs` 已从冻结真源 author（gate.sh expect JSON valid 绿）；Angular CL 区频道行填充已接（additive·tsc PASS·gate 绿）。**live 四面 reducer 未跑全绿**，两个 blocker：
-> 1. **冷全栈 infra down**（非本仓缺陷）：跑 live 需 go-mattermost + cses-java + telepresence 隧道(sudo·四空格密码) + **seeded DB**（`/tmp/loopforge-im.db` 当前 0 字节·77/93 channel 行的 seed 工件已失·无 seed 脚本）。autonomous 非交互沙箱起不动整栈（隧道需交互 sudo）。
-> 2. **① batch-outbound 结构 gap（reducer 形态·待人审）**：UC-4.1 出站是『批量 sync 请求』（一请求 N 个 channel 的 cursors），无单 channel corr_key——装饰器 `extract_corr_key`（`event.rs:104-110`）只探 top-level + `.data` 的 channelId，cursors 嵌 `body.cursors[0]` 抽不到 → outbound 落 unkeyed 束、不进 per-channel 目标束。current `four-facet-reducer.mjs`（per-corr_key 束）天然不表达 batch 出站。人审决策：(a) reducer 增 batch 面对 unkeyed outbound 断 URL/body-shape；或 (b) 装饰器 `extract_corr_key` 增 `cursors[0].channelId` 探针。决策落地前 ① 面预期红（非 wire 缺陷）。②③④ 在 ch 锚下结构完备，待 infra 起栈即可验。
+> **状态（诚实出账·C011·infra 已起·四段日志实测）**：infra up（telepresence 隧道·go :8065 ping 200·cses-java Micronaut·dev-local 真 creds）。live 实跑定位：
+> 1. **③ DOM 已确认即修转绿**（loopforge 本仓 UI 接线缺陷·commit f72fdf2）：四段日志(§6.1)定位断在 `im:channels:projection→store._channels→DOM`·根因 `applyDialogList` 不 upsert CL 行·已修。UC-send-1 四面全绿不回退（regression PASS）。
+> 2. **①②④ contract-vs-environment 失配（非 wire 缺陷·go-server 默认对·待人审 C004·issue #7 评论 #4794619518）**：UC-4.1 expect 按 helix **源码**派生 = **increment-delta 路径**（cursor 落后→产真 `increment_channel` 帧）；本机 DB **current-cursor**（49 channel 已同步·增量为空）→ 引擎走 **bulk-load/scan 路径**。实测失配：① 出站 batch·`corr_key=None`·`cursors len=49`·`e0.channelId≠锚 ch`（无单 ch 键）；② 投影未 emit `im:channel:increment`·实为 `im:channels:loaded {items:[]}` + `im:channels:projection {dialogList:[93]}`；④ 无 upsert·实为 scan 读。人审决策二选一（不自改冻结 expect·C004）：**(A)** 受控 behind-cursor seed DB → 产真 delta → 按 author 契约转绿（需 behind-cursor 种子工件·当前无）；**(B)** 契约变更提案——承认就绪根 current-cursor 走 bulk-load 合法·② 重锚 `im:channels:projection {dialogList}`·④ 改 `scan channel`·① 增 reducer batch 面（直断 url+body-shape·不要单 ch corr_key·一并覆盖原 batch-outbound gap）。证据：`/tmp/loopforge/run.jsonl`·107 行。
 
 ### UC-4.2 按需 sync notify — `⬜ pending`（认领 M）
 
