@@ -1,8 +1,8 @@
 # UC Rollout 自主长任务 Runbook（下班后喂给长任务跑）
 
-> **一句话**：按依赖序解决 GitHub issues #7-#41，每个 UC 走「author 契约 → 接最简 UI → run.sh seeded 四面 → 绿翻台账+勾+关 issue+commit / 红出 bug 报告不改 helix」闭环；每阶段全绿打 tag + 补用例。
+> **一句话**：按依赖序解决 GitHub issues #7-#41，每个 UC 走「author 契约 → 接最简 UI → run.sh seeded 四面 → 绿翻台账+勾+关 issue+commit / 红→四段日志定位·确认 loopforge/helix 缺陷即修+验证（契约只读不改 oracle）」闭环；每阶段全绿打 tag + 补用例。
 > **真源（开局必读）**：根 `CLAUDE.md` §8 rollout 纪律 + §9 harness · `docs/harness/C001-C012` · `docs/spec/angular-ui-plan.md` · `docs/uc-rollout/rollout-checklist.md` · `coverage-crossmap.md` · `docs/uc-coverage-ledger.md`。
-> **分支**：`feat/uc-rollout-domain-a`（在此推进·**绝不 merge main**）。
+> **分支**：`feat/uc-rollout`（在此推进·**绝不 merge main**）。
 
 ---
 
@@ -16,7 +16,7 @@
 
 ## 1. 开局自检（动手前）
 ```bash
-git rev-parse --abbrev-ref HEAD        # 须 feat/uc-rollout-domain-a
+git rev-parse --abbrev-ref HEAD        # 须 feat/uc-rollout
 gh auth status                          # zxs1633079383
 (cd /Users/mac28/workspace/rustWorkspace/helix && git rev-parse --short HEAD)  # round6 pin·C001
 sqlite3 "/tmp/loopforge-im.db?mode=rwc" "SELECT count(*) FROM channel;"        # >0·seeded·C003
@@ -66,10 +66,10 @@ bash scripts/gate.sh                    # 应绿
 
 ## 6. Autonomous 护栏（借鉴 helix night-loop）
 - **预算门**：到 token 预算 / 连续 ≥3 issue 无进展 → stall-stop，写终态行收尾。
-- **沙箱门**：禁 `push`/`merge main`/`reset --hard`/`rm -rf`；**commit 前验** `pwd` 在仓内 + branch=`feat/uc-rollout-domain-a`。
+- **沙箱门**：禁 `push`/`merge main`/`reset --hard`/`rm -rf`；**commit 前验** `pwd` 在仓内 + branch=`feat/uc-rollout`。
 - **验证门**：绿 = reducer 全绿（C009）+ `gate.sh` 绿才 commit；**绝不**「我觉得改好了」式自我点头。
 - **红转绿改实现（确认后修+验证·非只标记）**：四段日志（§6.1）定位是 **loopforge 本仓** 或 **helix 引擎** 缺陷就**直接修 + 复跑验证**（契约只读·不改冻结 oracle·绿由 reducer 裁定·C004/C009）。go-server 默认对，仅 gRPC/诡异才怀疑。〔早先「helix 只标记不改」是另一 workflow 在改 helix 时的临时约束，本长任务**已解除**——但仍**不改冻结契约**。〕
-- **绝不自动 merge main**：全程在 `feat/uc-rollout-domain-a`，留 PR/merge 给人。helix 仓修复也单独 commit、不自动 merge helix 主线。
+- **绝不自动 merge main**：全程在 `feat/uc-rollout`，留 PR/merge 给人。helix 仓修复也单独 commit、不自动 merge helix 主线。
 - **每 issue 完成/中断写终态行**（全局铁律）：`✅ DONE UC-X #N @ts | commit | 四面绿 | 分支` 追加到 `docs/harness/log.md` 或 ledger；中断写 `⚠️ PARTIAL ... 卡在 ...`。
 
 ## 6.1 四段日志联调 + gRPC 处置（定位「问题在哪一端」）
@@ -100,8 +100,8 @@ bash scripts/gate.sh                    # 应绿
 - 阶段 0-7 tag 打齐。
 - ledger 绿数 = checklist 勾数 = 关闭的 issue 数（一致·C011 诚实出账）。
 - `bash scripts/gate.sh` 绿。
-- 写总终态行：`✅ DONE UC rollout 阶段0-7 @<ts> | commit <起>..<止> | <N>/<M> 绿 | feat/uc-rollout-domain-a`。
+- 写总终态行：`✅ DONE UC rollout 阶段0-7 @<ts> | commit <起>..<止> | <N>/<M> 绿 | feat/uc-rollout`。
 
 ---
-> 红不阻塞整链：单 UC 是 helix 缺陷就出 bug 报告标 🟡 继续，别卡死。helix 那条由另一条 workflow 修。
+> 红优先「确认即修+验证」（loopforge/helix 都可改·契约只读）；**实在**定位不了/移植不动/超预算才标 🟡 不阻塞继续，别卡死整链。
 > 本 runbook 是长任务的单一执行真源；细节回溯 CLAUDE §8/§9 + harness C001-C012 + 各 docs/uc-rollout/*。
