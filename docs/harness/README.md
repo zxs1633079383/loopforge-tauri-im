@@ -18,8 +18,9 @@
 | C009 | 自动修复 agent 禁自产自判——红转绿由独立 reducer 裁定（借鉴 helix HX-C009/C012） | active |
 | C010 | 金标帧=现网真抓非手写猜测·补帧 playbook（借鉴 helix golden fixtures） | active |
 | C011 | UC 台账诚实出账——分级图例·禁橡皮章借证据冒充（借鉴 helix ledger） | active |
+| C012 | 提交闸门机器强制——pre-push hook 跑 gate.sh + clippy 卫生（借鉴 helix install-hooks/clippy） | active |
 
-> 稳态目标 10-20 条；当前 11（C001-C007 本会话踩坑·C008-C011 借鉴 helix）。超 30 → 跑 merged/deprecated 清理（见 §3）。
+> 稳态目标 10-20 条；当前 12（C001-C007 本会话踩坑·C008-C012 借鉴 helix）。超 30 → 跑 merged/deprecated 清理（见 §3）。
 > 闸门：`bash scripts/gate.sh`（镜像/索引不变量/录放 feature 闸/reducer 自测/expect JSON/helix 单版本/行数）。
 
 ## §2 cards 与 UC rollout 的关系

@@ -47,5 +47,11 @@ step "7 单文件 ≤800 行（警告）"
 OVER=$(find src-tauri/src crates/*/src src/app test/reducer -name '*.rs' -o -name '*.ts' -o -name '*.mjs' 2>/dev/null | while read -r f; do n=$(wc -l <"$f"); [ "$n" -gt 800 ] && echo "$f($n)"; done)
 [ -z "$OVER" ] && ok "无超 800 行文件" || printf "  ⚠️ 超 800 行: %s\n" "$OVER"
 
+# 8. clippy 卫生（慢·默认跳；GATE_CLIPPY=1 启用·deny warnings）
+step "8 clippy 卫生（默认跳·GATE_CLIPPY=1 启用）"
+if [ "${GATE_CLIPPY:-0}" = "1" ]; then
+  if cargo clippy --manifest-path src-tauri/Cargo.toml --quiet -- -D warnings >/tmp/lf-gate-clippy.log 2>&1; then ok "clippy 无 warning"; else bad "clippy 有 warning/error（见 /tmp/lf-gate-clippy.log）"; fi
+else printf "  ⏭ 跳过（GATE_CLIPPY=1 启用·workspace lints 已配 unwrap/panic/dbg/todo=warn）\n"; fi
+
 printf "\n[gate] %s\n" "$([ "$FAIL" = 0 ] && echo "✅ 全部通过" || echo "❌ 有红项·见上")"
 exit "$FAIL"
