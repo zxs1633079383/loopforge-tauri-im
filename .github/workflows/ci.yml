@@ -1,0 +1,192 @@
+# LoopForge — CI/CD
+#
+# ┌──────────────────────────────────────────────────────────────────────────┐
+# │ 跨仓 path-dep 目录布局要求（关键）                                          │
+# │                                                                            │
+# │ helix-driver-instrument 用 *path dep* 指向 helix checkout：                │
+# │   crates/helix-driver-instrument/Cargo.toml →                              │
+# │     helix-core = { path = "../../../helix/crates/helix-core" }             │
+# │                                                                            │
+# │ 该相对路径从 crates/helix-driver-instrument/ 起算：                        │
+# │   ../        → crates/                                                      │
+# │   ../../     → <loopforge 仓根>                                             │
+# │   ../../../  → <loopforge 仓根的父目录>                                     │
+# │   ../../../helix/crates/helix-core                                          │
+# │                                                                            │
+# │ ⇒ CI 必须把两个仓 checkout 成**同级兄弟目录**，且 loopforge 仓目录名        │
+# │   与 helix 仓目录名固定为 `loopforge-tauri-im` 与 `helix`：                 │
+# │                                                                            │
+# │     $GITHUB_WORKSPACE/                                                      │
+# │       ├── loopforge-tauri-im/   (本仓, path: 'loopforge-tauri-im')          │
+# │       └── helix/                (path: 'helix')  ← path dep 才解析得到      │
+# │                                                                            │
+# │ actions/checkout 默认把仓库铺到 $GITHUB_WORKSPACE 根；用 `path:` 指定       │
+# │ 子目录即可摆成上面的兄弟布局。所有 cargo 命令在 loopforge-tauri-im/ 内跑。  │
+# └──────────────────────────────────────────────────────────────────────────┘
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# 同一分支/PR 新 push 取消旧 run，省 CI 时间
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # fail-loud：编译警告不静默（lint job 另有 -D warnings 更严）
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # rust-test — 跨仓 path-dep 解析 + 跑 instrument 装饰器单测
+  # ───────────────────────────────────────────────────────────────────────────
+  rust-test:
+    name: rust-test (instrument)
+    runs-on: ubuntu-latest
+    steps:
+      # 1) checkout 本仓到兄弟目录 loopforge-tauri-im/
+      - name: Checkout loopforge-tauri-im
+        uses: actions/checkout@v4
+        with:
+          path: loopforge-tauri-im
+
+      # 2) checkout helix 到同级兄弟目录 helix/（path dep 才解析）
+      #    ⚠️ TODO: helix 仓 GitHub 地址未知 —— 填真实 owner/repo 后启用。
+      #    若 helix 在同一 org 私有仓，需配 deploy key / PAT（token 字段）。
+      - name: Checkout helix (sibling — required for path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: TODO-OWNER/helix          # ← TODO: 替换为真实 helix 仓 (owner/repo)
+          ref: main                              # ← TODO: 按需 pin 到具体 rev/分支
+          path: helix
+          # token: ${{ secrets.HELIX_CHECKOUT_TOKEN }}   # ← 私有仓时取消注释并配 secret
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # 3) cargo 缓存（registry + git + target），key 跟随 Cargo.toml 变化
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            loopforge-tauri-im/target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('loopforge-tauri-im/**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-
+
+      # 4) 在 loopforge 仓内跑 instrument 测试；path dep 经兄弟 helix/ 解析
+      - name: cargo test -p helix-driver-instrument
+        working-directory: loopforge-tauri-im
+        run: cargo test -p helix-driver-instrument --locked --verbose
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # lint — fmt 检查 + clippy（warnings 即 fail）
+  # ───────────────────────────────────────────────────────────────────────────
+  lint:
+    name: lint (fmt + clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout loopforge-tauri-im
+        uses: actions/checkout@v4
+        with:
+          path: loopforge-tauri-im
+
+      # 同 rust-test：clippy 需真正编译 instrument，故同样要兄弟 helix/ checkout。
+      # ⚠️ TODO: 同上，填真实 helix 仓地址。
+      - name: Checkout helix (sibling — required for path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: TODO-OWNER/helix          # ← TODO: 替换为真实 helix 仓 (owner/repo)
+          ref: main                              # ← TODO: 按需 pin 到具体 rev/分支
+          path: helix
+          # token: ${{ secrets.HELIX_CHECKOUT_TOKEN }}
+
+      - name: Install Rust toolchain (with rustfmt + clippy)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            loopforge-tauri-im/target
+          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('loopforge-tauri-im/**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-lint-
+
+      # fmt 只查本仓代码风格，不依赖 helix checkout
+      - name: cargo fmt --check
+        working-directory: loopforge-tauri-im
+        run: cargo fmt --all --check
+
+      # clippy 编 instrument（需 helix path dep）；warnings → fail
+      - name: cargo clippy -D warnings
+        working-directory: loopforge-tauri-im
+        run: cargo clippy -p helix-driver-instrument --locked -- -D warnings
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # e2e — 占位 stub（matrix: macos/windows/ubuntu）
+  #   真 e2e = tauri-plugin-webdriver(4445) + WebdriverIO，待 W1/W2 落地后启用。
+  #   现仅放 build 占位 + 清晰 TODO，不假装跑通。
+  # ───────────────────────────────────────────────────────────────────────────
+  e2e:
+    name: e2e (${{ matrix.os }}) [stub]
+    needs: [rust-test, lint]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout loopforge-tauri-im
+        uses: actions/checkout@v4
+        with:
+          path: loopforge-tauri-im
+
+      - name: Checkout helix (sibling — required for path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: TODO-OWNER/helix          # ← TODO: 替换为真实 helix 仓 (owner/repo)
+          ref: main
+          path: helix
+          # token: ${{ secrets.HELIX_CHECKOUT_TOKEN }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # 占位：仅编译 instrument 证明跨平台 build 通；尚未起 app / 跑 wdio。
+      - name: Build instrument (placeholder — real e2e pending W1/W2)
+        working-directory: loopforge-tauri-im
+        run: cargo build -p helix-driver-instrument --locked --verbose
+
+      # ─── 待 W1/W2 落地后启用的真 e2e 步骤（现全部为 TODO，不执行） ───
+      #
+      # TODO(W2): setup Node + pnpm，pnpm install（前端薄壳 + WebdriverIO）
+      #   - uses: actions/setup-node@v4   (node 20)
+      #   - uses: pnpm/action-setup@v4
+      #   - run: pnpm install --frozen-lockfile  (working-directory: loopforge-tauri-im)
+      #
+      # TODO(W1): Tauri 2 系统依赖
+      #   - ubuntu: libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev 等
+      #   - macos/windows: 随 runner 自带 WebView（WKWebView / WebView2）
+      #
+      # TODO(W1): debug 构建启用 tauri-plugin-webdriver（监听 4445），
+      #   组装根用 Recording<P> 装饰 6 个 port（Transport/Http/EventSink/Storage/Clock/IdSource）
+      #
+      # TODO(W4): 起前端(1420) + cargo debug app(4445) + wait-on，
+      #   load 金标帧 tape(Replay 模式) 后 WebdriverIO 直连 4445 跑 send-message e2e
+      #   - run: pnpm exec wdio run wdio.conf.mjs
+      #
+      # TODO(W3): 四面 reducer 读 run.jsonl → 按 corr_key 聚束 → 与四面期望 diff → 断点报告
+      - name: e2e not yet wired
+        shell: bash
+        run: echo "::notice::e2e stub — tauri-plugin-webdriver(4445) + WebdriverIO pending W1/W2/W3/W4 (see TODO comments)"
