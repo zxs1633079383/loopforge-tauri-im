@@ -4,25 +4,49 @@
 //! host-cli = stdin/stdout；本壳 = Tauri IPC（前端 invoke / `im:__bus__` emit）。
 //! 中间 `ExecutionShell + ImModule + ports` 完全一致（host-cli CLAUDE.md「身份定位」）。
 //!
-//! ## 仪表化落点（W1 现实边界）
+//! ## 组装根走 host 泛型壳（①④ rewire · ①④ 接通真源）
 //!
-//! native `EngineConfig` 字段是**具体** ports（`NativeStorage`/`NativeHttp`/`NativeEventSink`），
-//! 非泛型 → **不能**把 `Recording<P>` 直接塞进引擎（那需改 helix，违零改铁律）。故 W1 仪表化
-//! 只在**可观测且零改**的一面落地：投影面（facet ②）在 broadcast 消费 loop（emit 抵达
-//! `app.emit` 之前）tee 一条 `Facet::Projection` 日志。Transport/Http/Storage/Clock/IdSource
-//! 的 Record/Replay tape 需引擎接受被装饰 port（driver-host BatchSink 泛型缝），属后续集成项
-//! （见 lib.rs 头注 + 任务 integration_todos）。
+//! 不再走 native 的**具体** `EngineConfig` / `run_engine_loop_with_transports`（那条路把
+//! `event_sink`/`storage`/`http`/`transport` 写死成裸 `Native*`，装饰器 `Recording<P>` 注不进去
+//! → 出站 HTTP body（facet①）+ 落库（facet④）无观测点）。改直连 **`helix_driver_host::run_engine_loop`
+//! （泛型 over S/H/E/Tr/C）** + 自建 `EngineDeps`，把全 port 包上装饰器（external-host-instrumentation
+//! -recipe 路径 A：纯增量集成，helix 引擎零改）：
+//!
+//! | facet | port | 装饰 |
+//! |---|---|---|
+//! | ① HTTP body | `HttpRequester` | `Recording<NativeHttp>`（tee 请求 + Record/Replay）|
+//! | ① WS 帧 + 入站录放 | `Transport` | `Recording<NativeTransport>`（send tee + Replay 供 recv）|
+//! | ④ 落库行 | `Storage` | `Recording<NativeStorage>`（tee {op,table,rows}）|
+//! | 确定性时钟 | `Clock` | `Recording<NativeClock>`（Record 录 / Replay 供）|
+//! | ② 投影 envelope | `EventSink`(+`BatchSink`) | **`helix_driver_host::RecordingSink<NativeEventSink>`** |
+//!
+//! 投影面（facet②）的特别说明：引擎 `E` bound 的是 host 本地 `BatchSink`（`EventSink` 的
+//! supertrait），本仓 `Recording<E>` 只 impl `EventSink` 装不进引擎；故投影面改用 A 落地的
+//! `RecordingSink<NativeEventSink>`（同时 impl `EventSink`+`BatchSink`），它在 `emit` 旁路喂
+//! 我们的录放回调（facet② tee），再透传给内层 `NativeEventSink`（broadcast egress 不变）。
+//! 投影面**唯一** tee 落点收敛到这里——bus 桥不再重复 `ctx.log(Projection)`（防双计），只留
+//! `app.emit(im:__bus__)` + 就绪 probe。
+//!
+//! ## IdSource/Random 无引擎注入缝（诚实记录）
+//!
+//! `EngineDeps` 只有 `clock` 一个时间/确定性注入点；core 的 `IdSource`/`Random` **不经引擎泵**
+//! （无 Effect、dispatch 不处理、`EngineDeps` 无字段）。故 tape 对 id/random 的字节级确定性需
+//! core 侧接线，当前不可达——本壳只接 `Clock` 装饰（tape 时钟确定性）。这是真缝边界，不编造。
 
 use std::sync::Arc;
 
 use helix_core::effect::TransportId;
 use helix_core::ports::Transport;
 use helix_core::{ExecutionShell, Tick};
-use helix_driver_instrument::{Facet, Hop, InstrumentCtx};
+use helix_driver_host::{
+    run_engine_loop, EngineDeps, RecordingSink, TransportTable,
+};
+use helix_driver_instrument::util::payload_from_bytes;
+use helix_driver_instrument::{Facet, Hop, InstrumentCtx, Recording};
 use helix_driver_native::{
-    bus_event_name, run_engine_loop_with_transports, to_bus_envelope, AuthTokenRegistry,
-    EngineConfig, HostNetworkConfig, NativeEventSink, NativeHttp, NativeStorage, NativeTransport,
-    RecvOutcome, SharedHttpClient, TransportTable, BUS_CHANNEL,
+    bus_event_name, to_bus_envelope, AuthTokenRegistry, HostNetworkConfig, NativeClock,
+    NativeEventSink, NativeHttp, NativeStorage, NativeTransport, RecvOutcome, SharedHttpClient,
+    BUS_CHANNEL,
 };
 use helix_im::module::ImConfig;
 use helix_im::ImModule;
@@ -139,6 +163,7 @@ pub async fn spawn(
     let (tick_tx, tick_rx) = mpsc::channel::<Tick>(256);
 
     // ── 主 WS transport（身份头随握手带）──────────────────────────────────────────
+    // 先连裸 NativeTransport（连接是 `&mut self`，预填表路径），连成功后包装饰器 + Arc。
     let main_transport = TransportId::from_raw(0);
     let ws_headers: Vec<(String, String)> = identity_headers
         .iter()
@@ -151,8 +176,13 @@ pub async fn spawn(
         Ok(()) => tracing::info!(transport_id = main_transport.raw(), "主 WS 已连接"),
         Err(e) => tracing::error!(error = %e, "主 WS 连接失败——仍进泵，Send 走 warn 兜底"),
     }
-    let mut transports = TransportTable::new();
-    transports.insert(main_transport, Arc::new(transport));
+    // 装饰：facet① ws 帧（send tee）+ Replay 入站供帧；连接已完成，wrap 后只用 `&self`。
+    let recording_transport = Recording::new(transport, ctx.clone());
+    let mut transports: TransportTable<Recording<NativeTransport>> = TransportTable::new();
+    transports.insert(main_transport, Arc::new(recording_transport));
+    // native 走预填表路径：注册通道留空（transport_rx 永不收到句柄，仅对齐泛型壳签名）。
+    let (_transport_tx, transport_rx) =
+        mpsc::unbounded_channel::<(TransportId, Arc<Recording<NativeTransport>>)>();
 
     let max_http_inflight = std::env::var("HELIX_HTTP_MAX_INFLIGHT")
         .ok()
@@ -160,28 +190,51 @@ pub async fn spawn(
         .filter(|n| *n > 0)
         .unwrap_or(8);
 
-    let config = EngineConfig {
-        storage,
-        http,
+    // ── 全 port 包装饰器，组装泛型 EngineDeps ─────────────────────────────────────
+    // facet④ storage（tee {op,table,rows}）/ facet① http（tee 请求体 + Record/Replay）/
+    // Clock（tape 时钟确定性）。投影面 event_sink 用 host 的 RecordingSink（impl BatchSink），
+    // emit 旁路喂录放器（facet②），内层 NativeEventSink 仍 broadcast → event_rx 不变。
+    let recording_storage = Recording::new(storage, ctx.clone());
+    let recording_http = Recording::new(http, ctx.clone());
+    let recording_clock = Recording::new(NativeClock, ctx.clone());
+    let projection_ctx = ctx.clone();
+    let recording_sink = RecordingSink::new(
         event_sink,
+        Arc::new(move |ev: &helix_core::effect::DomainEventBytes| {
+            // facet② 投影：唯一 tee 落点（bus 桥不再重复 log，防双计）。
+            projection_ctx.log(Facet::Projection, Hop::Projection, payload_from_bytes(&ev.0));
+        }),
+    );
+
+    let deps: EngineDeps<
+        Recording<NativeStorage>,
+        Recording<NativeHttp>,
+        RecordingSink<NativeEventSink>,
+        Recording<NativeClock>,
+    > = EngineDeps {
+        storage: Arc::new(recording_storage),
+        http: Arc::new(recording_http),
+        event_sink: Arc::new(recording_sink),
+        clock: recording_clock,
         max_http_inflight,
     };
 
-    // ── bus → app.emit 桥 + 投影面 tee + 就绪 probe（消费 broadcast）──────────────
-    spawn_bus_bridge(app, ctx, probe, event_rx);
+    // ── bus → app.emit 桥 + 就绪 probe（消费 broadcast；facet② tee 已收敛 RecordingSink）──
+    spawn_bus_bridge(app, probe, event_rx);
 
-    // ── 跑泵 ──────────────────────────────────────────────────────────────────────
+    // ── 跑泵（host 泛型壳，单一 pump 核）───────────────────────────────────────────
     let (_shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     let tick_tx_for_loop = tick_tx.clone();
     tokio::spawn(async move {
-        tracing::info!("进入 helix engine loop");
-        run_engine_loop_with_transports(
+        tracing::info!("进入 helix engine loop（host 泛型壳 · 全 port 装饰）");
+        run_engine_loop(
             shell,
             tick_rx,
             tick_tx_for_loop,
-            config,
+            deps,
             shutdown_rx,
             transports,
+            transport_rx,
         )
         .await;
         tracing::info!("helix engine loop 退出");
@@ -197,13 +250,14 @@ pub async fn spawn(
 /// （精确需 Http 装饰器注入引擎，见模块头注），故取保守窗口，不冒充精确计数。
 const QUIESCE_WINDOW_MS: u64 = 1500;
 
-/// 消费 EventSink broadcast：① 投影面 tee 日志（facet ②）② `app.emit(im:__bus__)` 透传前端
-/// ③ 喂就绪 probe（increment 计数 + 静默窗口）。
+/// 消费 EventSink broadcast：① `app.emit(im:__bus__)` 透传前端 ② 喂就绪 probe
+/// （increment 计数 + 静默窗口）。
 ///
-/// 单一消费 task：lagged 不静默（E7，`RecvOutcome::Lagged` → emit resync 信号）。
+/// facet② 投影 tee 日志已**收敛**到 `RecordingSink`（emit 旁路），本桥不再重复 `ctx.log`（防双计）；
+/// 这里只做信封透传 + 就绪判定。单一消费 task：lagged 不静默（E7，`RecvOutcome::Lagged` → emit
+/// resync 信号）。
 fn spawn_bus_bridge(
     app: AppHandle,
-    ctx: InstrumentCtx,
     probe: Arc<ReadinessProbe>,
     rx: tokio::sync::broadcast::Receiver<helix_core::effect::DomainEventBytes>,
 ) {
@@ -225,13 +279,8 @@ fn spawn_bus_bridge(
                     }
                 }
                 Ok(RecvOutcome::Event(ev)) => {
-                    // facet ② 投影面：emit 抵达 app.emit 之前 tee 一条结构化日志。
+                    // 就绪 probe：见 increment 事件计数（facet② tee 已在 RecordingSink 落）。
                     if let Some(name) = bus_event_name(&ev) {
-                        ctx.log(
-                            Facet::Projection,
-                            Hop::Projection,
-                            helix_driver_instrument::util::payload_from_bytes(&ev.0),
-                        );
                         if name.contains("increment") {
                             probe.note_increment();
                         }

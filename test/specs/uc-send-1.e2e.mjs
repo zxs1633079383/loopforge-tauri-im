@@ -1,12 +1,13 @@
 // UC-send-1 发消息 round-trip e2e —— WebdriverIO，直连 4445 内嵌 webdriver（wdio.conf.mjs）。
 //
-// 串四面（spec §7）；本轮目标 ②③ 跑通，①④ 诚实 pending（见文末 it.skip）：
+// 串四面（spec §7）；①④ rewire 已接通（组装根走 host 泛型壳 + 全 port 装饰）→ 四面全断言：
 //   ③ DOM    : 真驱动 —— 填字 + 点 [data-testid=send-btn] → store.send 真乐观流 →
 //              从 DOM 读 store 生成的 data-temporary-id → 等 echo → data-msg-id 从 tmp 变 server、
 //              status=sent（WebdriverIO 直读）。
-//   ②        : 读 run.jsonl → reducer 聚 corr_key → 断 projection 字段集（已 tee 观测点）。
-//   ①④      : helix 泛型壳 rewire（outbound body tee + storage 落行）未做 → 无观测点 →
-//              诚实留红，本轮 it.skip 标 pending，不假绿、不改 expect 掩盖。
+//   ②        : 读 run.jsonl → reducer 聚 corr_key → 断 projection 字段集（RecordingSink tee）。
+//   ①        : Recording<NativeHttp> tee 出站 body → 严格对齐 expect.outbound（真机curl真源派生，
+//              camelCase + bodyForbidden 锚 snake_case 旧形态泄漏）。
+//   ④        : Recording<NativeStorage> tee 落库 op → batch_upsert message 表 ≥1 行。
 //
 // 时序纪律（HX-C011 / four-facet-oracle §2）：不用固定 pause 猜 settle，一律 waitUntil 等条件
 //   （before 等 data-ready 就绪 probe；echo 等覆写完成）。超时=真 bug，不掩盖。
@@ -98,7 +99,7 @@ describe('UC-send-1 · 发消息 round-trip（四面契约）', () => {
     await invokeBridge('set_uc', { uc: 'UC-send-1' });
   });
 
-  it('②③：乐观上屏 → echo tmp→server 覆写 + 投影字段集（①④见下方 pending）', async () => {
+  it('①②③④：乐观上屏 → echo tmp→server 覆写 + 出站 body + 投影字段集 + 落库行', async () => {
     // —— ③ DOM 主驱动：填字 + 点发送按钮 ——
     // Bug-2 修：不再固定注入 im_send。点 [data-testid=send-btn] → store.send() 生成 temporaryId
     //   + invoke im_send；sending 行由 helix `im:post:sending` 投影驱动（壳纯渲染，不 JS 合成）。
@@ -156,22 +157,21 @@ describe('UC-send-1 · 发消息 round-trip（四面契约）', () => {
     const jsonl = readFileSync(RUN_JSONL, 'utf8');
     const report = runFourFacet({ jsonl, expect: expectWithAnchor, dom: settled });
 
-    // 「断在哪一跳」报告（本轮目标 ②③ 绿；①④ helix 泛型壳 rewire 未做 → 诚实留红）。
+    // 「断在哪一跳」报告（①④ rewire 已接通 → 四面全断言，无放水）。
     console.log('[UC-send-1 四面报告] ' + report.summary);
     for (const f of ['outbound', 'projection', 'storage', 'dom']) {
       if (!report.facets[f].ok) console.log(`  ✖ ${f}: ${report.facets[f].issues.join('; ')}`);
     }
 
-    // 本轮断言只覆盖 ②③（②投影字段集 + ③ tmp→server 覆写）。
+    // 四面严格断言（reducer 的 diffOutbound/diffStorage 已是严格比对，照用，不放水）。
     expect(report.parseErrors.length).toBe(0);
-    expect(report.facets.projection.ok).toBe(true); // ② 投影字段集 == projection-schema message_item_data
-    expect(report.facets.dom.ok).toBe(true); // ③ tmp→server 覆写
-  });
-
-  // ①④ 诚实留红：helix 泛型壳 rewire（outbound HTTP body tee + storage 落行观测点）未做 →
-  //   reducer 在 outbound/storage 两面无 hop 必报「断在这跳」。不假绿、不改 expect 掩盖
-  //   （contract-readonly-autofix §1 + HX-C011 可证伪）。pending 显式声明缺口，待泛型壳落地解锁。
-  it.skip('①④（pending）：outbound body 对齐真机curl真源 + message 落行 —— 待 helix 泛型壳 rewire', async () => {
-    // 接通后取消 .skip，断言 report.facets.outbound.ok / report.facets.storage.ok。
+    // ① 出站 body：严格对齐 expect.outbound（camelCase 必填集 + bodyForbidden snake_case 泄漏）。
+    expect(report.facets.outbound.ok).toBe(true);
+    // ② 投影字段集 == projection-schema message_item_data（fat 13 键，缺/多即 fail）。
+    expect(report.facets.projection.ok).toBe(true);
+    // ④ 落库：batch_upsert message 表 ≥1 行。
+    expect(report.facets.storage.ok).toBe(true);
+    // ③ DOM tmp→server 覆写 + status=sent。
+    expect(report.facets.dom.ok).toBe(true);
   });
 });

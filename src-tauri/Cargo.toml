@@ -25,6 +25,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 helix-core          = { path = "../../helix/crates/helix-core" }
 helix-im            = { path = "../../helix/crates/helix-im" }
 helix-driver-native = { path = "../../helix/crates/helix-driver-native" }
+# 泛型引擎壳（run_engine_loop<S,H,E,Tr,C> + EngineDeps + RecordingSink）——
+# 组装根直连此泛型入口，把全 port 包上装饰器（native EngineConfig 具体类型注不进装饰器）。
+helix-driver-host   = { path = "../../helix/crates/helix-driver-host" }
 
 # 仪表层（本仓 · Recording<P> + InstrumentCtx + LogSink）
 helix-driver-instrument = { path = "../crates/helix-driver-instrument" }

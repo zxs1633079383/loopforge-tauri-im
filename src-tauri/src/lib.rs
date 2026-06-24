@@ -22,6 +22,39 @@ use helix_driver_instrument::{InstrumentCtx, LogSink, Mode, Tape};
 use state::{AppState, ReadinessProbe};
 use tauri::Manager;
 
+/// 默认 tape 路径（`LOOPFORGE_TAPE` 未设时）：UC-send-1 金标帧。
+const DEFAULT_TAPE: &str = "test/fixtures/uc-send-1.tape.json";
+
+/// 解析运行模式 + tape：`LOOPFORGE_MODE` ∈ {live,record,replay}（默认 live）。
+///
+/// - live：空 tape（不录不放，透传真 go + tee 日志）。
+/// - record：空 tape（透传真 go + 旁路录帧/时钟/id；退出时 save_tape）。
+/// - replay：从 `LOOPFORGE_TAPE`（或默认）load 金标 tape（不碰网络，入站/响应/时钟/id 从 tape 供）。
+///
+/// tape 路径：`LOOPFORGE_TAPE` 覆盖 > 默认 [`DEFAULT_TAPE`]。
+fn resolve_mode_tape() -> (Mode, Tape, String) {
+    let mode = match std::env::var("LOOPFORGE_MODE")
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "record" => Mode::Record,
+        "replay" => Mode::Replay,
+        _ => Mode::Live,
+    };
+    let tape_path = std::env::var("LOOPFORGE_TAPE").unwrap_or_else(|_| DEFAULT_TAPE.into());
+    let tape = match mode {
+        // Replay：load 金标 tape（失败 → 空 tape + warn，让 app 仍起，断言会照出缺帧）。
+        Mode::Replay => Tape::load(&tape_path).unwrap_or_else(|e| {
+            tracing::warn!(error = %e, %tape_path, "Replay tape 加载失败，回退空 tape");
+            Tape::new()
+        }),
+        // Live/Record：空 tape 起步（Record 退出时 save 到 tape_path）。
+        _ => Tape::new(),
+    };
+    (mode, tape, tape_path)
+}
+
 /// JSONL hop 日志落点（env 覆盖 > 默认 /tmp）。失败回退 stdout（fail-soft，不让日志崩 app）。
 fn build_log_sink() -> LogSink {
     let path =
@@ -41,10 +74,12 @@ pub fn run() {
         )
         .init();
 
-    // 仪表上下文：W1 默认 Live（透传真 go + tee 日志）。run_id = env 或固定。
-    // Record/Replay 模式 + tape 注入待 tape 录放缝接通（见模块头注）。
+    // 仪表上下文：模式 + tape 经 LOOPFORGE_MODE / LOOPFORGE_TAPE 注入（①④ rewire 后接通）。
+    // live=透传真 go / record=透传 + 录 tape / replay=不碰网络从 tape 供。
     let run_id = std::env::var("LOOPFORGE_RUN_ID").unwrap_or_else(|_| "loopforge-w1".into());
-    let ctx = InstrumentCtx::new(run_id, Mode::Live, build_log_sink(), Tape::new());
+    let (mode, tape, tape_path) = resolve_mode_tape();
+    tracing::info!(?mode, %tape_path, "仪表运行模式");
+    let ctx = InstrumentCtx::new(run_id, mode, build_log_sink(), tape);
     let probe = Arc::new(ReadinessProbe::default());
 
     #[allow(unused_mut)]
@@ -94,7 +129,21 @@ pub fn run() {
     let builder =
         builder.invoke_handler(tauri::generate_handler![commands::im_send, commands::im_ready]);
 
-    builder
-        .run(tauri::generate_context!())
-        .expect("error while running loopforge tauri application");
+    // Record 模式退出落盘：app 退出（RunEvent::Exit）时把录好的 tape 存到 tape_path。
+    // live/replay 模式无副作用（save 只在 Record 触发）。
+    let ctx_for_exit = ctx.clone();
+    let tape_path_for_exit = tape_path.clone();
+    let app = builder
+        .build(tauri::generate_context!())
+        .expect("error while building loopforge tauri application");
+    app.run(move |_handle, event| {
+        if let tauri::RunEvent::Exit = event {
+            if ctx_for_exit.mode() == Mode::Record {
+                match ctx_for_exit.save_tape(&tape_path_for_exit) {
+                    Ok(()) => tracing::info!(path = %tape_path_for_exit, "Record tape 已落盘"),
+                    Err(e) => tracing::error!(error = %e, path = %tape_path_for_exit, "Record tape 落盘失败"),
+                }
+            }
+        }
+    });
 }
