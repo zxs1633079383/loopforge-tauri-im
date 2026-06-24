@@ -279,9 +279,15 @@ fn spawn_bus_bridge(
                     }
                 }
                 Ok(RecvOutcome::Event(ev)) => {
-                    // 就绪 probe：见 increment 事件计数（facet② tee 已在 RecordingSink 落）。
+                    // 就绪 probe：见同步活动计数（facet② tee 已在 RecordingSink 落）。
+                    // 「同步活动」= 任意**非连接生命周期**领域事件（im:connection:* 排除）。
+                    // 历史踩坑：原判据 name.contains("increment") 与具体投影名耦合——helix
+                    // round3→round6 事件改名后无任一事件名含 "increment"（实测仅 im:channels:loaded
+                    // / im:post:received / im:channel:created 等），致 increment_seen 恒 0、probe
+                    // 永不就绪。改为「收到任意领域事件 → 同步流动起来了」，与投影名解耦，仍守
+                    // 可证伪（连接生命周期单独到达不算就绪，须有真实同步事件 + 后续静默）。
                     if let Some(name) = bus_event_name(&ev) {
-                        if name.contains("increment") {
+                        if !name.starts_with("im:connection") {
                             probe.note_increment();
                         }
                     }
