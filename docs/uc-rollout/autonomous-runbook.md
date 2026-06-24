@@ -49,9 +49,11 @@ bash scripts/gate.sh                    # 应绿
    ```
 5. **四面 reducer 判（C009 绿由 reducer 裁定·非自我点头）**：
    - **绿**：翻 `docs/uc-coverage-ledger.md` ✅ + 勾 `rollout-checklist.md` + `gh issue close #N --comment "四面全绿 corr_key=..."` + `git commit`（conventional 中文·触发则 5 段 body）。
-   - **红**：看 reducer「断在哪一跳」：
-     - 本仓壳/reducer 形态不完善（corr 未探 posts[] / storage rows‖keys·C005）→ 改本仓 → 复跑。
-     - **helix 行为缺陷** → 写 bug 报告（断面 + corr_key + 证据）到 `gh issue comment #N` + ledger 标 🟡/bug + **不改 helix**（C004）→ **不阻塞·继续下一个 issue**。
+   - **红**：看 reducer「断在哪一跳」+ 四段日志联调（§6.1）**定位到底哪一端**，然后**修 + 验证**（不只标记）：
+     - **loopforge 本仓**（壳/reducer/接线·corr 未探 posts[] / storage rows‖keys·C005）缺陷 → 改本仓 → 复跑转绿。
+     - **helix 引擎缺陷**（四段日志确认后）→ **在 helix 仓修 + 验证**（契约只读 C004：改实现不改冻结 oracle；绿由 reducer 裁定 C009）→ 复跑转绿。
+     - **go-server 默认对**；仅 gRPC 或诡异问题才怀疑它 → gRPC 按 **§6.1** 修 + 重启 cses-java + 重发请求。
+     - 实在定位不了/超预算 → 写 bug 报告 + ledger 标 🟡 + 不阻塞继续（兜底，非首选）。
 
 ## 4. 每阶段收口（C006）
 阶段全部 issue 绿 → `git tag -a v0.x-phaseN-<slug> -m "覆盖 commit 范围 + 该阶段 UC 列表 + 验证状态"` + 补全该阶段每 UC 的 spec+expect（真跑过）+ 更新 checklist 阶段勾。
@@ -66,9 +68,18 @@ bash scripts/gate.sh                    # 应绿
 - **预算门**：到 token 预算 / 连续 ≥3 issue 无进展 → stall-stop，写终态行收尾。
 - **沙箱门**：禁 `push`/`merge main`/`reset --hard`/`rm -rf`；**commit 前验** `pwd` 在仓内 + branch=`feat/uc-rollout-domain-a`。
 - **验证门**：绿 = reducer 全绿（C009）+ `gate.sh` 绿才 commit；**绝不**「我觉得改好了」式自我点头。
-- **helix 仓零改**（C004）：red → bug 报告，不动 `/Users/mac28/workspace/rustWorkspace/helix`。
-- **绝不自动 merge main**：全程在 `feat/uc-rollout-domain-a`，留 PR/merge 给人。
+- **红转绿改实现（确认后修+验证·非只标记）**：四段日志（§6.1）定位是 **loopforge 本仓** 或 **helix 引擎** 缺陷就**直接修 + 复跑验证**（契约只读·不改冻结 oracle·绿由 reducer 裁定·C004/C009）。go-server 默认对，仅 gRPC/诡异才怀疑。〔早先「helix 只标记不改」是另一 workflow 在改 helix 时的临时约束，本长任务**已解除**——但仍**不改冻结契约**。〕
+- **绝不自动 merge main**：全程在 `feat/uc-rollout-domain-a`，留 PR/merge 给人。helix 仓修复也单独 commit、不自动 merge helix 主线。
 - **每 issue 完成/中断写终态行**（全局铁律）：`✅ DONE UC-X #N @ts | commit | 四面绿 | 分支` 追加到 `docs/harness/log.md` 或 ledger；中断写 `⚠️ PARTIAL ... 卡在 ...`。
+
+## 6.1 四段日志联调 + gRPC 处置（定位「问题在哪一端」）
+四端：**loopforge-tauri-im**（本仓）· **helix**（引擎）· **mattermost-go-server**（go·默认对）· **cses-java**。红时同时看四段日志锁定断点，再按 §3/§6「确认即修」处置。
+- **loopforge 日志**：`/tmp/loopforge/{run-app.log（Rust 引擎装配/hello/increment/出站）, run-ng.log（前端 TS 编译·C007 假死查这）, wdio-out.log（e2e）}` + `run.jsonl`（四面 hop·reducer 读）。
+- **helix 日志**：〔TODO·待用户给路径/启动方式〕——helix 引擎在 loopforge 进程内（run-app.log 含 `helix_im::*` tracing）；独立 helix 日志路径待补。
+- **mattermost-go-server 日志**：〔TODO·待用户给路径/启动方式〕。
+- **cses-java 日志**：〔TODO·待用户给路径/启动方式〕。
+- **gRPC 问题处置**〔TODO·待用户确认确切流程/脚本〕：gRPC 失败 → 修 gRPC 侧（参 mattermost 记忆 `cookieid_equals_userid`：cookieId=userId 桥不许加 userId/teamId）→ **跑重启脚本重启 cses-java**（脚本路径待补，cses-java 在 `/Users/mac28/workspace/java/cses`）→ 重发请求复跑。
+> ⚠️ 本节 TODO 必须由用户补全日志路径 + gRPC 重启脚本后，autonomous 才能真四段联调。补全前红只能定位到 loopforge/helix（靠 run-app.log + run.jsonl）。
 
 ## 7. 完成判据（整任务收尾）
 - #7-#12,#14-#41 的 ready-for-agent issues 全绿关闭（helix-blocked 的标 🟡 + bug 报告·不算失败）。
