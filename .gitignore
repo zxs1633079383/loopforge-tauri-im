@@ -16,6 +16,9 @@ Cargo.lock
 *.db-shm
 /test/reports/
 
+# 本地 profile 覆盖（不入仓；config/*.json 入仓，仅此覆盖文件本地态）
+/config/active-profile
+
 # OS
 .DS_Store
 /worktrees/

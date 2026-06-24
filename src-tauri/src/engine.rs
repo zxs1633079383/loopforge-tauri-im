@@ -29,9 +29,13 @@ use helix_im::ImModule;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, oneshot};
 
+use crate::config;
 use crate::state::ReadinessProbe;
 
 /// env 读取小工具（host 是 ambient API 合法落点；本壳与 host 同级）。
+///
+/// 用于**非 creds/端点**的静态默认（appType/device/language/...）；身份与端点真源走
+/// `config::load()`（profile 文件），不再散落 env（见 `config.rs` 模块头注）。
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
@@ -44,21 +48,20 @@ pub async fn spawn(
     ctx: InstrumentCtx,
     probe: Arc<ReadinessProbe>,
 ) -> Result<mpsc::Sender<Tick>, String> {
-    // ── 配置（env，与 host-cli 同 key；Tauri 壳后续可改从登录态注入身份头）──────────
-    let ws_url = env_or(
-        "HELIX_WS_URL",
-        "ws://127.0.0.1:8065/api/v4/websocket",
-    );
-    let api_base_url = env_or("HELIX_API_BASE", "http://127.0.0.1:8065/api/cses");
-    let cookie_id = env_or("HELIX_COOKIE_ID", "");
-    let company_id = env_or("HELIX_COMPANY_ID", "");
+    // ── 部署配置（profile 文件真源；creds/端点不再散落 env）────────────────────────
+    // debug→dev-local / release→prod；config/active-profile 可覆盖（见 config.rs）。
+    let (profile_name, profile) = config::load()?;
+    tracing::info!(%profile_name, "已加载 profile 配置");
+
+    let ws_url = profile.ws_url.clone();
+    let api_base_url = profile.api_base.clone();
+    let cookie_id = profile.cookie_id.clone();
+    let company_id = profile.company_id.clone();
+    // 身份非 creds 的静态默认仍走 env（appType/device/language/...，非端点/凭据）。
     let app_type = env_or("HELIX_APP_TYPE", "bct");
     let device = env_or("HELIX_DEVICE", "IOS");
-    let device_id = std::env::var("HELIX_DEVICE_ID")
-        .ok()
-        .filter(|s| !s.is_empty())
-        // ADR-011 故意例外：固定联调 deviceId（本机派生过不了 Go session 校验）。
-        .unwrap_or_else(|| "ED380414932542BAB4993E5AC3E07C64".to_string());
+    // deviceId 真源 = profile；为空（pre/prod 待真鉴权注入）时本壳不编造 → 留空跳过。
+    let device_id = profile.device_id.clone();
     let language = env_or("HELIX_LANGUAGE", "zh");
     let app_version = env_or("HELIX_APP_VERSION", "1.2.56");
     let os_version = env_or("HELIX_OS_VERSION", "macos-14.5.0");

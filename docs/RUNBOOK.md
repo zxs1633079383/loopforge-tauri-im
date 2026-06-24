@@ -49,6 +49,22 @@
 
 > 模式开关约定：脚本把 `LOOPFORGE_MODE=<mode>` 注入 app 进程环境；组装根（W1 src-tauri，debug 构建）读它决定用 `Mode::Live/Record/Replay` 拼 `InstrumentCtx`。W1 落地后若 env 名不同，改 `_lib.sh` 的 `MODE_ENV_VAR` 一处即可。
 
+### 2.1 部署配置 profile（creds/端点真源 · 替掉 env 指定 creds）
+
+身份（cookieId/deviceId）+ 端点（apiBase/wsUrl）+ 租户（companyId）走 **配置文件 profile**，不再散落 env：
+
+| profile | 文件 | 何时选 | creds |
+|---|---|---|---|
+| `dev-local` | `config/dev-local.json` | **debug 构建默认** | 含本地联调实值（cookieId/deviceId） |
+| `pre` | `config/pre.json` | 仅 active-profile 覆盖时 | 留空（运行时真鉴权注入） |
+| `prod` | `config/prod.json` | **release 构建默认** | **必须留空**（运行时真鉴权注入） |
+
+- **profile 选择优先级**：① `config/active-profile`（纯文本一行，如 `pre`，本地覆盖、不入仓）→ ② 否则 `cfg!(debug_assertions)`：debug→`dev-local`、release→`prod`。
+- 三套 `config/*.json` 编译期 `include_str!` 内嵌（bundle 后无外部目录依赖）；`active-profile` 运行时读盘（切 profile 不必重编，读不到则按构建态默认）。
+- **🔴 铁律：`prod.json` 不得带 dev creds**（cookieId/deviceId 必须空字符串）——生产身份由真鉴权链路运行时注入，配置文件硬编码 dev creds = 越权 / 泄漏。仅 `dev-local.json` 含联调实值，仅本地使用。
+- 占位域名（`im-pre.example.com` / `im.example.com` + `TODO-*-company-id`）上线前替真值。
+- 运行模式开关（`HELIX_RUN_JSONL` / `LOOPFORGE_MODE` / `HELIX_HTTP_MAX_INFLIGHT`）**不是 creds/端点**，仍走 env，不进 profile。
+
 ---
 
 ## 3. 怎么 record（建金标帧）

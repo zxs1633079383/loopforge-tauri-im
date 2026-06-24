@@ -12,6 +12,7 @@
 //! 就绪 probe。其余三面 + tape 录放是后续集成项（见 README / 任务 integration_todos）。
 
 mod commands;
+mod config;
 mod engine;
 mod state;
 

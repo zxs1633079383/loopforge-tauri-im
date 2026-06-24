@@ -21,7 +21,7 @@ import { ImStoreService } from "./im/im-store.service";
   imports: [FormsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <main class="im" [attr.data-ready]="store.ready()" [attr.data-active-channel]="channelId">
+    <main class="im" [attr.data-ready]="store.ready()" [attr.data-active-channel]="store.activeChannel()">
       <header class="im__hd">
         <span>LoopForge IM</span>
         <span class="im__ready" [attr.data-ready]="store.ready()">
@@ -59,6 +59,7 @@ import { ImStoreService } from "./im/im-store.service";
           class="im__send"
           type="button"
           data-testid="send-btn"
+          [disabled]="!store.activeChannel()"
           (click)="onSend()"
         >发送</button>
       </footer>
@@ -101,8 +102,8 @@ import { ImStoreService } from "./im/im-store.service";
 export class AppComponent implements OnInit, OnDestroy {
   readonly store = inject(ImStoreService);
 
-  /** 当前频道 —— 竖切 UC-send-1 固定单频道；上 DOM [data-active-channel] 供 e2e 取 CHANNEL_ID（protected 供模板访问） */
-  protected readonly channelId = "demo-channel";
+  // 活动频道不再硬编码：由 store.activeChannel() 提供（stream 第一个真实频道胜出，含 increment）。
+  // demo-channel 非合法 26 位频道 id，helix parse 会拒（missing/invalid channel_id）。
 
   draft = "";
 
@@ -115,8 +116,10 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   onSend(): void {
+    const channelId = this.store.activeChannel();
+    if (!channelId) return; // 未锚定真实频道（increment 未流入）→ 不发
     const text = this.draft;
     this.draft = "";
-    void this.store.send(this.channelId, text);
+    void this.store.send(channelId, text);
   }
 }

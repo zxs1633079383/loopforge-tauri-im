@@ -1,0 +1,8 @@
+{
+  "_note": "生产 profile（release 构建默认选此）。占位域名——上线前替真域名。cookieId/deviceId 必须留空：运行时真鉴权注入，绝不得带 dev creds（见 RUNBOOK 配置说明）。",
+  "apiBase": "https://im.example.com/api/cses",
+  "wsUrl": "wss://im.example.com/api/v4/websocket",
+  "companyId": "TODO-prod-company-id",
+  "cookieId": "",
+  "deviceId": ""
+}

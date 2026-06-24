@@ -5,16 +5,21 @@ import {
   BusEnvelope,
   MESSAGE_ROW_CHANNELS,
   MessageItemData,
+  POST_SENDING_CHANNEL,
+  PostSendingData,
 } from "./projection.types";
 
 /**
- * IM 薄壳状态机 —— 纯渲染：listen im:__bus__ → 按 message_item_data 渲染/echo 覆写。
+ * IM 薄壳状态机 —— **纯渲染**：listen im:__bus__ → 按投影渲染，零业务逻辑（铁律）。
  *
- * 不维护第二套 sync 状态机（schema §0 纯渲染证伪标准）：
- * 乐观插入由本壳做（temporaryId 锚），其余字段权威来自 helix 投影。
+ * 发送链路全程 helix 驱动（壳不合成乐观行）：
+ *  - send()：生成 temporaryId → 暂存 pendingText[tmp]=text（瘦投影不带 text）→ invoke im_send。
+ *  - im:post:sending（瘦 snake：channel_id/temporary_id）→ 插入 sending 行（text 取 pendingText）。
+ *  - im:post:received（fat camel：temporaryId/message/...）→ 按 temporaryId 覆写成 sent + 清 pendingText。
  *
  * 不变量：
- *  - data-temporary-id 贯穿乐观→覆写不变（选择器锚）。
+ *  - data-temporary-id 贯穿 sending→覆写不变（选择器锚）。
+ *  - 乐观 sending 行由 helix `im:post:sending` 投影驱动，不在 JS 合成。
  *  - echo 覆写按 temporaryId 找行：data-msg-id 改 server id、status=sent、补 event-seq。
  */
 @Injectable({ providedIn: "root" })
@@ -29,8 +34,15 @@ export class ImStoreService {
   private readonly _ready = signal(false);
   readonly ready = computed(() => this._ready());
 
+  /** 活动频道：stream 里第一个真实频道胜出（含 increment）→ 锚定，供发送/data-active-channel。 */
+  private readonly _activeChannel = signal<string>("");
+  readonly activeChannel = computed(() => this._activeChannel());
+
   private unlisten: (() => void) | null = null;
   private readyTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** 本地暂存：temporaryId → 发送文本（瘦投影 im:post:sending 不带 text，渲染 sending 行需要）。 */
+  private readonly pendingText = new Map<string, string>();
 
   /** 订阅单总线 + 启动就绪 probe 轮询。组件 ngOnInit 调一次。 */
   async start(): Promise<void> {
@@ -71,27 +83,18 @@ export class ImStoreService {
   }
 
   /**
-   * 发送：生成 temporaryId → 乐观插入 sending 行 → invoke('im_send')。
-   * invoke 失败（含非 Tauri 环境）→ 行标 failed。
+   * 发送：生成 temporaryId → 暂存 pendingText → invoke('im_send')。
+   *
+   * **不在 JS 合成乐观行**——sending 行由 helix `im:post:sending` 投影驱动（壳纯渲染）。
+   * invoke 失败（含非 Tauri 环境）→ 若 sending 行已由投影插入则标 failed，并清 pendingText。
    */
   async send(channelId: string, text: string): Promise<void> {
     const trimmed = text.trim();
     if (!trimmed) return;
     const temporaryId = this.genTempId();
 
-    // 乐观插入：data-msg-id=temporaryId、data-send-status=sending
-    this._rows.update((rows) => [
-      ...rows,
-      {
-        msgId: temporaryId,
-        temporaryId,
-        channelId,
-        eventSeq: null,
-        sendStatus: "sending",
-        readBits: "",
-        text: trimmed,
-      },
-    ]);
+    // 瘦投影 im:post:sending 不带 text → 暂存供 sending 行渲染。
+    this.pendingText.set(temporaryId, trimmed);
 
     try {
       await this.bridge.invoke<void>("im_send", {
@@ -100,8 +103,9 @@ export class ImStoreService {
         temporaryId,
       });
     } catch {
-      // 出站失败 → 标 failed（非 Tauri dev 环境也会走这里）
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 标 failed（若投影已插行）+ 清暂存。
       this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "failed" }));
+      this.pendingText.delete(temporaryId);
     }
   }
 
@@ -111,12 +115,62 @@ export class ImStoreService {
     const channel = env?.channel;
     if (!channel) return;
 
-    // 只认 message-row 类 channel 的 message_item_data fat 集
+    // 活动频道锚定（在任何早退过滤之前）：stream 第一个真实频道胜出，含 im:channel:increment。
+    // 兼容 snake(channel_id) 与 camel(channelId)；只在尚未锚定时 set（第一个胜出，不被后续覆盖）。
+    this.captureActiveChannel(env.payload?.data);
+
+    // 瘦信号 im:post:sending（snake）→ 乐观 sending 行（单独分支，非 fat 集）。
+    if (channel === POST_SENDING_CHANNEL) {
+      const data = env.payload?.data as PostSendingData | undefined;
+      if (data && typeof data === "object") this.applyPostSending(data);
+      return;
+    }
+
+    // message-row 类 channel 的 message_item_data fat 集 → echo 覆写。
     if (!MESSAGE_ROW_CHANNELS.has(channel)) return;
 
     const data = env.payload?.data as MessageItemData | undefined;
     if (!data || typeof data !== "object") return;
     this.applyMessageItem(data);
+  }
+
+  /**
+   * 从任意投影 data 抽频道 id 锚定活动频道（第一个真实频道胜出）。
+   * 兼容 snake(channel_id) 与 camel(channelId)；已锚定则不覆盖。纯渲染层（选哪个会话显示/发送）。
+   */
+  private captureActiveChannel(data: unknown): void {
+    if (this._activeChannel()) return;
+    if (!data || typeof data !== "object") return;
+    const d = data as Record<string, unknown>;
+    const id =
+      (typeof d["channel_id"] === "string" && d["channel_id"]) ||
+      (typeof d["channelId"] === "string" && d["channelId"]) ||
+      "";
+    if (id) this._activeChannel.set(id);
+  }
+
+  /**
+   * 乐观上屏（helix im:post:sending 投影驱动）：插入 sending 行。
+   * 字段全 snake：channel_id / temporary_id；text 取本地 pendingText（瘦投影无 text）。
+   * 重复 temporary_id（重发去抖）→ 已有行则跳过，不重复插。
+   */
+  private applyPostSending(d: PostSendingData): void {
+    const temporaryId = d.temporary_id ?? "";
+    if (!temporaryId) return;
+    if (this._rows().some((r) => r.temporaryId === temporaryId)) return;
+
+    this._rows.update((rows) => [
+      ...rows,
+      {
+        msgId: temporaryId,
+        temporaryId,
+        channelId: d.channel_id ?? "",
+        eventSeq: null,
+        sendStatus: "sending",
+        readBits: "",
+        text: this.pendingText.get(temporaryId) ?? "",
+      },
+    ]);
   }
 
   /**
@@ -148,6 +202,8 @@ export class ImStoreService {
         };
         return next;
       });
+      // echo 已对账 → 清本地暂存（pendingText 仅用于 sending 行渲染）。
+      if (temporaryId) this.pendingText.delete(temporaryId);
       return;
     }
 

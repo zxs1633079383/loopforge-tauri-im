@@ -97,10 +97,19 @@ function actualOutbound(bundle) {
   return null;
 }
 
-/** ② projection：取 {event, data}（data 键集是冻结对象）。 */
-function actualProjection(bundle) {
-  const p = pickFacet(bundle, 'projection', ['projection']);
-  if (!p) return null;
+/**
+ * ② projection：取 {event, data}（data 键集是冻结对象）。
+ *
+ * send 束含**两条**投影：`im:post:sending`（瘦·乐观转圈）+ `im:post:received`（fat·echo 字段集）。
+ * ② 字段集 oracle 是 fat 那条 → 优先按期望 event 选；无匹配则取**最后一条**
+ * （received 在 sending 之后 emit）。绝不取「第一条」（那是 sending 瘦集，会误判缺 12 字段）。
+ */
+function actualProjection(bundle, preferEvent) {
+  const projs = bundle.hops.filter((h) => h.facet === 'projection' && h.hop === 'projection');
+  if (projs.length === 0) return null;
+  const p =
+    (preferEvent && projs.find((h) => h.payload?.event === preferEvent)) ||
+    projs[projs.length - 1];
   return { event: p.payload?.event, data: p.payload?.data ?? {} };
 }
 
@@ -229,7 +238,7 @@ export function runFourFacet({ jsonl, expect, dom, ucId }) {
 
   const facets = {
     outbound: diffOutbound(expect.outbound ?? {}, target && actualOutbound(target)),
-    projection: diffProjection(expect.projection ?? {}, target && actualProjection(target)),
+    projection: diffProjection(expect.projection ?? {}, target && actualProjection(target, expect.projection?.event)),
     storage: diffStorage(expect.storage ?? {}, target && actualStorage(target, expect.storage?.table)),
     dom: diffDom(expect.dom ?? {}, dom ?? null),
   };

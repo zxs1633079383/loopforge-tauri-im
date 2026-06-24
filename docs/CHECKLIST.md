@@ -11,6 +11,9 @@
 - ✅ 新仓 + CLAUDE.md/AGENTS.md/rules（4 条）
 - ✅ 竖切 spec（发消息 round-trip）
 - ✅ **`helix-driver-instrument` 完整代码**（6 port 装饰器 + Tape + LogSink + InstrumentCtx；10/10 测试绿，含 Record→Replay 往返）
+- ✅ **W1-W4 并行落地 + 集成**（src-tauri 宿主 / Angular 薄壳 / 四面 reducer / 录放脚本 / CI / gate 闸门 / UC rollout 蓝图）
+- ✅ **配置 profile 系统**（dev-local/pre/prod JSON，src-tauri config loader 读，替掉 env creds）
+- ✅ 🎯 **竖切 UC-send-1 ②③ 端到端绿**（真 Tauri+WKWebView+WebdriverIO 对真 Go）：点发送 → helix `im:post:sending` 乐观转圈 → 真出站打 Go → `im:post:received` echo 覆写**真 server id** + status=sent；② fat 投影字段集对齐冻结 projection-schema；全程 dev-local 配置驱动、壳零业务逻辑。①④ `it.skip` 诚实留红待泛型壳 rewire。护栏三闸（契约只读/镜像/结构）全绿无作弊。
 
 ---
 

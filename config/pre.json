@@ -1,0 +1,8 @@
+{
+  "_note": "预发 profile（占位域名）。cookieId/deviceId 故意留空——运行时由真鉴权链路注入（登录态），不在配置文件硬编码身份。",
+  "apiBase": "https://im-pre.example.com/api/cses",
+  "wsUrl": "wss://im-pre.example.com/api/v4/websocket",
+  "companyId": "TODO-pre-company-id",
+  "cookieId": "",
+  "deviceId": ""
+}

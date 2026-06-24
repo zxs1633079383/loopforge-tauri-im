@@ -48,14 +48,19 @@ export interface MessageItemData {
 }
 
 /**
- * im:post:sending 瘦信号 —— projection-schema §1：
- * data 键集 = { channel_id, temporary_id }
- * （发送乐观上屏；本薄壳乐观插入由前端自做，故主要消费 message-row echo）
+ * im:post:sending 瘦信号 —— projection-schema §1（helix module.rs:1059 emit_post_sending）：
+ * data 键集 = { channel_id, temporary_id }（全 snake_case）。
+ *
+ * 发送乐观上屏由 **helix 投影驱动**（壳零业务逻辑）：壳收到此事件即插入 sending 行，
+ * text 取本地 pendingText[temporary_id]（瘦投影不带 text）。不在 JS 合成乐观态。
  */
 export interface PostSendingData {
   channel_id: string;
   temporary_id: string;
 }
+
+/** im:post:sending 单列 channel（瘦形态，单独分支，非 message-row fat 集） */
+export const POST_SENDING_CHANNEL = "im:post:sending";
 
 /** message-row 类 channel（携 message_item_data fat 完整集） */
 export const MESSAGE_ROW_CHANNELS: ReadonlySet<string> = new Set([
