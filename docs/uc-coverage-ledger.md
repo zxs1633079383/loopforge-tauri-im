@@ -198,7 +198,7 @@
 - **③ DOM**：回复抽屉 `data-reply-id`。
 - **④ 落库**：Scan `message`（回复链）。
 
-### UC-1.3 发送图片/文件 — `⛔ unreachable`（物理够不到·需真上传管线）
+### UC-1.3 发送图片/文件 — `🌙 untested·按需`（上传接口在 java·先列 todo·真 go 夜间）
 
 > **物理够不到**：host-cli/testbed 无文件上传 / `processMessageFiles` 上传管线·无法构造 multipart/文件预处理链。
 > 物理文件选择 + 上传进度链需真实文件系统 + 上传服务；golden-tape 只录 WS/HTTP 帧不录文件 IO。
@@ -288,7 +288,7 @@
 > **物理/数据够不到（非 wire-bug·代码侧实现完整有单测）**：testbed 无「注入本地落后 cursor」入口·冷启动 cursor=0 走 increment 不进 too_long 分支·也无法把本地 cursor 顶到远落后服务端 seq 的态（helix ledger 同标 harness-gap）。
 > **② 投影**：`emit_sync_too_long`（`{channelId, resetTo}`·channel.rs:223 emit / module.rs:760 清表·由 helix-im 单测覆盖）；**③ DOM**：清表重渲首屏；**④ 落库**：`message` 清+重拉·cursor=resetTo-1。e2e 触发态待 testbed 加注入入口或服务端构造超阈 gap。
 
-### UC-4.4 心跳 gap 补偿 — `🟡 partial`（认领 D·③ DOM 物理不可达·纯 Rust 自驱）
+### UC-4.4 心跳 gap 补偿 — `🟡 partial·三面`（①②④+cursor 可测·③ DOM N/A 已移除该面要求）
 
 > **纯 Rust ping/pong 自驱**（8s piggyback）·无前端 invoke 触发·无独立 DOM → ③ 面物理不可达（helix ledger ✅ 但属服务端 wire 视角·LoopForge 客户端四面只能 ①②④ + cursor 不变量 + 间接证）。
 
@@ -357,7 +357,7 @@
 
 ---
 
-## 4. 域 D — bot-agent / 互动卡片
+## 4. 域 D — 互动卡片 / 系统通知（bot-agent 已移除·不在测试范围）
 
 > 最低优先级（依赖外部接通 / 非 message-v3 主链）。投票/平均分走 api（第二网关 :3399）。
 
@@ -377,7 +377,7 @@
 - **③ DOM**：`data-system-notice`。
 - **④ 落库**：`message`（SYSTEM/SYSTEN 类型）。
 
-### bot / agent 召唤 — `⛔ unreachable`（后端真阻塞·P1-3·客户端无 service 方法）
+### bot / agent 召唤 — `🚫 已移除`（bot-agent 不在测试范围·2026-06-24 用户裁决）
 
 > **物理够不到 + 后端真阻塞**：message-v3 service 层无独立 bot 端点（客户端无对应 invoke）·`BotAgentWebhookEvent` Pulsar fanout（缺口矩阵 P1-3）未接。客户端侧无用例 → 整域标 ⛔（如需覆盖从服务端 csesapi 侧梳理·超 testbed 范围）。
 
