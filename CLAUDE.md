@@ -88,3 +88,16 @@ helix 引擎（上游 path dep）              helix-core 零改 · helix-im 零
 ## 7. 提交规范
 
 Conventional Commits（中文 description/body）；触发结构化 body 条件命中时按 5 段（影响范围/改动影响面/功能改进/Harness 更新/验证）。禁 `wip`/`update xxx`，禁 attribution。
+
+---
+
+## 8. UC Rollout 纪律（强约束 · 每次铺 UC 必遵）
+
+> 真源：`docs/uc-rollout/rollout-checklist.md`（依赖序 阶段0-7 共 31 UC + L2 4·勾选）· `coverage-crossmap.md`（124 HTTP/19 WS 逐个对 UC）· `uc-coverage-ledger.md`（四面契约）。
+
+1. **按依赖序铺**：阶段 0 就绪(4.1) → 1 建频道(5.1/5.2) → 2 发消息(1.x) → 3 对消息操作(已读/撤回/转发) → 4 历史(2.x) → 5 频道/成员(5.x/6.x) → 6 杂项 → 7 teams/运维(5.8/11.1/11.2/12.1) → L2 双账号。**没有群聊无法发消息**，后序复用前序真实数据。
+2. **闭环**：接最简 UI → `bash scripts/run.sh -- --spec test/specs/uc-X.e2e.mjs`（**seeded db** `/tmp/loopforge-im.db`，否则无 active channel）→ 四面 reducer →「断在哪一跳」。红多为校正 Phase1 草拟契约 / 复用已有修复（corr-key posts[]、storage rows‖keys）。
+3. **e2e 四面全绿驱动收口（每 UC）**：翻台账 ✅ + 勾 checklist + commit + tag（按需）。**helix 只标记不改**（红→出 bug 报告喂 helix workflow，不动 helix 仓）。
+4. **每阶段全部 UC 四面全绿 → 立即打 tag** `v0.x-phaseN-<slug>`（message 带覆盖 commit 范围 + 该阶段 UC 列表 + 验证状态），**并补全该阶段每个 UC** 的 `test/specs/uc-X.e2e.mjs` + `test/expect/uc-X.expect.json`（e2e 真跑过）。
+5. **bot/agent 整域不测**（37 HTTP+1 WS 已移除）；UC-1.3 文件上传 🌙 按需（接口在 java）；5.6/5.7/7.x/4.3 ⛔ 后端阻塞不管。
+6. **已立 tag**：`v0.1-basic`（foundation + 竖切 3 绿 UC-1.1/1.2/1.5 基线）。
