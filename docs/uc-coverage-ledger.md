@@ -211,13 +211,17 @@
 
 > 认领需 increment 就绪 probe（M）。① 出站锚 `真机curl真源 §4/§6` + full-map partial 8 sync wire 契约。
 
-### UC-4.1 hello 根群全量增量 — `⬜ pending`（认领 M·就绪 probe 锚点）
+### UC-4.1 hello 根群全量增量 — `🟡 partial`（认领 M·就绪 probe 锚点·契约+UI 已 author·live 四面 + ① batch 面 blocked）
 
-- **① 出站 HTTP**：WS hello 自动 / `channels/load/increment`，body `{timestamp, cursors:[{channelId, fromSeq}]}`（待核·partial 8 http.rs:25）。
+- **① 出站 HTTP**：WS hello 自动 / `channels/load/increment`，body `{timestamp, cursors:[{channelId, fromSeq}]}`（**已核**·真源 = helix `acl/sync_http_effects.rs::increment_http_trigger`·全 camelCase·与 partial 8 http.rs:25 锚一致）。
 - **① WS 推送**：hello + channels + `increment_channel`（data 携 `lastEventSeq`·helix ledger 实证真推）+ `increment_channel_end`（批次结束·就绪 probe 锚）。
-- **② 投影**：`emit_channels_loaded`（`{items}`）+ `emit_channel_increment`（`{channel_id, increment}`）+ `emit_channel_update`（`{channel_id}`·thin·批次结束触发）。
-- **③ DOM**：`data-ready` 标志 + channel 行。
-- **④ 落库**：`channel` + `channel_event_cursor`。
+- **② 投影**：`emit_channels_loaded`（`{items}`·瘦·无 channel_id）+ `emit_channel_increment`（`{channel_id, increment}`·**reducer 锚此 keyed 面**）+ `emit_channel_update`（`{channel_id}`·thin·批次结束触发）。
+- **③ DOM**：`data-ready` 标志 + channel 行 `data-channel-id`（已接 UI：store `applyChannelIncrement`/`applyChannelUpdate` 由 `im:channel:increment`/`update` 投影填 `_channels` → CL 区渲染）。
+- **④ 落库**：`channel`（`batch_upsert` upsert_channel_full）+ `channel_event_cursor`（`monotonic_upsert` advance_cursor）。
+
+> **状态（诚实出账·C011）**：契约 `test/expect/uc-4.1.expect.json` + e2e `test/specs/uc-4.1.e2e.mjs` 已从冻结真源 author（gate.sh expect JSON valid 绿）；Angular CL 区频道行填充已接（additive·tsc PASS·gate 绿）。**live 四面 reducer 未跑全绿**，两个 blocker：
+> 1. **冷全栈 infra down**（非本仓缺陷）：跑 live 需 go-mattermost + cses-java + telepresence 隧道(sudo·四空格密码) + **seeded DB**（`/tmp/loopforge-im.db` 当前 0 字节·77/93 channel 行的 seed 工件已失·无 seed 脚本）。autonomous 非交互沙箱起不动整栈（隧道需交互 sudo）。
+> 2. **① batch-outbound 结构 gap（reducer 形态·待人审）**：UC-4.1 出站是『批量 sync 请求』（一请求 N 个 channel 的 cursors），无单 channel corr_key——装饰器 `extract_corr_key`（`event.rs:104-110`）只探 top-level + `.data` 的 channelId，cursors 嵌 `body.cursors[0]` 抽不到 → outbound 落 unkeyed 束、不进 per-channel 目标束。current `four-facet-reducer.mjs`（per-corr_key 束）天然不表达 batch 出站。人审决策：(a) reducer 增 batch 面对 unkeyed outbound 断 URL/body-shape；或 (b) 装饰器 `extract_corr_key` 增 `cursors[0].channelId` 探针。决策落地前 ① 面预期红（非 wire 缺陷）。②③④ 在 ch 锚下结构完备，待 infra 起栈即可验。
 
 ### UC-4.2 按需 sync notify — `⬜ pending`（认领 M）
 

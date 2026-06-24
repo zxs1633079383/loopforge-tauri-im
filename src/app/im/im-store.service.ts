@@ -10,7 +10,11 @@ import {
 } from "./message-row.model";
 import {
   BusEnvelope,
+  CHANNEL_INCREMENT_CHANNEL,
+  CHANNEL_UPDATE_CHANNEL,
+  CHANNELS_LOADED_CHANNEL,
   CHANNELS_PROJECTION_CHANNEL,
+  ChannelIncrementData,
   MESSAGE_ROW_CHANNELS,
   MessageItemData,
   POST_SENDING_CHANNEL,
@@ -201,6 +205,23 @@ export class ImStoreService {
       return;
     }
 
+    // UC-4.1 hello 全量增量：channels:loaded（冷启动信号·瘦）/ channel:increment（注册/更新 channel 行）/
+    // channel:update（批次结束瘦信号）→ 往 CL 区频道列表填行（data-channel-id 直映·壳纯渲染）。
+    // 先于 message-row 分支：这些是 channel-row 信号，非 message_item_data fat 集。
+    if (channel === CHANNELS_LOADED_CHANNEL) {
+      // 冷启动补齐信号（data {items:[]}）：当前壳无 items 载荷消费（增量逐 channel 由 increment 填），
+      // 仅作活动频道锚定的早退前透传机会——下行 captureActiveChannel 兜底（items 空则无操作）。
+      return;
+    }
+    if (channel === CHANNEL_INCREMENT_CHANNEL) {
+      this.applyChannelIncrement(env.payload?.data as ChannelIncrementData | undefined);
+      return;
+    }
+    if (channel === CHANNEL_UPDATE_CHANNEL) {
+      this.applyChannelUpdate(env.payload?.data);
+      return;
+    }
+
     // UC-1.5 撤回：在线 im:post:batch-updated（{channel_id, posts}）/ 离线 im:post:deleted（fat）
     // → 按 server id 标行 data-revoke=1。先于 MESSAGE_ROW_CHANNELS fat 覆写分支处理。
     if (channel === "im:post:batch-updated") {
@@ -263,6 +284,38 @@ export class ImStoreService {
         !!(r as Record<string, unknown>)["id"],
     );
     if (first) this._activeChannel.set(first.id);
+  }
+
+  /**
+   * UC-4.1：im:channel:increment（{channel_id, increment}）→ 注册/更新 CL 区频道行。
+   * 壳纯渲染：只取 channel_id 作 data-channel-id（increment 帧 data 不解析重组·留给后续 UC 按需读）。
+   * 同时锚定活动频道（增量流首个真实频道胜出·send 族决定性目标）。
+   */
+  private applyChannelIncrement(data: ChannelIncrementData | undefined): void {
+    if (!data || typeof data !== "object") return;
+    const channelId =
+      (typeof data.channel_id === "string" && data.channel_id) || "";
+    if (!channelId) return;
+    this.upsertChannelRow(channelId);
+    if (!this._activeChannel()) this._activeChannel.set(channelId);
+  }
+
+  /**
+   * UC-4.1：im:channel:update（{channel_id}·瘦·批次结束）→ 确保该 channel 行存在（badge 回读触发位）。
+   * 当前壳仅保证行存在；displayName/unread 等回读由 UC-5.4/4.2 接 channel 表回读填。
+   */
+  private applyChannelUpdate(data: unknown): void {
+    if (!data || typeof data !== "object") return;
+    const channelId = (data as Record<string, unknown>)["channel_id"];
+    if (typeof channelId === "string" && channelId) {
+      this.upsertChannelRow(channelId);
+    }
+  }
+
+  /** 按 channelId upsert CL 区频道行（已存在则跳过·加法式·壳纯渲染只持 channelId 直映 data-channel-id）。 */
+  private upsertChannelRow(channelId: string): void {
+    if (this._channels().some((c) => c.channelId === channelId)) return;
+    this._channels.update((rows) => [...rows, { channelId }]);
   }
 
   /** 按 server id 命中行 → 标 revoked（data-revoke=1）。找不到则忽略（非本壳发的消息）。 */

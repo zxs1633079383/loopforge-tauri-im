@@ -69,6 +69,23 @@ export const POST_SENDING_CHANNEL = "im:post:sending";
  */
 export const CHANNELS_PROJECTION_CHANNEL = "im:channels:projection";
 
+/**
+ * UC-4.1 hello 全量增量投影 channel（B-rest · projection-schema §B-rest 行 59/60/61）。
+ * 壳收到即往 CL 区频道列表填行（data-channel-id 直映·壳纯渲染不合成）：
+ *  - im:channels:loaded   data {items:[]}            冷启动补齐信号（瘦·无 channel_id）。
+ *  - im:channel:increment data {channel_id, increment} WS increment_channel 透传 → 注册/更新该 channel 行。
+ *  - im:channel:update    data {channel_id}            批次结束瘦信号（channel-row badge 触发位）。
+ */
+export const CHANNELS_LOADED_CHANNEL = "im:channels:loaded";
+export const CHANNEL_INCREMENT_CHANNEL = "im:channel:increment";
+export const CHANNEL_UPDATE_CHANNEL = "im:channel:update";
+
+/** im:channel:increment data 形态（projection-schema 行 60·increment 透传帧 data·不解析重组）。 */
+export interface ChannelIncrementData {
+  channel_id: string;
+  increment: unknown;
+}
+
 /** message-row 类 channel（携 message_item_data fat 完整集） */
 export const MESSAGE_ROW_CHANNELS: ReadonlySet<string> = new Set([
   "im:post:received",
