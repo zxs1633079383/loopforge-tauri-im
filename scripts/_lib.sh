@@ -29,9 +29,10 @@ HELIX_RUN_JSONL="${HELIX_RUN_JSONL:-$RUN_LOG_DIR/run.jsonl}"
 # wdio 控制台输出（含 reducer「四面报告 / 断在哪一跳」）抓存这里，供 dev-loop 读 diff。
 WDIO_OUT="${WDIO_OUT:-$RUN_LOG_DIR/wdio-out.log}"
 
-# —— App 二进制名（src-tauri 产物；W1 落地后确认；可经 env 覆盖）——
+# —— App 二进制名（cargo workspace 产物落**工作区根** target/，非 src-tauri/target/；
+#    members=[crates/helix-driver-instrument, src-tauri] → 共享根 target dir）——
 APP_BIN_NAME="${APP_BIN_NAME:-loopforge-tauri-im}"
-APP_BIN="${APP_BIN:-$REPO_ROOT/src-tauri/target/debug/$APP_BIN_NAME}"
+APP_BIN="${APP_BIN:-$REPO_ROOT/target/debug/$APP_BIN_NAME}"
 
 # —— 录放模式环境变量名（组装根 src-tauri 读它选 Recording 模式；W1 落地后对齐）——
 # 取值：live | record | replay。脚本经此 env 把模式传给 debug app。
