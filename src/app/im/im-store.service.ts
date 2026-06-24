@@ -268,22 +268,27 @@ export class ImStoreService {
   }
 
   /**
-   * 会话列表回报（im:channels:projection）→ 取首行 `id` 设 activeChannel（已锚定则不覆盖）。
+   * 会话列表回报（im:channels:projection·fat 完整 dialogList）→ 渲染 CL 区频道行 + 设 activeChannel。
    * dialogList 行 = channel 表行，主键列名 `id`（helix query_tests 实证）；按 last_post_at 降序，
    * 首行即最近活跃会话——作 send 族 UC 的决定性发送目标。纯渲染层（选哪个会话），不碰业务。
+   *
+   * UC-4.1 就绪根：current-cursor 冷启动时增量为空（`im:channel:increment` 不 emit·`im:channels:loaded`
+   * items 为 []），channel 行的**真实产出者**是本 `im:channels:projection`（projection-schema 行 75/282：
+   * 会话列表 handler 直接渲染 dialogList）。故除设 activeChannel 外，须 upsert 每行 → `data-channel-id`
+   * 才有渲染（此前只设 activeChannel·CL 区永空·DOM ③ 断在此跳）。加法式·壳纯渲染只持 channelId。
    */
   private applyDialogList(data: unknown): void {
-    if (this._activeChannel()) return;
     const list = (data as { dialogList?: unknown } | undefined)?.dialogList;
     if (!Array.isArray(list)) return;
-    const first = list.find(
-      (r): r is { id: string } =>
-        !!r &&
-        typeof r === "object" &&
-        typeof (r as Record<string, unknown>)["id"] === "string" &&
-        !!(r as Record<string, unknown>)["id"],
-    );
-    if (first) this._activeChannel.set(first.id);
+    const ids = list
+      .map((r) =>
+        r && typeof r === "object"
+          ? (r as Record<string, unknown>)["id"]
+          : undefined,
+      )
+      .filter((id): id is string => typeof id === "string" && !!id);
+    for (const id of ids) this.upsertChannelRow(id);
+    if (!this._activeChannel() && ids.length > 0) this._activeChannel.set(ids[0]);
   }
 
   /**
