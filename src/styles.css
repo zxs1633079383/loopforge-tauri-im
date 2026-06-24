@@ -1,0 +1,9 @@
+/* 全局样式 —— 薄壳，语义优先，不追像素保真 */
+html, body {
+  height: 100%;
+  margin: 0;
+  background: #141417;
+  color: #eee;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+app-root { display: block; height: 100vh; }

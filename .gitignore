@@ -8,6 +8,7 @@ Cargo.lock
 /dist/
 /.angular/
 /src-tauri/target/
+/src-tauri/gen/
 
 # 测试产物 / tape 临时
 *.db
@@ -17,3 +18,4 @@ Cargo.lock
 
 # OS
 .DS_Store
+/worktrees/

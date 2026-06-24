@@ -1,0 +1,41 @@
+{
+  "name": "loopforge-tauri-im",
+  "version": "0.1.0",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "build": "ng build",
+    "watch": "ng build --watch --configuration development",
+    "tauri": "tauri",
+    "e2e:app": "cargo build --manifest-path src-tauri/Cargo.toml && ./src-tauri/target/debug/loopforge-tauri-im",
+    "e2e:run": "wdio run wdio.conf.mjs",
+    "e2e": "wait-on http://localhost:1420 http://127.0.0.1:4445/status && wdio run wdio.conf.mjs"
+  },
+  "private": true,
+  "dependencies": {
+    "@angular/common": "^20.1.4",
+    "@angular/compiler": "^20.1.4",
+    "@angular/core": "^20.1.4",
+    "@angular/forms": "^20.1.4",
+    "@angular/platform-browser": "^20.1.4",
+    "@angular/router": "^20.1.4",
+    "@tauri-apps/api": "^2",
+    "rxjs": "~7.8.2",
+    "tslib": "^2.8.1",
+    "zone.js": "~0.15.1"
+  },
+  "devDependencies": {
+    "@angular/build": "^20.1.4",
+    "@angular/cli": "^20.1.4",
+    "@angular/compiler-cli": "^20.1.4",
+    "@tauri-apps/cli": "^2",
+    "@wdio/cli": "^9.28.0",
+    "@wdio/globals": "^9.28.0",
+    "@wdio/junit-reporter": "^9.28.0",
+    "@wdio/local-runner": "^9.28.0",
+    "@wdio/mocha-framework": "^9.28.0",
+    "@wdio/spec-reporter": "^9.28.0",
+    "typescript": "~5.8.3",
+    "wait-on": "^9.0.10"
+  }
+}

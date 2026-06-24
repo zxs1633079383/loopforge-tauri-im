@@ -1,0 +1,41 @@
+[package]
+name = "loopforge-tauri-im"
+version = "0.1.0"
+description = "LoopForge — 最小可测 Tauri IM 宿主（内嵌真实 helix 引擎 · debug 仪表化）"
+edition = "2021"
+
+[lib]
+# `_lib` 后缀避免 Windows 上 lib 名与 bin 名冲突（Tauri 官方约定）。
+name = "loopforge_tauri_im_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bytes = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# helix 引擎（path dep · 只读消费 · 零改 · CLAUDE.md §0）
+helix-core          = { path = "../../helix/crates/helix-core" }
+helix-im            = { path = "../../helix/crates/helix-im" }
+helix-driver-native = { path = "../../helix/crates/helix-driver-native" }
+
+# 仪表层（本仓 · Recording<P> + InstrumentCtx + LogSink）
+helix-driver-instrument = { path = "../crates/helix-driver-instrument" }
+
+# tauri-plugin-webdriver 经 `webdriver` feature 闸（默认开）：release 出货须 `--no-default-features`
+# 关掉，绝不带 W3C 自动化接口（CLAUDE.md §2.4）。
+# 注：cargo 的 `target.'cfg(debug_assertions)'` 不支持依赖选择（实测 warn），故改 feature 闸 +
+# 代码 `#[cfg(feature = "webdriver")]` 双保险——feature 关 = dep 不进树 + init 调用编译掉。
+tauri-plugin-webdriver = { version = "0.2.1", optional = true }
+
+[features]
+default = ["webdriver"]
+# 录放/自动化测试接口（debug/test 专用）；release 出货 `--no-default-features` 去掉。
+webdriver = ["dep:tauri-plugin-webdriver"]

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/helix-driver-instrument"]
+members = ["crates/helix-driver-instrument", "src-tauri"]
 resolver = "2"
 
 [workspace.dependencies]

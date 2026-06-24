@@ -1,0 +1,2 @@
+# golden tape 落点（uc-send-1.tape.json 由 scripts/record.sh 真跑时生成 / W3 占位）。
+# 契约只读护栏：tape 一旦人审冻结即只读，禁自动修复 agent 改它（见 rules/contract-readonly-autofix.md）。

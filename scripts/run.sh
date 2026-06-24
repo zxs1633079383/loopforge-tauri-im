@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# scripts/run.sh —— 一条命令从零到四面报告（Live 轨，连真 go）。
+#
+# 串起整条链路（CLAUDE.md §6 / spec §9 W4）：
+#   pnpm start（前端 1420）
+#   + cargo run debug（src-tauri，内嵌 webdriver 4445）
+#   + wait-on（双就绪）
+#   + wdio run（四面断言）
+#
+# 默认 Live 模式（透传真 go + tee 日志，不录不放）——日常开发/手测跑真 go。
+# 想要确定性请用 scripts/replay.sh；想录金标帧请用 scripts/record.sh。
+#
+# 与 record/replay 的区别：run.sh 用 `cargo run`（边构建边起，开发态），
+# record/replay 用预构建二进制（$APP_BIN）求快与确定。
+#
+# 用法：
+#   scripts/run.sh [-- <wdio 额外参数>]
+# 环境变量：
+#   HELIX_DEVICE_ID         （Live 连真 go 建议设；不设则由 app 决定行为）。
+#   HELIX_HTTP_MAX_INFLIGHT （选填）HTTP 在途上限。
+#   LOOPFORGE_MODE          （选填）live|record|replay，默认 live。
+set -uo pipefail
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
+
+MODE="${LOOPFORGE_MODE:-live}"
+WDIO_ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --) shift; WDIO_ARGS=("$@"); break ;;
+    *)  die "未知参数：$1（用法见脚本头）" ;;
+  esac
+done
+
+log "${C_DIM}== run.sh：从零到四面报告（模式=$MODE）==${C_RST}"
+require_cmd curl "就绪轮询"
+require_cmd lsof "端口检查"
+require_cmd pnpm "前端 / wdio"
+require_cmd cargo "src-tauri 构建"
+
+# —— 前置检查 ——
+[ -f "$REPO_ROOT/src-tauri/Cargo.toml" ] || die "未找到 src-tauri/Cargo.toml（W1 src-tauri 落地后）"
+assert_wdio_ready
+assert_port_free "$FRONTEND_PORT" "前端"
+assert_port_free "$WEBDRIVER_PORT" "webdriver"
+
+ensure_log_dir
+NG_LOG="$RUN_LOG_DIR/run-ng.log"
+APP_LOG="$RUN_LOG_DIR/run-app.log"
+
+trap cleanup_chain EXIT
+
+# —— 起前端 ——
+start_frontend "$NG_LOG"
+wait_http "http://localhost:$FRONTEND_PORT" "前端(ng serve)" 180
+
+# —— 起 app：cargo run debug（边构建边起；首次构建慢，耐心等 webdriver 就绪）——
+: >"$HELIX_RUN_JSONL" 2>/dev/null || true
+info "起 app：cargo run（src-tauri，debug，$MODE_ENV_VAR=$MODE，webdriver $WEBDRIVER_PORT，run.jsonl=$HELIX_RUN_JSONL）"
+( cd "$REPO_ROOT" && env \
+    "$MODE_ENV_VAR=$MODE" \
+    "HELIX_RUN_JSONL=$HELIX_RUN_JSONL" \
+    ${HELIX_DEVICE_ID:+"HELIX_DEVICE_ID=$HELIX_DEVICE_ID"} \
+    ${HELIX_HTTP_MAX_INFLIGHT:+"HELIX_HTTP_MAX_INFLIGHT=$HELIX_HTTP_MAX_INFLIGHT"} \
+    nohup cargo run --manifest-path src-tauri/Cargo.toml >"$APP_LOG" 2>&1 & )
+
+# cargo 首次冷构建可能数分钟 → webdriver 就绪超时给足
+wait_http "http://127.0.0.1:$WEBDRIVER_PORT/status" "webdriver(tauri-plugin)" 600
+
+# —— 跑 wdio（四面断言）——
+info "跑 wdio（四面断言：① 出站 / ② 投影 / ③ DOM / ④ 落库）"
+if run_wdio "${WDIO_ARGS[@]+"${WDIO_ARGS[@]}"}"; then
+  ok "四面报告全绿"
+  exit 0
+else
+  die "wdio 红 —— reducer「断在哪一跳」报告见上方输出 / $APP_LOG" 1
+fi
