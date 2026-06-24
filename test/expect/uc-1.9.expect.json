@@ -1,0 +1,81 @@
+{
+  "$schema-note": "四面期望文件 (UC-1.9) — oracle 本体。只读契约：自动修复 agent 禁改本文件；红只能靠改 helix 引擎实现或本仓渲染壳。",
+  "ucId": "UC-1.9",
+  "title": "加急消息 + 加急已读：发送加急通知 → 确认收到加急",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/full-map/partials/1--backend-http-posts.md §7-10 + partial 6 UC-1.9",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1 to_effect::emit_post_updated (fat)",
+    "dom": "docs/spec/send-message-vertical-slice.md §4 DOM 契约 + UC-1.9 data-urgent",
+    "storage": "docs/spec/send-message-vertical-slice.md §5 / projection-schema §4 DB 列 message.props"
+  },
+
+  "corrAnchor": {
+    "note": "两阶段 UC：阶段①发送加急（targetIds含目标成员），阶段②接收方确认收到。领域锚：postId（已发送消息）→ 加急通知 expediteMap → 确认事件。",
+    "postId": "*",
+    "channelId": "*"
+  },
+
+  "outbound": {
+    "note": "两个 HTTP 端点：① urgentPost 标记加急 ② urgentConfirm 确认收到加急",
+    "phase1_urgentPost": {
+      "method": "POST",
+      "urlEndsWith": "posts/urgentPost",
+      "bodyFields": {
+        "channelId": "*",
+        "postId": "*",
+        "targetIds": "*",
+        "message": "*"
+      },
+      "bodyForbidden": ["channel_id", "post_id", "target_ids"],
+      "_note": "真机curl真源 + 后端 UrgentPostVO struct（full-map §1-7）：camelCase 必填 channelId/postId/targetIds（数组）；message 可选（？符号表可选但若有则检验）。targetIds = 目标用户ID数组。"
+    },
+    "phase2_urgentConfirm": {
+      "method": "POST",
+      "urlEndsWith": "posts/urgentConfirm",
+      "bodyFields": {
+        "postId": "*",
+        "channelId": "*"
+      },
+      "bodyForbidden": ["post_id", "channel_id"],
+      "_note": "真机curl真源 + 后端 ConfirmPostUrgent 方法（full-map §1-10）：camelCase postId/channelId。"
+    }
+  },
+
+  "projection": {
+    "event": "im:post:updated",
+    "dataKeys": [
+      "channel_id",
+      "event_seq",
+      "msg_id",
+      "temporaryId",
+      "channelId",
+      "userId",
+      "type",
+      "message",
+      "props",
+      "createAt",
+      "updateAt",
+      "readBits",
+      "viewers"
+    ],
+    "_note": "projection-schema §1 emit_post_updated fat 完整集（13 键）。加急属性归一化后透传在 props.expediteMap（后端权威）。缺/多即 fail（FixB 反转：少一字段=漂移）。"
+  },
+
+  "storage": {
+    "op": "batch_upsert",
+    "table": "message",
+    "minRows": 1,
+    "_note": "spec §2 facet④：加急状态落 message 行 props.expediteMap（包含 recipients/sender 映射）。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "msg-id": "*",
+      "urgent": "1",
+      "channel-id": "*",
+      "event-seq": "*"
+    },
+    "_note": "spec §4 + UC-1.9：加急消息加 data-urgent=1 标记；msg-id 已存在（消息已发送，非乐观生成）；event-seq 信号字段。"
+  }
+}

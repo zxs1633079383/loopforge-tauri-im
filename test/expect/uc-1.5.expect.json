@@ -1,0 +1,51 @@
+{
+  "$schema-note": "四面期望文件 (UC-1.5) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现或本仓渲染壳。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-1.5",
+  "title": "撤回消息：用户点撤回 → outbound revoke → WS post_update/post_deleted → 投影 batch-updated/deleted → DOM 消除/标记",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/真机curl真源.md §3 posts/revoke",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1 to_effect::emit_post_batch_updated (在线) / to_effect::emit_post_deleted (离线 fat)",
+    "dom": "docs/spec/send-message-vertical-slice.md § revoke 行表现 (data-revoke=1 或行移除)",
+    "storage": "helix/crates/helix-im/docs/projection-schema.md §4 DB 列 + uc-coverage-ledger.md UC-1.5 §4 message.revoke=1"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：撤回命令 body 的 postId 由 e2e 在运行时填实值后覆写本字段（占位 *，匹配已发出消息的 server_id）；reducer 用它锁定目标束。",
+    "postId": null
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "posts/revoke",
+    "bodyFields": {
+      "postId": "*"
+    },
+    "bodyForbidden": ["post_id"],
+    "_note": "真机curl真源 §3：POST /api/cses/posts/revoke body={postId} camelCase。✅ helix 现状符合。bodyForbidden 锚 snake_case 旧形态泄漏。"
+  },
+
+  "projection": {
+    "event": "im:post:batch-updated",
+    "dataKeys": [
+      "channel_id",
+      "posts"
+    ],
+    "_note": "projection-schema §1：在线情况 emit_post_batch_updated (WS posts_update)。data 键集 {channel_id, posts}。备注：离线路径走 emit_post_deleted (fat 完整集) 但 e2e 单连接无法观测离线路径，故以在线主路径作期望。"
+  },
+
+  "storage": {
+    "op": "update",
+    "table": "message",
+    "minRows": 1,
+    "_note": "uc-coverage-ledger.md UC-1.5 §4：message 表 mark_revoked(revoke=1)。装饰器 facet④ payload 暴露 {op,table,rows}；revoke 列修改由 DB 观测（四面 oracle 逐行对齐，此处记录期望 op/table）。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "revoke": "1",
+      "_note": "data-revoke=1 标记撤回态；或行移除。Phase2 接线设计时定夺渲染形态（当前 Phase1 契约设计阶段，选择器待 UI 实装时确认）。"
+    },
+    "_note": "spec §4：撤回后行表现。可能路径：① data-revoke=1 标记 ② 行 DOM 删除（投影触发)。e2e 会据实际接线读 DOM 终态。"
+  }
+}

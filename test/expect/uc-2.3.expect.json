@@ -1,0 +1,51 @@
+{
+  "$schema-note": "四面期望文件 (UC-2.3) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现或本仓渲染壳。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-2.3",
+  "title": "按 postId 定位：invoke 查询 → query_result 投影 → 消息高亮",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/full-map/partials/6--client-usecases.md §UC-2.3 posts/getPostsAfterIndex",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1.2 read relay / §1 query::emit_message_query_result",
+    "dom": "docs/spec/send-message-vertical-slice.md §4 DOM 契约（data-msg-id 高亮）",
+    "storage": "docs/spec/send-message-vertical-slice.md §5 / projection-schema §4 message 表（读路径，无写）"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：查询的 postId（server message id）由 e2e 在运行时注入本字段（占位 *）；reducer 用它锁定结果束。",
+    "sid": null
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "posts/getPostsAfterIndex",
+    "bodyFields": {
+      "postIds": "*"
+    },
+    "bodyForbidden": [],
+    "_note": "真源 partial 6 UC-2.3：单一 postId 字符串（非数组）。值用 * = 仅校验键存在。读族 HTTP 回报无 WS 推送（回应体本身是数据）。"
+  },
+
+  "projection": {
+    "event": "im:messages:query_result",
+    "dataKeys": [
+      "channel_id",
+      "messages"
+    ],
+    "_note": "projection-schema §1.2 读族回灌通道（不计入 21 投影集）；§1 query::emit_message_query_result factory。外层 data={channel_id, messages}；messages 内部字段由后端权威透传，不逐一冻结（wire Post 升序数组）。缺外层键即 fail。"
+  },
+
+  "storage": {
+    "op": "scan",
+    "table": "message",
+    "minRows": 0,
+    "_note": "读路径（无写）。harness 对查询结果做 Scan message 表验证（命中 postId 的行存在）；payload 仅暴露 {op,table} 防隐私。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "msg-id": "*",
+      "channel-id": "*"
+    },
+    "_note": "spec §4：query_result 消息行高亮。DOM 渲染 messages 数组中命中的消息行，置 data-msg-id=server_id（已定稿 post id）、data-channel-id。无 data-temporary-id（query 结果非乐观行）、无 data-send-status（已终态）。e2e 读 [data-msg-id=目标 postId] 行验证高亮。"
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "$schema-note": "四面期望文件 (UC-1.7) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现或本仓渲染壳。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-1.7",
+  "title": "转发/合并转发消息 round-trip：单出站 HTTP → N 频道 echo × N 投影 × N 落库",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/真机curl真源.md 附录A posts/createPosts（三方证据定论）",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1 to_effect::emit_post_received (fat) ×N channels",
+    "dom": "docs/spec/send-message-vertical-slice.md §4 DOM 契约 ×N rows",
+    "storage": "docs/spec/send-message-vertical-slice.md §5 / §2 facet④（message 表 ×N 行）"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：转发 body 的 posts[0].temporaryId + 目标 channelIds[0] 由 e2e 在运行时填实值后覆写本字段（占位 *，匹配任一含 tmp 的束）；reducer 用它锁定目标束。N 个 message 行共享同 tmp，但按不同 (ch, sid) 聚成 N 束。",
+    "tmp": null,
+    "ch1": null,
+    "ch2": null
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "posts/createPosts",
+    "bodyFields": {
+      "posts": "*",
+      "channelIds": "*"
+    },
+    "bodyForbidden": ["Posts", "ChannelIds", "channel_ids"],
+    "_note": "真机curl真源 附录A：camelCase 双段复数 posts/createPosts；body 为 {posts: [<Post>], channelIds: [<id>...]}。Posts 必填非空数组（待转发的 Post 对象）；ChannelIds 必填非空数组（目标 channel id）。bodyForbidden 锚 PascalCase Go 字段名泄漏（Go 无 tag case-insensitive 但真 wire = camelCase）。"
+  },
+
+  "projection": {
+    "multiChannel": true,
+    "channelCount": "*",
+    "perChannelEvent": "im:post:received",
+    "perChannelDataKeys": [
+      "channel_id",
+      "event_seq",
+      "msg_id",
+      "temporaryId",
+      "channelId",
+      "userId",
+      "type",
+      "message",
+      "props",
+      "createAt",
+      "updateAt",
+      "readBits",
+      "viewers"
+    ],
+    "_note": "projection-schema §1 emit_post_received fat 完整集（13 键）×N channels。各 channel 独立投影，共享同 temporaryId（来自转发原 post），但 channel_id/msg_id/event_seq 各异。缺/多字段即 fail（FixB 反转）。"
+  },
+
+  "storage": {
+    "multiRow": true,
+    "op": "batch_upsert",
+    "table": "message",
+    "minRows": 2,
+    "_note": "spec §2 facet④：转发落 message 表 ×N 行（N = len(channelIds)）。每行 (channel_id, id=server_id)，temporary_id 为转发来源 post 的 tmp id（各行可共享），read_bits 预置。装饰器 facet④ payload 只暴露 {op,table,rows}（不含行内容避隐私/体积）；行内容由 harness 直接查库 ×N。"
+  },
+
+  "dom": {
+    "multiRow": true,
+    "rowCount": "*",
+    "perRowDataAttrs": {
+      "msg-id": "!tmp",
+      "send-status": "sent",
+      "temporary-id": "*",
+      "event-seq": "*",
+      "channel-id": "*"
+    },
+    "_note": "spec §4：转发终态 ×N 行。各行 msg-id=!tmp（server 覆写，≠ temporaryId）、send-status=sent、独立 event-seq、各自 channel-id（区分目标频道）。e2e 选择器锚 [data-temporary-id=t]，可命中 N 行（各行 channel-id 异）；每行读 data-* 后，reducer 按 (tmp, ch, sid) 三元组聚束。"
+  }
+}

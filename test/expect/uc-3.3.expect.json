@@ -1,0 +1,62 @@
+{
+  "$schema-note": "四面期望文件 (UC-3.3) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现或本仓渲染壳。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-3.3",
+  "title": "模板已收到 ACK：用户回执 → outbound post/templateReceived → WS post_update → 投影 im:post:updated（props.template.userIds 含 self）→ DOM template-received + DB props.template patch",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/src/outbound/template_received.rs::TemplateReceivedCommand (endpoint=post/templateReceived · body={postId} camelCase) · 真源 backend posts.go:53 api.BaseRoutes.Post.Handle(/templateReceived) + posts.go:721-724 anon struct {PostId json:postId} · full-map/partials/1--backend-http-posts.md §25 · p2_posts_outbound_test.rs::template_received_uses_singular_post_prefix。注：真机curl真源.md 未抓此端点（只覆盖 posts/create·makeTopic·revoke·channel·createPosts），故 ① 真源走 helix 实现 + Go handler verbatim 三方证据链。",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1 to_effect::emit_post_updated → im:post:updated (fat 同 emit_post_received 完整 13 键)。触发链：WS post_update action → ws/handlers/post_update.rs apply_post_update → gate EventKind::PostEdit → channel.rs:511 emit_post_updated。",
+    "dom": "docs/spec/send-message-vertical-slice.md（template-received 行表现）+ uc-coverage-ledger.md UC-3.3 §3 data-template-received（Phase2 接线时确认选择器/属性形态）。",
+    "storage": "ws/handlers/post_update.rs §落库注（edit_content_op：UPDATE WHERE id 仅覆盖内容列·保留本地 read_bits）+ full-map/partials/1--backend-http-posts.md §25 DB 表 post（props.template patch）+ uc-coverage-ledger.md UC-3.3 §4 message props.template patch。"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：templateReceived 命令 body 的 postId 由 e2e 在运行时填实值后覆写本字段（占位 *，匹配已发出模板消息的 server_id）；reducer 经 sid 维度锁定目标束（无 tmp，操作既有 server post）。",
+    "postId": null
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "post/templateReceived",
+    "bodyFields": {
+      "postId": "*"
+    },
+    "bodyForbidden": ["post_id", "posts/templateReceived"],
+    "_note": "helix template_received.rs::build → endpoint 'post/templateReceived'（**/post 单数前缀**·命名陷阱：与同文件其余 posts/* 不同前缀）+ body camelCase {postId}。Go anon struct posts.go:721-724 仅 PostId 一字段（响应 CommonRes 无 data）。bodyForbidden 锚 snake_case post_id 泄漏（前端 message.service.ts:528 发 camel，bridge 字节透传不转 snake → builder 读 camel postId，发 snake 即 require_str 失败）+ urlEndsWith 已隐含 /post 单数守护（/posts/templateReceived 不匹配即 fail）。"
+  },
+
+  "projection": {
+    "event": "im:post:updated",
+    "dataKeys": [
+      "channel_id",
+      "event_seq",
+      "msg_id",
+      "temporaryId",
+      "channelId",
+      "userId",
+      "type",
+      "message",
+      "props",
+      "createAt",
+      "updateAt",
+      "readBits",
+      "viewers"
+    ],
+    "_note": "projection-schema §1 emit_post_updated → im:post:updated，data 键集 == fat 完整 13 键（同 emit_post_received）。缺/多即 fail。在线主路径：WS post_update action（updateAt bump · updateBy=SYS · props.template.userIds 含 self userId）→ gate EventKind::PostEdit → emit_post_updated。props 内含 template.userIds（已收回执列表），但 oracle 锁键集到顶层 13 键（props 作单字段·内部 template 结构由 DB/④ 面 + dataValues 可选断言核，避免把后端可变 props 子结构硬编进冻结契约）。"
+  },
+
+  "storage": {
+    "op": "update",
+    "table": "message",
+    "minRows": 1,
+    "_note": "post_update.rs 落库注：edit_content_op = UPDATE WHERE id（仅覆盖内容列·保留本地 read_bits/send_status，C2 BLOCKING-1 不擦已读位）→ props.template patch 落 message 行。op=update（单行 UPDATE WHERE PK·O(1) 热路径）。装饰器 facet④ payload 暴露 {op,table,rows}；props.template.userIds 含 self 由 DB 逐行对齐（四面 oracle ④），此处记录期望 op/table/minRows。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "template-received": "*",
+      "_note": "data-template-received 标记模板已收到态（ledger UC-3.3 §3）。Phase2 UI 设计时定夺具体值形态（布尔标记 vs 含 self 的 userIds 计数）；当前 Phase1 契约设计阶段，选择器/属性值待 UI 实装时确认，先断存在（'*'=仅校验有值）。"
+    },
+    "_note": "spec：模板「已收到」回执后行表现。意图契约：消息行渲染出 data-template-received（self 已确认收到）。e2e 针对意图中的 data-* 契约编写（Phase2 接线后转绿，现跑会红属正常·spec 本身是契约的一部分）。"
+  }
+}

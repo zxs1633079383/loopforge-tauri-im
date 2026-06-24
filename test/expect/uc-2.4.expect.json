@@ -1,0 +1,52 @@
+{
+  "$schema-note": "四面期望文件 (UC-2.4) — 一级/二级回复读族 oracle。读族 (request-response 传输) 四面契约：① outbound HTTP query body ② projection envelope (im:read:result) ③ N/A DOM (读族无写) ④ N/A storage (读路径)。",
+  "ucId": "UC-2.4",
+  "title": "一级/二级回复列表查询 (读族透传)",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/full-map/partials/1--backend-http-posts.md §15-16 getReplies/getReplyBranch",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1.2 query::emit_read_result (读族回灌)",
+    "dom": "N/A (读族无 write 驱动 DOM 变更)",
+    "storage": "N/A (Scan-only 读路径)"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：读族 req_id 由 e2e 在 invoke 时生成；projection 回灌时携 req_id 作 corr_key；hops 不含 tmp (write UC 特有)。",
+    "req_id": null
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndpoints": ["posts/getReplies", "posts/getReplyBranch"],
+    "bodyFields": {
+      "getReplies": {
+        "replyId": "*",
+        "pageSize": "*",
+        "pageNumber": "*",
+        "revoke": "*"
+      },
+      "getReplyBranch": {
+        "replyFirstLevelId": "*",
+        "pageSize": "*",
+        "offset": "*",
+        "revoke": "*"
+      }
+    },
+    "bodyForbidden": ["reply_id", "reply_first_level_id", "page_size", "page_number"],
+    "_note": "真源 partial 1 §15-16：全 camelCase body。getReplies 含 replyId/pageSize/pageNumber/revoke；getReplyBranch 含 replyFirstLevelId/pageSize/offset/revoke。body 值用 * = 仅校验键存在（页码/id 随 invoke 参变）。读族无 WS 回声，HTTP 200 响应体经 query::emit_read_result 透传。"
+  },
+
+  "projection": {
+    "event": "im:read:result",
+    "dataKeys": ["req_id", "body"],
+    "_note": "projection-schema §1.2 query::emit_read_result：读族回灌通道（request-response）。外层恒为 {req_id, body}（成功）或 {req_id, error}（失败）；body = 后端 getReplies/getReplyBranch 响应体原样透传（`{rootPost, replies}` / `{...branch result...}`），inner 结构由后端定。内层 Post 字段不冻结（同 §1.3 上拉翻页），前端直接消费。"
+  },
+
+  "storage": {
+    "_note": "N/A (读路径)。DB Scan message 表取回复链，不落新行；cursor 不推进。"
+  },
+
+  "dom": {
+    "_note": "N/A (读族无 write)。读结果渲染由前端 bridge resolve req_id，在 reply-drawer 组件显示列表，无特定 data-* 契约（与 send-1 write 驱动 DOM 差异）。"
+  }
+}

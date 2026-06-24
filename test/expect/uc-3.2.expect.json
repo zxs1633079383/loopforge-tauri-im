@@ -1,0 +1,63 @@
+{
+  "$schema-note": "四面期望文件 (UC-3.2 单条消息已读) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现或本仓渲染壳。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-3.2",
+  "title": "单条消息已读：点击消息标记已读 → HTTP post/read → WS post_read echo → readBits 更新",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/full-map/partials/6--client-usecases.md 行 142-144 + helix ledger UC-3.2 实证",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1 to_effect::emit_post_read (fat)",
+    "dom": "当前 UC-3.2 四面契约（DOM 预期：data-read-bits 更新）",
+    "storage": "helix/crates/helix-im/docs/projection-schema.md §4 DB 列 message.read_bits 单调覆盖"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：post_read body 的 postId 与投影/WS echo 中的 postId 相同。e2e 运行时填实值后覆写本字段（占位 *，匹配消息ID束）。",
+    "postId": null
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "post/read",
+    "bodyFields": {
+      "postId": "*",
+      "channelId": "*"
+    },
+    "bodyForbidden": ["post_id", "channel_id"],
+    "_note": "partial 6 UC-3.2 + helix ledger 实证：POST /api/cses/post/read，body camelCase `{postId, channelId}`（全两字段必填）。bodyForbidden 锚 snake_case 旧形态泄漏。值用 * = 仅校验键存在（具体值随 run 变）。"
+  },
+
+  "projection": {
+    "event": "im:post:read",
+    "dataKeys": [
+      "channel_id",
+      "event_seq",
+      "msg_id",
+      "temporaryId",
+      "channelId",
+      "userId",
+      "type",
+      "message",
+      "props",
+      "createAt",
+      "updateAt",
+      "readBits",
+      "viewers"
+    ],
+    "_note": "projection-schema §1 emit_post_read fat 完整集（13 键，同 emit_post_received）。缺/多即 fail（FixB 反转：少一字段=漂移）。命名陷阱 createAt 非 createdAt 已由键集锁定。"
+  },
+
+  "storage": {
+    "op": "batch_upsert",
+    "table": "message",
+    "minRows": 1,
+    "_note": "helix ledger 实证 + projection-schema §4：post_read echo 落 message 行（readBits 单调覆盖，该行 post 已存在，update read_bits 列）。装饰器 facet④ payload 仅暴露 {op,table,rows}（不含行内容，避隐私/体积）；行内容由 harness 直接查库验证。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "read-bits": "*",
+      "msg-id": "*"
+    },
+    "_note": "当前阶段（Phase 1 意图契约）：DOM 选择器按 data-msg-id 定位目标消息行，更新 data-read-bits 反映新的已读位图。具体值由后端定，前端直渲。Phase 2 UI 接线后转绿。"
+  }
+}
