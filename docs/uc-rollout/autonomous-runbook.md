@@ -73,13 +73,23 @@ bash scripts/gate.sh                    # 应绿
 - **每 issue 完成/中断写终态行**（全局铁律）：`✅ DONE UC-X #N @ts | commit | 四面绿 | 分支` 追加到 `docs/harness/log.md` 或 ledger；中断写 `⚠️ PARTIAL ... 卡在 ...`。
 
 ## 6.1 四段日志联调 + gRPC 处置（定位「问题在哪一端」）
-四端：**loopforge-tauri-im**（本仓）· **helix**（引擎）· **mattermost-go-server**（go·默认对）· **cses-java**。红时同时看四段日志锁定断点，再按 §3/§6「确认即修」处置。
-- **loopforge 日志**：`/tmp/loopforge/{run-app.log（Rust 引擎装配/hello/increment/出站）, run-ng.log（前端 TS 编译·C007 假死查这）, wdio-out.log（e2e）}` + `run.jsonl`（四面 hop·reducer 读）。
-- **helix 日志**：〔TODO·待用户给路径/启动方式〕——helix 引擎在 loopforge 进程内（run-app.log 含 `helix_im::*` tracing）；独立 helix 日志路径待补。
-- **mattermost-go-server 日志**：〔TODO·待用户给路径/启动方式〕。
-- **cses-java 日志**：〔TODO·待用户给路径/启动方式〕。
-- **gRPC 问题处置**〔TODO·待用户确认确切流程/脚本〕：gRPC 失败 → 修 gRPC 侧（参 mattermost 记忆 `cookieid_equals_userid`：cookieId=userId 桥不许加 userId/teamId）→ **跑重启脚本重启 cses-java**（脚本路径待补，cses-java 在 `/Users/mac28/workspace/java/cses`）→ 重发请求复跑。
-> ⚠️ 本节 TODO 必须由用户补全日志路径 + gRPC 重启脚本后，autonomous 才能真四段联调。补全前红只能定位到 loopforge/helix（靠 run-app.log + run.jsonl）。
+四端（红时同时看，锁定断在哪段，再按 §3/§6「确认即修+验证」）：
+
+| 端 | 实时日志 | 说明 |
+|---|---|---|
+| **loopforge**（本仓） | `/tmp/loopforge/run-app.log`（Rust 引擎装配/hello/increment/出站·`run.sh` 自动落）· `run-ng.log`（前端 TS 编译·**C007 假死查这**）· `wdio-out.log`（e2e）· `run.jsonl`（四面 hop·reducer 读） | run.sh 自动写·开箱即用 |
+| **helix**（引擎） | 同 `/tmp/loopforge/run-app.log` → `grep helix_im` / `grep -iE "im::ws\|increment\|acl\|gate"` | helix 跑在 loopforge 进程内·tracing 进 run-app.log |
+| **mattermost-go**（默认对·仅 gRPC/诡异疑） | 控制台 STDOUT → 启动时重定向：`cd /Users/mac28/workspace/golangProject/mattermost/server && go run . server > /tmp/mm-go.log 2>&1 &` | config `server/config/config.json`·LogSettings 默认 console |
+| **cses-java** | 控制台 STDOUT（logback ConsoleAppender）→ 启动时重定向 `> /tmp/cses-java.log 2>&1`（见下 gRPC 重启）| gradle root `/Users/mac28/workspace/java/cses`·logback `helm/cses-server/config/logback.xml` |
+
+四段 tail：`tail -f /tmp/loopforge/run-app.log /tmp/cses-java.log /tmp/mm-go.log`（+ run.jsonl 给 reducer）。
+
+### gRPC 出问题时（确认是 gRPC/连接·非 loopforge/helix 逻辑）
+1. **重建隧道**（telepresence 需管理员）：`sudo bash /Users/mac28/workspace/java/zlc_ai/GenericAgent/tp-connect.sh` —— 提示输密码就输**四个空格** `    `。此脚本=Clash Verge(TUN)+Telepresence 共存，重建到 k8s 远程服务的路由（gRPC 连接）。它自己 log 在 `~/Library/Logs/tp-connect.log`。
+2. **重启 cses-java**：`pkill -f cses`（kill 旧进程）→ `cd /Users/mac28/workspace/java/cses && ./gradlew bootRun > /tmp/cses-java.log 2>&1 &`（gradlew 直接启动·用户确认）。
+3. **重发请求复跑**：等 cses-java 起好（tail /tmp/cses-java.log 见 started）→ 重跑 `bash scripts/run.sh -- --spec test/specs/uc-X.e2e.mjs`。
+> gRPC 逻辑缺陷（非连接）参记忆 `cookieid_equals_userid`：cookieId=userId 桥·`app/grpcx9.go` headers struct 不许加 userId/teamId。
+> **判据**：go-server **默认对**——只有四段日志显示 gRPC 连接断/超时/诡异才走本节；loopforge/helix 逻辑红走 §3 直接修。
 
 ## 7. 完成判据（整任务收尾）
 - #7-#12,#14-#41 的 ready-for-agent issues 全绿关闭（helix-blocked 的标 🟡 + bug 报告·不算失败）。
