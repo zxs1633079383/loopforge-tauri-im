@@ -85,6 +85,10 @@ bash scripts/gate.sh                    # 应绿
 四段 tail：`tail -f /tmp/loopforge/run-app.log /tmp/cses-java.log /tmp/mm-go.log`（+ run.jsonl 给 reducer）。
 
 ### gRPC 出问题时（确认是 gRPC/连接·非 loopforge/helix 逻辑）
+**🔔 特征信号（归一类·见此即判 gRPC 隧道断）**：mattermost-go 日志出现
+`error | no service available` + `app/grpcx9.go:367`（gRPC 客户端够不到远程服务=telepresence 隧道断/远程 service 不可达）。
+检测：`grep -E "no service available|grpcx9\.go" /tmp/mm-go.log` 命中 → 走下面三步（**不是** loopforge/helix 逻辑红，别去改本仓）。
+
 1. **重建隧道**（telepresence 需管理员）：`sudo bash /Users/mac28/workspace/java/zlc_ai/GenericAgent/tp-connect.sh` —— 提示输密码就输**四个空格** `    `。此脚本=Clash Verge(TUN)+Telepresence 共存，重建到 k8s 远程服务的路由（gRPC 连接）。它自己 log 在 `~/Library/Logs/tp-connect.log`。
 2. **重启 cses-java**（**Micronaut 框架·非 Spring Boot**）：`pkill -f cses`（kill 旧进程）→ `cd /Users/mac28/workspace/java/cses && ./gradlew run > /tmp/cses-java.log 2>&1 &`（**`gradlew run`**·用户确认）。
 3. **重发请求复跑**：等 cses-java 起好（tail /tmp/cses-java.log 见 started）→ 重跑 `bash scripts/run.sh -- --spec test/specs/uc-X.e2e.mjs`。
