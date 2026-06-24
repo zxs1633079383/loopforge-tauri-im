@@ -24,7 +24,7 @@ use tauri::Manager;
 /// JSONL hop 日志落点（env 覆盖 > 默认 /tmp）。失败回退 stdout（fail-soft，不让日志崩 app）。
 fn build_log_sink() -> LogSink {
     let path =
-        std::env::var("LOOPFORGE_RUN_JSONL").unwrap_or_else(|_| "/tmp/loopforge-run.jsonl".into());
+        std::env::var("HELIX_RUN_JSONL").unwrap_or_else(|_| "/tmp/loopforge/run.jsonl".into());
     LogSink::to_file(&path).unwrap_or_else(|e| {
         tracing::warn!(error = %e, %path, "JSONL 日志文件创建失败，回退 stdout");
         LogSink::to_writer(Box::new(std::io::stdout()))

@@ -21,7 +21,7 @@ import { ImStoreService } from "./im/im-store.service";
   imports: [FormsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <main class="im" [attr.data-ready]="store.ready()">
+    <main class="im" [attr.data-ready]="store.ready()" [attr.data-active-channel]="channelId">
       <header class="im__hd">
         <span>LoopForge IM</span>
         <span class="im__ready" [attr.data-ready]="store.ready()">
@@ -50,6 +50,7 @@ import { ImStoreService } from "./im/im-store.service";
           class="im__input"
           type="text"
           data-testid="compose-input"
+          data-role="composer-input"
           placeholder="输入消息…"
           [(ngModel)]="draft"
           (keydown.enter)="onSend()"
@@ -100,8 +101,8 @@ import { ImStoreService } from "./im/im-store.service";
 export class AppComponent implements OnInit, OnDestroy {
   readonly store = inject(ImStoreService);
 
-  /** 当前频道 —— 竖切 UC-send-1 固定单频道；W1/W3 可经 query 注入覆盖 */
-  private readonly channelId = "demo-channel";
+  /** 当前频道 —— 竖切 UC-send-1 固定单频道；上 DOM [data-active-channel] 供 e2e 取 CHANNEL_ID（protected 供模板访问） */
+  protected readonly channelId = "demo-channel";
 
   draft = "";
 
