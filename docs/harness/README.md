@@ -10,7 +10,7 @@
 | C001 | helix 依赖单一 git 快照（全 helix-* 同源同 rev·禁 path/git 混用） | active |
 | C002 | 就绪 probe 判据与投影名解耦（禁硬编 name.contains("increment")） | active |
 | C003 | live 验证须 seeded DB（清 DB 无 active channel·send 族全卡） | active |
-| C004 | 四面契约只读 + helix 只标记不改（红→bug 报告喂 helix workflow） | active |
+| C004 | 四面契约只读·红转绿改实现不改 oracle（helix/loopforge 缺陷确认即修+验证） | active |
 | C005 | reducer 跨形态归一（corr-key 探 posts[]·storage rows‖keys） | active |
 | C006 | UC rollout 依赖序 + 每阶段全绿→tag+补用例 | active |
 | C007 | Angular 模板加 (event) 必同步加组件方法（否则 ng serve 挂·run 假死） | active |
