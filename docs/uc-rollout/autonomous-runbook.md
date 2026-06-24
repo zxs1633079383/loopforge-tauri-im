@@ -86,7 +86,7 @@ bash scripts/gate.sh                    # 应绿
 
 ### gRPC 出问题时（确认是 gRPC/连接·非 loopforge/helix 逻辑）
 1. **重建隧道**（telepresence 需管理员）：`sudo bash /Users/mac28/workspace/java/zlc_ai/GenericAgent/tp-connect.sh` —— 提示输密码就输**四个空格** `    `。此脚本=Clash Verge(TUN)+Telepresence 共存，重建到 k8s 远程服务的路由（gRPC 连接）。它自己 log 在 `~/Library/Logs/tp-connect.log`。
-2. **重启 cses-java**：`pkill -f cses`（kill 旧进程）→ `cd /Users/mac28/workspace/java/cses && ./gradlew bootRun > /tmp/cses-java.log 2>&1 &`（gradlew 直接启动·用户确认）。
+2. **重启 cses-java**（**Micronaut 框架·非 Spring Boot**）：`pkill -f cses`（kill 旧进程）→ `cd /Users/mac28/workspace/java/cses && ./gradlew run > /tmp/cses-java.log 2>&1 &`（**`gradlew run`**·用户确认）。
 3. **重发请求复跑**：等 cses-java 起好（tail /tmp/cses-java.log 见 started）→ 重跑 `bash scripts/run.sh -- --spec test/specs/uc-X.e2e.mjs`。
 > gRPC 逻辑缺陷（非连接）参记忆 `cookieid_equals_userid`：cookieId=userId 桥·`app/grpcx9.go` headers struct 不许加 userId/teamId。
 > **判据**：go-server **默认对**——只有四段日志显示 gRPC 连接断/超时/诡异才走本节；loopforge/helix 逻辑红走 §3 直接修。
