@@ -1,0 +1,17 @@
+[package]
+name = "helix-driver-instrument"
+version = "0.1.0"
+edition = "2021"
+description = "Recording<P> port 装饰器：日志/金标帧录制/回放三合一，包在 helix 的 port 边界上（helix 引擎零改）"
+
+[dependencies]
+# dev 期 path dep 指向 helix checkout（CLAUDE.md §0）；release 改 pin git rev。
+helix-core  = { path = "../../../helix/crates/helix-core" }
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+bytes       = { workspace = true }
+async-trait = { workspace = true }
+
+[dev-dependencies]
+# 测试用轻量 block_on（不引 tokio，装饰器本身 executor-agnostic）。
+futures = "0.3"

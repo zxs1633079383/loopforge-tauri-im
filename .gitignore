@@ -1,0 +1,19 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# 前端 / Tauri（后续接入）
+/node_modules/
+/dist/
+/.angular/
+/src-tauri/target/
+
+# 测试产物 / tape 临时
+*.db
+*.db-wal
+*.db-shm
+/test/reports/
+
+# OS
+.DS_Store
