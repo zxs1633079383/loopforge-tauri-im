@@ -5,6 +5,8 @@
 >
 > **真源**：本文件 = 前端 ③ DOM 面的**设计蓝图**；锚 `docs/uc-rollout/rollout-checklist.md`（阶段 + ③ DOM 锚点）+ `docs/uc-coverage-ledger.md`（各 UC 四面细节）+ `docs/spec/send-message-vertical-slice.md §4`（已绿竖切 DOM 契约）。
 > **现状基线**：`src/app/app.component.ts`（消息列表 + composer + send/document 按钮 + data-ready/data-active-channel）已绿（UC-1.1/1.2/1.5）。本方案是**加法式扩展**，不回退已绿。
+>
+> ✅ **骨架就位**（issue #46）：6 语义区（H/CL/ML/MB/CP/AX）容器 + 消息行 data-* 全集（冻结 8 + 待加 8）+ 全交互件挂载位 + 配套组件方法（C007）+ store 区域信号占位**一次搭到位**。各 UC issue（#7-#45）只往现成区绑数据/接真实 invoke，不再重搭结构。`pnpm exec ng build --configuration development` 无 TS 错·`bash scripts/gate.sh` 绿·冻结集形态未动。
 
 ---
 

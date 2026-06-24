@@ -1,6 +1,13 @@
 import { Injectable, computed, inject, signal } from "@angular/core";
 import { TauriBridgeService } from "./tauri-bridge.service";
-import { MessageRow } from "./message-row.model";
+import {
+  BookmarkRow,
+  ChannelRow,
+  MemberRow,
+  MessageRow,
+  ReplyRow,
+  TodoRow,
+} from "./message-row.model";
 import {
   BusEnvelope,
   CHANNELS_PROJECTION_CHANNEL,
@@ -38,6 +45,37 @@ export class ImStoreService {
   /** 活动频道：stream 里第一个真实频道胜出（含 increment）→ 锚定，供发送/data-active-channel。 */
   private readonly _activeChannel = signal<string>("");
   readonly activeChannel = computed(() => this._activeChannel());
+
+  // ——— 骨架区域信号（issue #46 · CL/MB/AX 语义区容器占位 · 各 UC issue 逐个填 apply 分支）———
+  // 当前全空列表，模板渲染空容器（覆盖所有 UC 渲染容器）。壳纯渲染：data-* 直映投影，不在 JS 合成。
+
+  /** 频道列表（CL 区 · spec §1.2）。空占位 → 各 UC（4.1/5.x/11.x）填 applyChannels*。 */
+  private readonly _channels = signal<ChannelRow[]>([]);
+  readonly channels = computed(() => this._channels());
+
+  /** 成员列表（MB 区 · spec §1.4）。空占位 → UC-6.x 填 applyChannelMember*。 */
+  private readonly _members = signal<MemberRow[]>([]);
+  readonly members = computed(() => this._members());
+
+  /** 成员区回读串（data-members · UC-6.1）。空占位 → 投影透传 channel 对象成员集。 */
+  private readonly _membersAttr = signal<string>("");
+  readonly membersAttr = computed(() => this._membersAttr());
+
+  /** 健康探针（H 区 · data-health · UC-12.1）。空占位 → onHealth() 填。 */
+  private readonly _health = signal<string>("");
+  readonly health = computed(() => this._health());
+
+  /** 书签列表（AX bookmark-panel · UC-9.x）。空占位。 */
+  private readonly _bookmarks = signal<BookmarkRow[]>([]);
+  readonly bookmarks = computed(() => this._bookmarks());
+
+  /** 待办列表（AX todo-panel · UC-10.1）。空占位。 */
+  private readonly _todos = signal<TodoRow[]>([]);
+  readonly todos = computed(() => this._todos());
+
+  /** 回复链（AX reply-drawer · UC-2.4）。空占位。 */
+  private readonly _replies = signal<ReplyRow[]>([]);
+  readonly replies = computed(() => this._replies());
 
   private unlisten: (() => void) | null = null;
   private readyTimer: ReturnType<typeof setTimeout> | null = null;
