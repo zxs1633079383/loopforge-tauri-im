@@ -236,8 +236,14 @@ export class ImStoreService {
     return String(v);
   }
 
+  /** cses-client 风格 26 位 id（@ccc ObjectId.create 同款 mattermost z-base-32 字符集）。 */
   private genTempId(): string {
-    // 临时 id：时间戳 + 随机；只需本会话内唯一作锚。
-    return `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    // z-base-32 charset（现网 server id 同字符集）；26×5≈130 bit 随机，会话内唯一作锚。
+    const charset = "ybndrfg8ejkmcpqxot1uwisza345h769";
+    let s = "";
+    for (let i = 0; i < 26; i++) {
+      s += charset[Math.floor(Math.random() * 32)];
+    }
+    return s;
   }
 }
