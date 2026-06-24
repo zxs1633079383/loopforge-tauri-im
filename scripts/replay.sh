@@ -40,7 +40,7 @@ APP_LOG="$RUN_LOG_DIR/replay-app.log"
 
 trap cleanup_chain EXIT
 
-ok "前置检查通过（tape=$TAPE_FILE）"
+ok "前置检查通过（tape=${TAPE_FILE}）"
 
 # —— 起前端一次（多次 wdio run 复用同一前端，省启动）——
 start_frontend "$NG_LOG"

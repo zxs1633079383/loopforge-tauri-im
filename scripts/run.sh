@@ -11,7 +11,7 @@
 # 想要确定性请用 scripts/replay.sh；想录金标帧请用 scripts/record.sh。
 #
 # 与 record/replay 的区别：run.sh 用 `cargo run`（边构建边起，开发态），
-# record/replay 用预构建二进制（$APP_BIN）求快与确定。
+# record/replay 用预构建二进制（${APP_BIN}）求快与确定。
 #
 # 用法：
 #   scripts/run.sh [-- <wdio 额外参数>]
@@ -32,7 +32,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-log "${C_DIM}== run.sh：从零到四面报告（模式=$MODE）==${C_RST}"
+log "${C_DIM}== run.sh：从零到四面报告（模式=${MODE}）==${C_RST}"
 require_cmd curl "就绪轮询"
 require_cmd lsof "端口检查"
 require_cmd pnpm "前端 / wdio"
@@ -56,7 +56,7 @@ wait_http "http://localhost:$FRONTEND_PORT" "前端(ng serve)" 180
 
 # —— 起 app：cargo run debug（边构建边起；首次构建慢，耐心等 webdriver 就绪）——
 : >"$HELIX_RUN_JSONL" 2>/dev/null || true
-info "起 app：cargo run（src-tauri，debug，$MODE_ENV_VAR=$MODE，webdriver $WEBDRIVER_PORT，run.jsonl=$HELIX_RUN_JSONL）"
+info "起 app：cargo run（src-tauri，debug，${MODE_ENV_VAR}=${MODE}，webdriver ${WEBDRIVER_PORT}，run.jsonl=${HELIX_RUN_JSONL}）"
 ( cd "$REPO_ROOT" && env \
     "$MODE_ENV_VAR=$MODE" \
     "HELIX_RUN_JSONL=$HELIX_RUN_JSONL" \

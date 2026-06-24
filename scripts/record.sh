@@ -60,7 +60,7 @@ if [ -f "$TAPE_FILE" ]; then
 fi
 
 # —— 起链路 ——
-ok "前置检查通过（device=$HELIX_DEVICE_ID，inflight=${HELIX_HTTP_MAX_INFLIGHT:-默认}）"
+ok "前置检查通过（device=${HELIX_DEVICE_ID}，inflight=${HELIX_HTTP_MAX_INFLIGHT:-默认}）"
 start_frontend "$NG_LOG"
 # Record 模式 + 真设备 + inflight 透传给 app（组装根读这些 env 选模式/拼装 EngineDeps）
 start_app "record" "$APP_LOG" \
@@ -78,7 +78,7 @@ fi
 # —— 验 tape 落盘 ——
 if [ -f "$TAPE_FILE" ]; then
   SZ=$(wc -c <"$TAPE_FILE" | tr -d ' ')
-  ok "金标帧已录：$TAPE_FILE（${SZ} bytes）"
+  ok "金标帧已录：${TAPE_FILE}（${SZ} bytes）"
   log ""
   log "${C_YEL}下一步（人审冻结）：${C_RST}"
   log "  1. 审 tape：确认 inbound(go 帧) / clock / ids / randoms 完整且无敏感数据。"
@@ -86,5 +86,5 @@ if [ -f "$TAPE_FILE" ]; then
   log "  3. 日常跑确定性 Replay：scripts/replay.sh"
 else
   die "Record 跑完但未生成 tape：$TAPE_FILE
-  —— 组装根 Record 模式可能未调 ctx.save_tape()（W1 集成缝）；检查 $APP_LOG。"
+  —— 组装根 Record 模式可能未调 ctx.save_tape()（W1 集成缝）；检查 ${APP_LOG}。"
 fi

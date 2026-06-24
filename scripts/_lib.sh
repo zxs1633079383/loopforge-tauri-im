@@ -61,19 +61,19 @@ require_cmd() {
 assert_port_free() {
   local p="$1" name="$2" pid
   pid="$(lsof -ti:"$p" 2>/dev/null || true)"
-  [ -z "$pid" ] || die "端口 $p（$name）已被占用 pid=$pid —— 先收链路或换端口（FRONTEND_PORT/WEBDRIVER_PORT）"
+  [ -z "$pid" ] || die "端口 ${p}（${name}）已被占用 pid=$pid —— 先收链路或换端口（FRONTEND_PORT/WEBDRIVER_PORT）"
 }
 
 # —— 等待 HTTP 就绪（轮询，超时 fail-loud）——
 # 用法：wait_http <url> <名字> <超时秒>
 wait_http() {
   local url="$1" name="$2" timeout="${3:-120}" i
-  info "等待 $name 就绪：$url（≤${timeout}s）"
+  info "等待 ${name} 就绪：${url}（≤${timeout}s）"
   for ((i=0; i<timeout; i++)); do
-    if curl -sf -o /dev/null "$url" 2>/dev/null; then ok "$name 就绪（$url）"; return 0; fi
+    if curl -sf -o /dev/null "$url" 2>/dev/null; then ok "${name} 就绪（${url}）"; return 0; fi
     sleep 1
   done
-  die "$name 超时未就绪（$url，${timeout}s）—— 检查上游进程日志"
+  die "${name} 超时未就绪（${url}，${timeout}s）—— 检查上游进程日志"
 }
 
 # —— 等待前端（1420）+ webdriver（4445）双就绪 ——
@@ -91,7 +91,7 @@ assert_app_built() {
 
 # —— 前置：wdio 配置 + node deps（W3/W2 产物）——
 assert_wdio_ready() {
-  [ -f "$WDIO_CONF" ] || die "未找到 wdio 配置：$WDIO_CONF（W3 测试 / W2 接线落地后）"
+  [ -f "$WDIO_CONF" ] || die "未找到 wdio 配置：${WDIO_CONF}（W3 测试 / W2 接线落地后）"
   [ -d "$REPO_ROOT/node_modules" ] || die "node_modules 缺失 —— 先 \`pnpm install\`（W2 前端落地后）"
 }
 
@@ -116,7 +116,7 @@ cleanup_chain() {
 start_frontend() {
   local logf="$1"
   require_cmd pnpm "前端构建器"
-  info "起前端：pnpm start（端口 $FRONTEND_PORT，日志 $logf）"
+  info "起前端：pnpm start（端口 ${FRONTEND_PORT}，日志 ${logf}）"
   ( cd "$REPO_ROOT" && nohup pnpm start >"$logf" 2>&1 & )
 }
 
@@ -127,7 +127,7 @@ start_app() {
   assert_app_built
   # app 写 hop 日志到 HELIX_RUN_JSONL（= reducer 读的同一份）；重起前清旧 JSONL 防跨轮串味。
   : >"$HELIX_RUN_JSONL" 2>/dev/null || true
-  info "起 debug app：$APP_BIN（$MODE_ENV_VAR=$mode，webdriver $WEBDRIVER_PORT，run.jsonl=$HELIX_RUN_JSONL，日志 $logf）"
+  info "起 debug app：${APP_BIN}（${MODE_ENV_VAR}=${mode}，webdriver ${WEBDRIVER_PORT}，run.jsonl=${HELIX_RUN_JSONL}，日志 ${logf}）"
   ( cd "$REPO_ROOT" && env \
       "$MODE_ENV_VAR=$mode" \
       "HELIX_RUN_JSONL=$HELIX_RUN_JSONL" \
@@ -140,7 +140,7 @@ start_app() {
 # 保留 wdio 真实退出码（PIPESTATUS[0]，不被 tee 吞掉）。
 run_wdio() {
   assert_wdio_ready
-  info "跑 wdio：$WDIO_CONF（run.jsonl=$HELIX_RUN_JSONL）"
+  info "跑 wdio：${WDIO_CONF}（run.jsonl=${HELIX_RUN_JSONL}）"
   local rc
   ( cd "$REPO_ROOT" && env "HELIX_RUN_JSONL=$HELIX_RUN_JSONL" \
       pnpm exec wdio run "$WDIO_CONF" "$@" ) 2>&1 | tee "$WDIO_OUT"

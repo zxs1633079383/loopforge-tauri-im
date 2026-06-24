@@ -31,7 +31,7 @@ DIFF_OUT="$RUN_LOG_DIR/reducer-diff.txt"
 
 # —— 前置：两 repo 都在 ——
 assert_two_repos() {
-  [ -d "$HELIX_ROOT" ]   || die "helix checkout 不存在：$HELIX_ROOT（经 HELIX_ROOT 覆盖）"
+  [ -d "$HELIX_ROOT" ]   || die "helix checkout 不存在：${HELIX_ROOT}（经 HELIX_ROOT 覆盖）"
   [ -f "$HELIX_ROOT/Cargo.toml" ] || die "$HELIX_ROOT 不像 helix workspace（缺 Cargo.toml）"
   [ -d "$REPO_ROOT/src-tauri" ]   || die "testbed 缺 src-tauri（W1 落地后）"
   ok "两 repo 就位：helix=$HELIX_ROOT · testbed=$REPO_ROOT"
@@ -60,8 +60,8 @@ rerun_replay() {
 # —— ④ 收 reducer diff（W3 reducer 在 wdio spec 内跑，「断在哪一跳」打到控制台）——
 # W3 实现（test/specs/uc-send-1.e2e.mjs）：读 $HELIX_RUN_JSONL → runFourFacet 聚 corr_key
 # → console.log('[UC-send-1 四面报告] ...') + 逐面 '✖ <facet>: ...'。
-# 故 reducer diff 真源 = wdio 控制台输出（_lib.sh 的 run_wdio 已 tee 到 $WDIO_OUT）。
-# 本函数从 $WDIO_OUT 抠四面报告行落 $DIFF_OUT，供 loop 驱动器据此改实现。
+# 故 reducer diff 真源 = wdio 控制台输出（_lib.sh 的 run_wdio 已 tee 到 ${WDIO_OUT}）。
+# 本函数从 ${WDIO_OUT} 抠四面报告行落 ${DIFF_OUT}，供 loop 驱动器据此改实现。
 collect_reducer_diff() {
   if [ -f "$WDIO_OUT" ]; then
     # 抠四面报告 + 断点行 + 原始 run.jsonl 路径，组装喂驱动器的 diff 快照。
@@ -72,7 +72,7 @@ collect_reducer_diff() {
     } >"$DIFF_OUT"
     ok "reducer diff 已收：$DIFF_OUT"
   else
-    warn "未找到 wdio 输出（$WDIO_OUT）—— replay 可能未跑到 wdio。以退出码为准。"
+    warn "未找到 wdio 输出（${WDIO_OUT}）—— replay 可能未跑到 wdio。以退出码为准。"
     : >"$DIFF_OUT"
   fi
 }
@@ -87,7 +87,7 @@ run_one_round() {
     return 0
   else
     collect_reducer_diff
-    warn "本轮：有红 —— diff 见 $DIFF_OUT（喂回 loop 驱动器决策下一改）"
+    warn "本轮：有红 —— diff 见 ${DIFF_OUT}（喂回 loop 驱动器决策下一改）"
     return 1
   fi
 }
@@ -109,14 +109,14 @@ case "$SUB" in
 
       # ───────────────────────────────────────────────────────────────
       # TODO（loop 驱动器接缝 ①）：在此调驱动器「据上轮 diff 改 helix 实现」。
-      #   驱动器（helix-loop-engine skill / Workflow / /loop）读 $DIFF_OUT，
+      #   驱动器（helix-loop-engine skill / Workflow / /loop）读 ${DIFF_OUT}，
       #   定位「断在哪一跳」→ 在 $HELIX_ROOT 改对应 Rust 实现（契约只读，禁改期望/tape）。
       #   接法示例：
       #     bash "$DEVLOOP_FIX_HOOK" "$DIFF_OUT" "$HELIX_ROOT"   # 由 env 注入
       #   未注入钩子时本脚本不改代码，仅 rebuild+replay 验证当前状态。
       # ───────────────────────────────────────────────────────────────
       if [ -n "${DEVLOOP_FIX_HOOK:-}" ] && [ -x "$DEVLOOP_FIX_HOOK" ]; then
-        info "调 fix 钩子：$DEVLOOP_FIX_HOOK（据 $DIFF_OUT 改 helix 实现）"
+        info "调 fix 钩子：${DEVLOOP_FIX_HOOK}（据 ${DIFF_OUT} 改 helix 实现）"
         "$DEVLOOP_FIX_HOOK" "$DIFF_OUT" "$HELIX_ROOT" \
           || warn "fix 钩子返回非 0（本轮无改动或修复失败）"
       else
@@ -134,7 +134,7 @@ case "$SUB" in
       #   默认：红则进下一轮。驱动器可据 diff 决定 break（如同一跳连续 N 轮不动 = 卡死告警）。
       # ───────────────────────────────────────────────────────────────
     done
-    die "循环达上限 ${MAX} 轮仍未全绿 —— 见 $DIFF_OUT；可能需人介入或换修复策略。" 1
+    die "循环达上限 ${MAX} 轮仍未全绿 —— 见 ${DIFF_OUT}；可能需人介入或换修复策略。" 1
     ;;
 
   *)
