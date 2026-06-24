@@ -1,114 +1,90 @@
-# UC Rollout 最终计划 + 逐项勾选清单（依赖序）
+# UC Rollout 最终计划 + 勾选清单（依赖序 · 细粒度四面锚点）
 
-> 配套：契约细节 = `docs/uc-coverage-ledger.md`。本文件 = **最终执行计划 + 进度勾选**（e2e 四面全绿 → 自动打钩）。
-> 更新于 2026-06-24（分支 `feat/uc-rollout-domain-a`）。取代旧 `00-rollout-plan.md` 的优先序。
+> 契约细节 = `docs/uc-coverage-ledger.md`；四面真源 = helix `真机curl真源.md`(①) / `projection-schema.md`(②) / `partials/8`(④)。
+> 本文件 = 执行计划 + 进度（e2e 四面全绿 → 自动打钩）。更新 2026-06-24。
+> **范围**：只列可铺 UC（含 🌙 按需）。⛔ 阻塞/gap（1.6 无编辑端点 / 5.6 公告无 echo / 5.7 在线状态后端阻塞 / 7.x 搜索空桩 / 4.3 too_long harness-gap / bot-agent 已移除）**不在本清单管理**。
 
-## 状态图例
-- `[x]` ✅ 四面全绿（真 Tauri+WKWebView+真 Go，已 tag）
-- `[ ]` ⬜ L1 待铺（**单账号自发回流**窗口可闭环跑——本批次主线）
-- `[2]` 🔗 需**第二真实连接**（跨账号广播·**可行**·L1 稳后做，单列一批）
-- `[~]` 🟡 主路径 L1 可绿 + 子项需 `[2]`
-- `[n]` 🌙 untested·按需（物理限制 / 真 go 夜间·如文件上传）
-- `[-]` ⛔ 后端真阻塞（改契约才能过 = 违护栏·暂不做）
-
-## 关键原则：**按依赖序调用**
-有些 UC 依赖前序数据（没有群聊就无法发消息；没有已发消息就无法撤回/已读/转发）。执行链：
-**就绪 → 建频道 → 发消息 → 对消息操作 → 历史 → 频道/成员管理 → 杂项**。每个 UC 复用前序产出的真实数据。
+## 图例
+`[x]`✅四面全绿 · `[ ]`⬜L1待铺(单账号自发回流) · `[~]`🟡主路径绿+子项需双连接 · `[2]`🔗需第二真实连接 · `[n]`🌙按需(真go夜间) · 难度 S/M/D
+> **依赖序铁律**：没有群聊无法发消息；没有已发消息无法撤回/已读/转发。后序复用前序真实数据。
 
 ---
 
-## 阶段 0 · 就绪根（所有 UC 前置）
-| 勾 | UC | 标题 | 依赖 | 说明 |
-|---|---|---|---|---|
-| [ ] | 4.1 | hello 根群全量增量 | — | **就绪 probe 锚点**；seeded db 已可起，本 UC 验 increment 四面 |
+## 阶段 0 · 就绪根
+| 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
+|---|---|---|---|---|---|---|---|
+| [ ] | 4.1 hello 全量增量 | (WS hello 自动)/`channels/load/increment` | `partials/8 http.rs:25`{timestamp,cursors:[{channelId,fromSeq}]} | `emit_channels_loaded`+`emit_channel_increment`+`emit_channel_update` | data-ready + channel 行 | `channel`+`channel_event_cursor` | M |
 
-## 阶段 1 · 建频道（产出可发消息的容器）
-| 勾 | UC | 标题 | 依赖 | 说明 |
-|---|---|---|---|---|
-| [ ] | 5.1 | 创建群聊 | 4.1 | `channel/create` → channel_created；**产出新频道供后续发消息** |
-| [ ] | 5.2 | 创建话题 | 5.1 | `posts/makeTopic`(type=T) |
+## 阶段 1 · 建频道（产出可发消息容器）
+| 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
+|---|---|---|---|---|---|---|---|
+| [ ] | 5.1 创建群聊 | `im_create_channel`→`channel/create` | `真机curl真源 §4`(type:P/users role/picture/forceCreate) | `emit_channel_created`{channel_id,channel} | data-channel-id 新行 | `channel` 新行 | M |
+| [ ] | 5.2 创建话题 | `im_make_topic`→`posts/makeTopic` | `真机curl真源 §2`(rootId/users CREATOR/picture) | `emit_channel_created`(type=T) | data-channel-id(topic) | `channel`(type=T) | M |
 
-## 阶段 2 · 发消息（依赖频道存在）
-| 勾 | UC | 标题 | 依赖 | 说明 |
-|---|---|---|---|---|
-| [x] | 1.1 | 发文本 | 频道 | ✅ 竖切根 |
-| [x] | 1.2 | 发 DOCUMENT | 1.1 | ✅ type 透传链 |
-| [ ] | 1.9 | 加急 + 加急已读 | 1.1 | `expedite`（复用 type/props 透传链）|
-| [ ] | 1.8 | 快捷回复 emoji | 1.1 | `quick_reply` + props |
-| [ ] | 1.10 | 定时消息 | 频道 | `schedule` 建/撤/查 |
+## 阶段 2 · 发消息（依赖频道）
+| 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
+|---|---|---|---|---|---|---|---|
+| [x] | 1.1 发文本 | `im_send`→`posts/create` | `真机curl真源 §1`(camel 全字段) | `emit_post_received`(fat)+`emit_post_sending` | data-msg-id(tmp→server) data-send-status data-event-seq | `message`+cursor+1 | S |
+| [x] | 1.2 发文档 | `im_send`(type=DOCUMENT)→`posts/create` | `真机curl真源 §1`+type 透传 | `emit_post_received`(fat) | 同 1.1 + data-type=DOCUMENT | `message` | S |
+| [ ] | 1.9 加急+加急已读 | `posts/urgentPost`/`urgentConfirm` | `partials/6 UC-1.9` | `emit_post_updated`(fat,expedite 归一) | data-urgent | `message.props`(expedite) | M |
+| [ ] | 1.8 快捷回复 emoji | `posts/quickReply` | `partials/6 UC-1.8`{userId,postId,emoji} | `emit_post_updated`(fat) | data-reactions | `message.props` | S |
+| [ ] | 1.10 定时消息 | `posts/createSchedule`/`cancelSchedule`/`getSchedule` | `partials/6 UC-1.10` | `emit_schedule_created`/`canceled`{channelId,hasSchedulePost} | data-has-schedule | `channel.has_schedule_post` | M |
+| [n] | 1.3 发图片/文件 🌙 | (上传·java 接口·todo)+`im_send`→`posts/create` | `真机curl真源 §1`+props.file | `emit_post_received`(fat) | data-send-status:uploading→sent | `message` | D(真go夜间) |
 
-## 阶段 3 · 对已发消息操作（依赖阶段 2 产出 server_id）
-| 勾 | UC | 标题 | 依赖 | 说明 |
-|---|---|---|---|---|
-| [x] | 1.5 | 撤回 | 1.1 | ✅（spec 内先发后撤）|
-| [ ] | 3.2 | 单条已读 | 1.1 | `post/read` → im:post:read / data-read-bits |
-| [ ] | 3.1 | 会话已读 | 1.1 | `channels/view`(endpoint 待核) → im:post:read |
-| [ ] | 3.3 | 模板已收到 | 1.1 | `post/templateReceived`(单数) → im:post:updated |
-| [ ] | 1.4 | 重发失败 | 1.1 | 同 tmp 重走 send / status upsert |
-| [ ] | 1.7 | 转发/合并 | 1.1 | `posts/createPosts` ×N（批量 corr-key 已就绪）|
-| [ ] | 2.4 | 一级/二级回复 | 1.1 | replied 字段 |
+## 阶段 3 · 对已发消息操作（依赖阶段 2 server_id）
+| 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
+|---|---|---|---|---|---|---|---|
+| [x] | 1.5 撤回 | `im_revoke`→`posts/revoke` | `真机curl真源 §3`{postId}✅ | `emit_post_batch_updated`(在线)/`emit_post_deleted`(离线) | data-revoke=1/行移除 | `message` mark_revoked | S |
+| [ ] | 3.2 单条已读 | `im_post_read`→`post/read` | `partials/6 UC-3.2` | `emit_post_read`(fat) | data-read-bits | `message.read_bits` | S |
+| [ ] | 3.1 会话已读 | `im_read_channel`→`channels/view` | `partials/6 UC-3.1`{channels:[{id}]}(endpoint 待核) | `emit_post_read`(fat)/`emit_channel_read_echo`(fat) | data-read-bits(self 位'1') | `message.read_bits` 单调覆盖 | S/M |
+| [ ] | 3.3 模板已收到 | `templateReceived`→`post/templateReceived` | `partials/6 UC-3.3`{postId}(单数 path) | `emit_post_updated`/read:result | data-template-received | `message` | S |
+| [ ] | 1.4 重发失败 | `im_send`(temp_id 复用)→`posts/create` | `真机curl真源 §1` | `emit_post_sending`→`emit_post_received` | data-send-status:failed→sending→sent | `message` upsert 覆盖 | S |
+| [ ] | 1.7 转发/合并 | `im_create_posts`→`posts/createPosts` | `真机curl真源 附录A`{posts,channelIds}✅ | 各目标 channel `emit_post_received` | 多 channel 消息行 | `message`×N | M |
+| [ ] | 2.4 一级/二级回复 | `posts/getReplies`/`getReplyBranch` | `partials/6 UC-2.4` | `query::emit_read_result`(读族透传) | data-reply-id | `Scan message`(回复链) | M |
 
 ## 阶段 4 · 历史（依赖累积消息）
-| 勾 | UC | 标题 | 依赖 | 说明 |
-|---|---|---|---|---|
-| [ ] | 2.1 | 切群首屏（3 面）| 阶段2累积 | 本地 Scan·无 HTTP 出站 |
-| [ ] | 2.3 | 按 postId 定位 | 2.1 | query 定位 |
-| [ ] | 2.2 | 上拉更早历史（3 面）| 2.1 | **①预期红**：acl fix 在 round3 不在 pin 的 round6 → bug 报告(不改 helix) |
+| 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
+|---|---|---|---|---|---|---|---|
+| [ ] | 2.1 切群首屏(3 面) | `im_query_messages_by_channel`(本地) | (本地 Scan·无 HTTP 出站) | `query::emit_message_query_result`(透传) | N 个消息行 data-msg-id | `Scan message` | S |
+| [ ] | 2.3 按 postId 定位 | `posts/getPostsAfterIndex`{postIds:postId} | `partials/6 UC-2.3` | `query::emit_message_query_result`(透传) | data-msg-id 命中高亮 | `Scan message` | S |
+| [ ] | 2.2 上拉更早历史(3 面) | `im_load_older_context`→`posts/postContext`×N | `partials/8 http.rs:89`{postId,before} | `older_context::emit_older_loaded`(透传) | prepend 更早行 | `message` upsert prepend | M |
 
-## 阶段 5 · 频道 / 成员管理（依赖频道·部分依赖第二连接）
-| 勾 | UC | 标题 | 依赖 | 说明 |
-|---|---|---|---|---|
-| [ ] | 5.4 | 群属性修改 | 5.1 | `channel/change/*` → channel_update(thin) |
-| [~] | 5.5 | 置顶 | 5.1/1.1 | 频道置顶 L1 绿；消息置顶 pin 回声 data-dep |
-| [~] | 5.3 | 关闭/退出群 | 5.1 | self close L1 绿；member-leave 广播 → `[2]` |
-| [ ] | 6.3 | 改群昵称 | 5.1 | `member/change/nickname` → member_nickname |
-| [ ] | 6.4 | 成员快照/全量 | 5.1 | `member/snapshot` → read_result |
-| [~] | 6.1 | 拉/踢人 | 5.1 | 操作 self L1 绿；留存成员 RX → `[2]` |
-| [~] | 6.2 | 设/撤管理员 | 5.1 | member_role self L1 绿；广播到他人 → `[2]` |
+> ⚠️ 2.2 ①预期红：acl query 放行 fix 在 helix round3，不在 pin 的 round6@248fc84 → 出 bug 报告(不改 helix)。
 
-## 阶段 6 · 杂项（书签 / 待办 / 同步 / 互动卡片 / 系统）
-| 勾 | UC | 标题 | 依赖 | 说明 |
-|---|---|---|---|---|
-| [ ] | 9.x | 书签 | 1.1 | `post/bookmark/{create,delete,load}` 读族三命令 |
-| [ ] | 10.1 | 待办列表 | 4.1 | `posts/queryTodoList`(hello 收尾自驱) → todo_updated |
-| [ ] | 4.2 | 按需 sync notify | 4.1 | `channel/sync/notify` → 增量投影 |
-| [~] | 4.5 | 陌生 channel 兜底 | 4.1 | WS 自动注册 L1 主路径可证 |
-| [~] | 4.4 | 心跳 gap 补偿（**3 面**）| 4.1 | ①②④ + cursor 不变量；**③ DOM N/A（纯 Rust 自驱，已移除该面要求）** |
-| [~] | 8.x | 投票/平均分（互动卡片）| 频道 | `vote/*`+`average/*`(:3399)；average/read 可证；vote/readVote data-dep |
-| [ ] | 10.2 | 系统通知 | — | WS SYSTEM 帧 → post_received（SYSTEN 拼写陷阱）|
+## 阶段 5 · 频道 / 成员管理（依赖频道）
+| 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
+|---|---|---|---|---|---|---|---|
+| [ ] | 5.4 群属性修改 | `channel/change/{displayName,notice,…}` | `partials/6 UC-5.4` | `emit_channel_update`(thin{channel_id}) | data-channel-* 回读 | `channel` patch | M |
+| [~] | 5.5 置顶 | `channel/change/top`/`add(remove)/postPinned` | `partials/6 UC-5.5` | `emit_channel_update`/`emit_read_result` | data-pinned | `channel`/`message.props` | M |
+| [~] | 5.3 关闭/退出群 | `im_channel_close`→`channel/close` | `真机curl真源 §6`{channelId}✅ | `emit_channel_closed`{channelId,deleteAt} | channel 行移除 | `channel` 软删 | M |
+| [ ] | 6.3 改群昵称 | `channel/member/change/nickname` | `partials/6 UC-6.3` | `emit_member_nickname`{channelId,userId,nickName} | data-nickname | `channel_member` | M |
+| [ ] | 6.4 成员快照/全量 | `channel/member/snapshot`/`channels/member/byIds` | `partials/6 UC-6.4` | `query::emit_read_result`(读族) | data-member-count | `channel_member` 自愈 | M |
+| [~] | 6.1 拉/踢人 | `channel/member/change`(join/leave) | `真机curl真源 §5`{channelId,joinUsers/leaveUsers} | `emit_channel_member_updated`{channel_id,channel} | data-members 回读 | `channel_member` | M |
+| [~] | 6.2 设/撤管理员 | `channel/add/manger`/`remove/manger` | `partials/6 UC-6.2` | `emit_channel_member_updated`/`emit_channel_update` | data-admin | `channel_member` | M |
 
----
+## 阶段 6 · 杂项（书签/待办/同步/互动卡片/系统）
+| 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
+|---|---|---|---|---|---|---|---|
+| [ ] | 9.x 书签 | `post/bookmark/{create,delete,load}` | `partials/6 集合九` | `query::emit_read_result`(读族透传) | data-bookmark | `message`(书签) | M |
+| [ ] | 10.1 待办列表 | (hello 收尾自驱)`posts/queryTodoList` | `partials/8 http.rs:67` | `todo::emit_todo_updated`{items} | data-todo 列表 | `todo` 表 | M |
+| [ ] | 4.2 按需 sync notify | `im_sync_channels`→`channel/sync/notify` | `partials/8 §2.1`{cursors:[{channelId,fromSeq}]} | `emit_post_*`+`emit_channel_update_by_post`(thin) | 增量行+badge | `message`+cursor 跳空洞 | M |
+| [~] | 4.5 陌生 channel 兜底 | `ensure_channel_loaded`→`channel/load/incrementByChannelId` | `partials/8 http.rs:47`{channelId} | `emit_channel_increment` | 单 channel 增量渲染 | `channel`+cursor | M |
+| [~] | 4.4 心跳 gap 补偿(3 面) | (Rust ping/pong piggyback 自驱) | `partials/8 §5.7`{cursors,allHash} | (补偿走 4.2 sync 投影) | **③ N/A（已移除该面）** | `channel_event_cursor` | M(①②④+cursor) |
+| [~] | 8.x 投票 CRUD | `vote/{createVote,vote,readVote,closeVote,deleteVote}`(:3399) | `partials/6 集合八` | `emit_post_updated`(fat) | data-vote | `message.props` | M |
+| [~] | 8.x 平均分 CRUD | `average/{publish,attend,read,close,delete}`(:3399) | `partials/6 集合八` | `emit_post_updated`(fat) | data-average | `message.props` | M |
+| [ ] | 10.2 系统通知 | (WS 帧触发·无独立 HTTP) | — | `emit_post_received`/`updated`(系统消息) | data-system-notice | `message`(SYSTEM/SYSTEN 类型) | M |
 
-## 阶段 L2 · 双账号广播集合（需第二真实连接·**可行**·L1 稳后专批）
-> 单 testbed 单账号收不到跨账号广播；起第二个真实连接即可验。这批是 feasible（非 ⛔）。
-| 勾 | UC | 标题 | 说明 |
-|---|---|---|---|
-| [2] | 17 | 他人发消息收推送（PRD US-17）| 第二连接发 → 本连接收 post 推送四面 |
-| [2] | 6.1b | 拉人后对端实时更新 | 留存成员第二连接收 type=leave/join post |
-| [2] | 5.3b | 退群/关群 member-leave 广播 | 被增减目标第二连接收广播 |
-| [2] | 6.2b | 设/撤管理员广播到他人 | 第二连接收 member_role_updated |
-
----
-
-## 🌙 untested · 按需（物理限制 / 真 go 夜间·不计 L1 分母）
-| 勾 | UC | 标题 | 说明 |
-|---|---|---|---|
-| [n] | 1.3 | 发图片/文件 | **上传接口在 java（先列 todo）**；物理文件 + 上传进度链需真文件系统/上传服务；golden-tape 不录文件 IO；④ DB message 可测但 ① 上传 hop 不可确定性回放。文本链已由 1.1 覆盖；文件上传真 go 夜间按需。 |
-
-## ⛔ 后端真阻塞 / harness-gap（改契约才能过·暂不做·不计分母）
-| UC | 标题 | 阻塞 |
-|---|---|---|
-| 1.6 | 编辑消息 | 产品无编辑端点（verified-not-a-capability）|
-| 5.6 | 群公告 | WS 无 echo，回声不可观测（data-dep）|
-| 5.7 | 在线状态/分组 | `users/status/ids` 依赖 mattermost statusCache（P1-2）|
-| 7.x | 搜索 | `Im/search/*` app 层空桩恒返空（P2-1）|
-| 4.3 | too_long 重拉 | testbed 无注入落后 cursor 入口（helix 单测已覆盖）|
-
-## 已移除（不在测试范围）
-- **bot / agent 召唤**（原 Domain D）：bot-agent 不在我们测试范围。Domain D 重命名为「互动卡片 / 系统通知」（仅留 UC-8.x 投票/平均分 + UC-10.2 系统通知）。
+## 阶段 L2 · 双账号广播（需第二真实连接·feasible·L1 稳后专批）
+| 勾 | UC | 触发 → 观测 | ② 投影工厂 | ③ DOM data-* | 说明 |
+|---|---|---|---|---|---|
+| [2] | US-17 他人发消息收推送 | 连接 B 发 → 连接 A 收 | `emit_post_received`(fat) | 新消息行 | 跨账号 post 推送 |
+| [2] | 6.1b 拉人后对端实时更新 | B 被拉 → 留存成员 A 收 | `emit_channel_member_updated` | data-members | type=join/leave post |
+| [2] | 5.3b member-leave 广播 | 被增减目标第二连接收 | (member 广播) | channel/member 变更 | 退群/关群广播 |
+| [2] | 6.2b admin 广播到他人 | 第二连接收 role 变更 | `emit_channel_member_updated` | data-admin | member_role_updated 广播 |
 
 ---
 
-## 进度
-- **真绿 3 / 32**：UC-1.1、UC-1.2、UC-1.5。
-- **闭环模式**：接最简 UI → `run.sh -- --spec test/specs/uc-X.e2e.mjs`(seeded db) → reducer 断面 → 修 → 复跑全绿 → 翻台账 + commit + tag + **本清单打钩**。
+## 进度统计
+- **真绿 3**：1.1、1.2、1.5。
+- 本清单管理：阶段 0–6 共 **27 UC**（含 🟡6、🌙1）+ L2 **4 UC**。⛔ 阻塞/gap 6 项不管理。
+- **闭环模式**：接最简 UI → `run.sh -- --spec test/specs/uc-X.e2e.mjs`(seeded db) → reducer 断面 → 修(多为校正草拟契约/复用 corr-key posts[]、storage rows‖keys) → 复跑全绿 → 翻台账 + commit + tag + **本清单打钩**。
