@@ -134,6 +134,17 @@ export class ImStoreService {
       return;
     }
 
+    // UC-1.5 撤回：在线 im:post:batch-updated（{channel_id, posts}）/ 离线 im:post:deleted（fat）
+    // → 按 server id 标行 data-revoke=1。先于 MESSAGE_ROW_CHANNELS fat 覆写分支处理。
+    if (channel === "im:post:batch-updated") {
+      this.applyBatchUpdated(env.payload?.data);
+      return;
+    }
+    if (channel === "im:post:deleted") {
+      this.applyPostDeleted(env.payload?.data);
+      return;
+    }
+
     // 活动频道锚定（在任何早退过滤之前）：stream 第一个真实频道胜出，含 im:channel:increment。
     // 兼容 snake(channel_id) 与 camel(channelId)；只在尚未锚定时 set（第一个胜出，不被后续覆盖）。
     this.captureActiveChannel(env.payload?.data);
@@ -185,6 +196,37 @@ export class ImStoreService {
         !!(r as Record<string, unknown>)["id"],
     );
     if (first) this._activeChannel.set(first.id);
+  }
+
+  /** 按 server id 命中行 → 标 revoked（data-revoke=1）。找不到则忽略（非本壳发的消息）。 */
+  private markRevokedById(serverId: string): void {
+    if (!serverId) return;
+    this._rows.update((rows) =>
+      rows.map((r) => (r.msgId === serverId ? { ...r, revoked: true } : r)),
+    );
+  }
+
+  /** im:post:batch-updated（在线 posts_update 撤回/批量）：遍历 posts 取每行 server id `id` 标撤回。
+   *  注：本壳当前 batch-updated 仅撤回路径触发（编辑 UC-1.6 不可达）；后续若引入编辑需按 post 内
+   *  撤回标识细分，不可一律标撤回。 */
+  private applyBatchUpdated(data: unknown): void {
+    const posts = (data as { posts?: unknown } | undefined)?.posts;
+    if (!Array.isArray(posts)) return;
+    for (const p of posts) {
+      if (!p || typeof p !== "object") continue;
+      const id = (p as Record<string, unknown>)["id"];
+      if (typeof id === "string") this.markRevokedById(id);
+    }
+  }
+
+  /** im:post:deleted（离线 sync 撤回，fat MessageItemData）：按 msg_id 标行撤回。 */
+  private applyPostDeleted(data: unknown): void {
+    const d = data as Record<string, unknown> | undefined;
+    const id =
+      (typeof d?.["msg_id"] === "string" && (d["msg_id"] as string)) ||
+      (typeof d?.["msgId"] === "string" && (d["msgId"] as string)) ||
+      "";
+    this.markRevokedById(id);
   }
 
   /**

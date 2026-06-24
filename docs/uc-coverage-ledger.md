@@ -13,7 +13,7 @@
 
 | 图例 | 含义 |
 |---|---|
-| `✅ four-facet-verified` | LoopForge `run.sh` 经真 Tauri+WKWebView 跑过四面 oracle **全绿**（① 出站体逐字对齐 + ② 投影字段集一致 + ③ DOM data-* tmp→server 覆写 + ④ message/channel 落行 + cursor 推进）。**当前仅 UC-1.1**。 |
+| `✅ four-facet-verified` | LoopForge `run.sh` 经真 Tauri+WKWebView 跑过四面 oracle **全绿**（① 出站体逐字对齐 + ② 投影字段集一致 + ③ DOM data-* tmp→server 覆写 + ④ message/channel 落行 + cursor 推进）。**当前 UC-1.1 + UC-1.5**。 |
 | `🟡 partial` | 部分面可验（如 ①②④ 可证、③ DOM 物理不可达走间接证），或单连接窗口可证主路径但广播子项够不到。 |
 | `⬜ pending` | 契约已列、四面期望可写，但 rollout 尚未实现 testbed 触发/断言（命令在 helix 已 wired，缺 LoopForge 侧 invoke 接线 + e2e 剧本 + 四面期望文件）。 |
 | `⛔ unreachable` | 在 LoopForge testbed（单窗口薄壳 + golden-tape 闭环）下**物理够不到**（文件上传需真上传管线 / 在线状态依赖 mattermost statusCache / 纯 Rust 自驱无 DOM / 后端 app 层空桩）。诚实标注理由，不计入「绿台账」。参照 helix ledger 的 UC-1.3 标注法。 |
@@ -30,7 +30,7 @@
 | 测什么 | helix-im outbound 命令体 + Go WS 回声 wire 是否正确 | 整条客户端栈：DOM 操作 → invoke → 出站 → Go → WS → parser → gate → 投影 → DOM 渲染 → DB 落行 |
 | 共享真源 | `真机curl真源.md`（出站体）· `projection-schema.md`（投影字段集）· full-map partials（端点/事件/UI 契约）| **同一份**（本台账契约**引用** helix 真源，不自编 wire 字段）|
 | ③ DOM 面 | 无（host-cli 无渲染层）| **有**（这是 LoopForge 独有的接缝：投影 → DOM data-* 直映）|
-| 当前绿数 | 33 UC `✅ e2e-verified`（服务端 wire 视角）| **1 UC**（UC-1.1，客户端四面视角）|
+| 当前绿数 | 33 UC `✅ e2e-verified`（服务端 wire 视角）| **2 UC**（UC-1.1 + UC-1.5，客户端四面视角）|
 
 > **关键**：helix ledger 的 `✅ e2e-verified` ≠ 本台账的 `✅ four-facet-verified`。
 > helix 那条只证「出站 + WS 回声 wire 对”——本台账还要再证「投影字段齐 + DOM 真渲染 + DB 真落行”这后三面，
@@ -108,7 +108,14 @@
 - **③ DOM**：`data-send-status: failed→sending→sent`。
 - **④ 落库**：`message` upsert 覆盖（PK=temporary_id）。
 
-### UC-1.5 撤回消息 — `⬜ pending`（认领 S，需先沉淀可读 post）
+### UC-1.5 撤回消息 — `✅ four-facet-verified`（2026-06-24 实跑全绿，认领 S）
+
+> 四面全绿实证：`run.sh -- --spec test/specs/uc-1.5.e2e.mjs`（seeded db）→
+> `✅ UC-1.5 四面全绿（corr_key=ch=15gcgoyf;tmp=…;sid=…）`。
+> 接线：壳 `im_revoke` 命令 + 前端 `im:post:batch-updated`→`markRevokedById`→`data-revoke=1`。
+> Phase2 校正：① 出站 `{postId}`✅ ② 投影 `im:post:batch-updated{channel_id,posts}`✅（corr-key.mjs 探入
+> `posts[].id` 取 sid 才能与出站/落库聚束）③ DOM `data-revoke=1`✅ ④ 落库 `batch_update message`✅
+> （reducer 计数归一 rows‖keys；expect.storage.op 由 update 校正为 batch_update）。
 
 - **① 出站 HTTP**：`POST /api/cses/posts/revoke`，body `{postId}`（✅ helix 现状符合·`真机curl真源 §3`）。
 - **① WS 推送**：action=`post_update`（在线）·data.revoke=true（helix ledger 标 data-dep：需先沉淀可读 post 再撤方能观测广播）。
@@ -405,7 +412,7 @@
 | bot/agent 召唤（整域，不计入 39）| 1 域 | — | — | — | 1 域（⛔）|
 
 > 精确分类（按本台账每节标题图例为准·1+7+24+7=39）：
-> - **✅ four-facet-verified = 1**：UC-1.1。
+> - **✅ four-facet-verified = 2**：UC-1.1、UC-1.5（2026-06-24 实跑全绿）。
 > - **🟡 partial = 7**：UC-4.4 心跳 / UC-4.5 陌生 channel / UC-5.3 关群 / UC-5.5 置顶 / UC-6.1 拉踢 / UC-6.2 管理员 / UC-8.x 投票平均分。
 > - **⬜ pending = 24**：3.1 / 3.2 / 3.3 / 1.2 / 1.4 / 1.5 / 1.7 / 1.8 / 1.9 / 1.10 / 2.1 / 2.2 / 2.3 / 2.4 / 4.1 / 4.2 / 5.1 / 5.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending）。
 > - **⛔ unreachable = 7**（39 分母内）：UC-1.3 文件 / UC-1.6 编辑 / UC-4.3 too_long / UC-5.6 公告 / UC-5.7 在线 / UC-7.x 搜索·另 bot/agent 整域 ⛔（不计入 39 分母）。

@@ -35,17 +35,16 @@
   },
 
   "storage": {
-    "op": "update",
+    "op": "batch_update",
     "table": "message",
     "minRows": 1,
-    "_note": "uc-coverage-ledger.md UC-1.5 §4：message 表 mark_revoked(revoke=1)。装饰器 facet④ payload 暴露 {op,table,rows}；revoke 列修改由 DB 观测（四面 oracle 逐行对齐，此处记录期望 op/table）。"
+    "_note": "Phase2 实测校正：helix mark_revoked 落库 op 实为 batch_update（非 Phase1 草拟 update）；message 表 revoke=1 列覆盖。装饰器 facet④ 暴露 {op,table,rows}。"
   },
 
   "dom": {
     "dataAttrs": {
-      "revoke": "1",
-      "_note": "data-revoke=1 标记撤回态；或行移除。Phase2 接线设计时定夺渲染形态（当前 Phase1 契约设计阶段，选择器待 UI 实装时确认）。"
+      "revoke": "1"
     },
-    "_note": "spec §4：撤回后行表现。可能路径：① data-revoke=1 标记 ② 行 DOM 删除（投影触发)。e2e 会据实际接线读 DOM 终态。"
+    "_note": "Phase2 实测校正：撤回后行渲染 data-revoke=1（壳 markRevokedById 命中 server id 标行）。dataAttrs 只放真 data-* 键值，_note 移出避免 reducer 误当属性比对。备选形态行删除本壳未采用。"
   }
 }

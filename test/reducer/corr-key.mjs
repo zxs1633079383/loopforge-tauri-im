@@ -41,9 +41,17 @@ function pickFrom(obj, keys) {
  * `sid` 的空串特殊处理：outbound send body 的 `id:""` 不算 server_id（发送时 server 未分配）。
  */
 export function extractDims(payload) {
-  const probes = [payload, payload?.data, payload?.body, payload?.body?.data].filter(
-    (p) => p && typeof p === 'object'
-  );
+  const probes = [
+    payload,
+    payload?.data,
+    payload?.body,
+    payload?.body?.data,
+    // 批量信封（im:post:batch-updated `data.posts:[{id,...}]`）：post id 嵌在数组元素内，
+    // 顶层只有 channel_id。探入 posts[0] 取 sid，使撤回/批量事件的投影能与出站(postId)、
+    // 落库(sid) 聚同一束。多 post 信封(转发 UC-1.7)首元素代表，后续按需扩展。
+    payload?.data?.posts?.[0],
+    payload?.posts?.[0],
+  ].filter((p) => p && typeof p === 'object');
   /** @type {{ch?:string,tmp?:string,sid?:string,seq?:string}} */
   const dims = {};
   for (const dim of DIMS) {

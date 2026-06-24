@@ -41,6 +41,8 @@ import { ImStoreService } from "./im/im-store.service";
             [attr.data-event-seq]="m.eventSeq === null ? '' : m.eventSeq"
             [attr.data-send-status]="m.sendStatus"
             [attr.data-read-bits]="m.readBits"
+            [attr.data-revoke]="m.revoked ? '1' : null"
+            [class.msg--revoked]="m.revoked"
           >{{ m.text }}</div>
         }
       </section>
@@ -83,6 +85,7 @@ import { ImStoreService } from "./im/im-store.service";
       }
       .msg--sending { opacity: 0.55; }
       .msg--failed { background: #3a1d1d; color: #ff9b9b; }
+      .msg--revoked { opacity: 0.4; font-style: italic; text-decoration: line-through; }
       .im__compose {
         display: flex; gap: 8px; padding: 8px 12px;
         border-top: 1px solid #2a2a30; background: #1d1d22;

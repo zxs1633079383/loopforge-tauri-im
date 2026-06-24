@@ -113,12 +113,15 @@ function actualProjection(bundle, preferEvent) {
   return { event: p.payload?.event, data: p.payload?.data ?? {} };
 }
 
-/** ④ storage：取首个匹配的写 op（{op,table,rows}）。 */
+/** ④ storage：取首个匹配的写 op（{op,table,rows}）。
+ *  影响计数字段随 op 异名：batch_upsert/insert → `rows`；batch_update/delete → `keys`（更新的键数）；
+ *  scan → `rows`。统一归一为 rows（取 rows ?? keys ?? count），使 minRows 判据跨 op 一致。 */
 function actualStorage(bundle, table) {
   const writes = bundle.hops.filter((h) => h.facet === 'storage' && h.payload?.op);
   const hit = writes.find((h) => !table || h.payload?.table === table) ?? writes[0];
   if (!hit) return null;
-  return { op: hit.payload.op, table: hit.payload.table, rows: hit.payload.rows };
+  const rows = hit.payload.rows ?? hit.payload.keys ?? hit.payload.count;
+  return { op: hit.payload.op, table: hit.payload.table, rows };
 }
 
 // ── 逐面 diff（期望 → 实际），返回 facet 报告 ─────────────────────────────────

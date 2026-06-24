@@ -25,4 +25,7 @@ export interface MessageRow {
   readBits: string;
   /** 行文本内容 */
   text: string;
+  /** data-revoke：撤回态（im:post:batch-updated / im:post:deleted 命中本行 server id → true）。
+   *  渲染 [data-revoke="1"]；未撤回时不渲染该属性（spec uc-1.5 读 ds.revoke）。 */
+  revoked?: boolean;
 }

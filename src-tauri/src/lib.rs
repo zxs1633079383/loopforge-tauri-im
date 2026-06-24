@@ -124,13 +124,15 @@ pub fn run() {
         commands::im_send,
         commands::im_ready,
         commands::im_query_dialog_list,
+        commands::im_revoke,
         commands::set_uc
     ]);
     #[cfg(not(feature = "webdriver"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::im_send,
         commands::im_ready,
-        commands::im_query_dialog_list
+        commands::im_query_dialog_list,
+        commands::im_revoke
     ]);
 
     // Record 模式退出落盘：app 退出（RunEvent::Exit）时把录好的 tape 存到 tape_path。

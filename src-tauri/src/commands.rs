@@ -51,6 +51,22 @@ pub async fn im_send(
         .map_err(|e| format!("im_send: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-1.5 撤回：前端传 `postId`（Tauri 自动 camel→snake 到 `post_id`）→ pump `im_revoke`
+/// 命令，payload snake `{post_id}`（helix posts_existing.rs `require_str("post_id")`）→ helix
+/// 兑现出站 `POST posts/revoke {postId}`（真机curl真源 §3）。薄壳只翻译入泵，不臆造 body。
+#[tauri::command]
+pub async fn im_revoke(state: State<'_, AppState>, post_id: String) -> Result<(), String> {
+    if post_id.is_empty() {
+        return Err("im_revoke: postId 为空".into());
+    }
+    let tick = command("im_revoke", serde_json::json!({ "post_id": post_id }));
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_revoke: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// 会话列表 bootstrap：拉本地 `channel` 表 dialogList（helix emit `im:channels:projection`）。
 ///
 /// 最简壳只靠增量流冒频道，而增量是严格 cursor delta——清/旧 DB 无新活动时拿不到 active
