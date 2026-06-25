@@ -215,6 +215,37 @@ export class ImStoreService {
     }
   }
 
+  /**
+   * UC-5.2 创建话题（消息转话题）：invoke('im_make_topic', {rootId, postId, displayName, memberIds})。
+   *
+   * **壳不臆造 body**：teamId / 自身 userId（CREATOR）由 Rust 命令从 profile 单一真源拼装
+   * （src-tauri commands.rs im_make_topic）。壳只供 rootId（根群 channelId）+ postId（被转消息
+   * server id）+ displayName + 其他成员 memberIds。话题=新 channel，由 helix `im:channel:created`
+   * 投影驱动 upsert CL 区新行（壳纯渲染，复用 applyChannelCreated 同 UC-5.1）。
+   * 非 Tauri / 命令缺失 → 静默（dev 浏览器单独调 UI 不卡）。
+   */
+  async makeTopic(
+    rootId: string,
+    postId: string,
+    displayName: string,
+    memberIds: string[],
+  ): Promise<void> {
+    const root = rootId.trim();
+    const post = postId.trim();
+    const name = displayName.trim();
+    if (!root || !post || !name) return;
+    try {
+      await this.bridge.invoke<void>("im_make_topic", {
+        rootId: root,
+        postId: post,
+        displayName: name,
+        memberIds,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（话题行靠投影驱动，无乐观合成）。
+    }
+  }
+
   // ——— 私有 ———
 
   private onBus(env: BusEnvelope): void {

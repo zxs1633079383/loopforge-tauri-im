@@ -148,6 +148,78 @@ pub async fn im_create_channel(
         .map_err(|e| format!("im_create_channel: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-5.2 创建话题（消息转话题）：前端传 `rootId`（话题挂载的根群 channelId）+ `postId`
+/// （被转成话题的消息 server id）+ `displayName` + `memberIds`（其他成员真实 userId）→ 本命令按
+/// 真机curl真源 §2 拼 `posts/makeTopic` raw body 入泵 `im_make_topic`（helix-im
+/// `MakeTopicCommand` 校验 postId 后透传 args 到 `POST /api/cses/posts/makeTopic`）。
+///
+/// 形态锚真源 §2：`{rootId, teamId, postId, displayName, type:"T", users:[{id,teamId,role}],
+/// picturetype:"USER", picture:{userIds:[...]}, forceCreate:true}`（全 camelCase）。与建群（§4
+/// channel/create）同形态，差异：① endpoint posts/makeTopic ② 多 rootId+postId ③ type 固定 T
+/// （话题·非 P 私聊群）④ 无 orient。`teamId` / 自身 `userId`（role=CREATOR）取自 AppState.identity
+/// （profile companyId / cookieId）·身份单一真源·壳不臆造 creds。WS 回 `channel_created`（话题=新
+/// channel）+ `post_update`（原消息挂 topicId）。
+#[tauri::command]
+pub async fn im_make_topic(
+    state: State<'_, AppState>,
+    root_id: String,
+    post_id: String,
+    display_name: String,
+    member_ids: Vec<String>,
+) -> Result<(), String> {
+    if root_id.trim().is_empty() {
+        return Err("im_make_topic: rootId 为空（话题须挂根群 channelId）".into());
+    }
+    if post_id.trim().is_empty() {
+        return Err("im_make_topic: postId 为空（须指定被转话题的消息 server id）".into());
+    }
+    if display_name.trim().is_empty() {
+        return Err("im_make_topic: displayName 为空".into());
+    }
+    let team_id = state.identity.team_id.clone();
+    let self_id = state.identity.user_id.clone();
+    if self_id.is_empty() {
+        return Err("im_make_topic: 自身 userId 为空（profile cookieId 未注入）".into());
+    }
+
+    // users[]：自己 CREATOR + 其他成员 MEMBER（真源 §2 三键 id/teamId/role 全 camelCase）。
+    let mut users: Vec<serde_json::Value> = Vec::with_capacity(member_ids.len() + 1);
+    let mut user_ids: Vec<String> = Vec::with_capacity(member_ids.len() + 1);
+    users.push(serde_json::json!({
+        "id": self_id,
+        "teamId": team_id,
+        "role": "CREATOR",
+    }));
+    user_ids.push(self_id.clone());
+    for mid in member_ids.into_iter().filter(|m| !m.is_empty() && *m != self_id) {
+        users.push(serde_json::json!({
+            "id": mid,
+            "teamId": team_id,
+            "role": "MEMBER",
+        }));
+        user_ids.push(mid);
+    }
+
+    let body = serde_json::json!({
+        "rootId": root_id,
+        "teamId": team_id,
+        "postId": post_id,
+        "displayName": display_name,
+        "type": "T",
+        "users": users,
+        "picturetype": "USER",
+        "picture": { "userIds": user_ids },
+        "forceCreate": true,
+    });
+
+    let tick = command("im_make_topic", body);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_make_topic: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// 就绪 probe：前端轮询此命令直到返回 `true`（increment 流动 + 静默窗口达成）。
 ///
 /// 返回值真精确度的边界见 `state::ReadinessProbe` 注释 + integration_todos（inflight==0

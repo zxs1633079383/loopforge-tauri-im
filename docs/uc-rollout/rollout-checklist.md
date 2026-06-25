@@ -19,7 +19,7 @@
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
 |---|---|---|---|---|---|---|---|
 | [x] | 5.1 创建群聊 | `im_create_channel`→`channel/create` | `真机curl真源 §4`(type:P/users role/picture/forceCreate) | `emit_channel_created`{channel_id,channel} | data-channel-id 新行 | `channel` 新行 | M |
-| [ ] | 5.2 创建话题 | `im_make_topic`→`posts/makeTopic` | `真机curl真源 §2`(rootId/users CREATOR/picture) | `emit_channel_created`(type=T) | data-channel-id(topic) | `channel`(type=T) | M |
+| [x] | 5.2 创建话题 | `im_make_topic`→`posts/makeTopic` | `真机curl真源 §2`(rootId/users CREATOR/picture) | `emit_channel_created`(type=T) | data-channel-id(topic) | `channel`(type=T) | M |
 
 ## 阶段 2 · 发消息（依赖频道）
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |

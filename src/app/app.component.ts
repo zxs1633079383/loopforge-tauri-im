@@ -545,9 +545,17 @@ export class AppComponent implements OnInit, OnDestroy {
     /* UC-1.7 接通 */
   }
 
-  /** UC-5.2 创建话题（rootId=postId）。占位 → 接 im_make_topic。 */
-  onMakeTopic(_row: MessageRow): void {
-    /* UC-5.2 接通 */
+  /** UC-5.2 创建话题（消息转话题）：rootId=消息所在群 channelId·postId=消息 server id →
+   *  store.makeTopic（teamId/自身 CREATOR 由 Rust 拼·壳不臆造）。memberIds 取当前成员区已加载
+   *  成员（无则空·Rust 自动补自身 CREATOR）。e2e 走 bridge 直 invoke 注入真实 rootId/postId/
+   *  memberIds 覆盖此 UI 便捷路径。 */
+  onMakeTopic(row: MessageRow): void {
+    const rootId = row.channelId;
+    const postId = row.msgId;
+    if (!rootId || !postId) return; // 无根群 / 无 server id（未对账消息）→ 不发
+    const displayName = `lf-topic-${Math.random().toString(36).slice(2, 8)}`;
+    const memberIds = this.store.members().map((m) => m.memberId).filter(Boolean);
+    void this.store.makeTopic(rootId, postId, displayName, memberIds);
   }
 
   /** UC-2.4 加载回复链。占位 → 接读族 getReplies。 */

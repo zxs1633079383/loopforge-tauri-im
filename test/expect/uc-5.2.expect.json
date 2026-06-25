@@ -1,0 +1,58 @@
+{
+  "$schema-note": "四面期望文件 (UC-5.2 创建话题 / 消息转话题) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现或本仓渲染壳。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-5.2",
+  "title": "创建话题（消息转话题）：UI 触发 → 出站 posts/makeTopic → WS channel_created → 投影 + DOM 新行 + DB 新行",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/真机curl真源.md §2 posts/makeTopic（rootId/teamId/postId/displayName/type:T/users[CREATOR+MEMBER]/picturetype/picture.userIds/forceCreate）",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md 行68 to_effect_s1::emit_channel_created（im:channel:created · {channel_id, channel}·建话题 makeTopic 也发 channel_created）",
+    "dom": "docs/uc-coverage-ledger.md §UC-5.2 ③ data-channel-id 新行（话题=新 channel）",
+    "storage": "docs/uc-coverage-ledger.md §UC-5.2 ④ channel 新行"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：建话题 server 端分配话题 channelId（出站 body 无该 id·仅含根群 rootId + 原消息 postId）。②③④ 锚 server 分配的话题 ch（emit_channel_created data.channel_id / channel 表新行 id / DOM data-channel-id），由 e2e 在收到 created 投影后填实 ch 覆写本字段。① 出站 posts/makeTopic 无单话题 channel corr_key（server 未分配 id）→ reducer 经 createOutbound fallback 按 URL endsWith posts/makeTopic 归本束（窗口内唯一一条 makeTopic·非 tautology）。",
+    "ch": null
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "posts/makeTopic",
+    "bodyFields": {
+      "rootId": "*",
+      "teamId": "*",
+      "postId": "*",
+      "displayName": "*",
+      "type": "T",
+      "users": "*",
+      "picturetype": "USER",
+      "picture": "*",
+      "forceCreate": true
+    },
+    "bodyForbidden": ["channel_id", "channelId", "orient"],
+    "_note": "真机curl真源 §2：posts/makeTopic 全 camelCase 必填集。values：type 固定 T（话题·非建群 §4 的 P 私聊群）/ picturetype 固定 USER / forceCreate 固定 true；rootId（根群 channelId）/postId（被转消息 server id）/teamId/displayName/users/picture 值随 run（*）。bodyForbidden 锚——① makeTopic body 不该携 server 分配的话题 channelId（server 端才分配，泄漏即旧形态错）② 无 orient（建群 §4 才有 orient·话题转换无此字段·混入即形态串）。① 出站经 reducer createOutbound fallback（URL endsWith posts/makeTopic·窗口内唯一一条）归锚 ch 束。"
+  },
+
+  "projection": {
+    "event": "im:channel:created",
+    "dataKeys": [
+      "channel_id",
+      "channel"
+    ],
+    "_note": "projection-schema 行68 emit_channel_created：{channel_id, channel}（channel = 透传帧 data 原始 channel 对象·载荷内字段不逐一冻结·见 schema 行210 透传类）。建话题 makeTopic 走 channel_created（话题=新 channel）与建群同投影工厂。缺/多即 fail。"
+  },
+
+  "storage": {
+    "op": "batch_upsert",
+    "table": "channel",
+    "minRows": 1,
+    "_note": "ledger §UC-5.2 ④：话题 channel 新行落库（batch_upsert channel ≥1 行·话题=新 channel）。装饰器 facet④ payload 只暴露 {op,table,rows}（不含行内容）；表感知归一（corr-key.mjs）把 channel 表 id 抽成 ch → 与 ② created（ch 锚）同束。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "channel-id": "*"
+    },
+    "_note": "ledger §UC-5.2 ③：data-channel-id 新行（话题 channel·store.channels() 由 im:channel:created 投影 upsert → CL 区渲染·复用 UC-5.1 applyChannelCreated）。e2e 读新建话题 ch 行的 data-channel-id 注入 reducer。"
+  }
+}

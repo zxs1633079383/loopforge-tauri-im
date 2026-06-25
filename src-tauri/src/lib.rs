@@ -127,6 +127,7 @@ pub fn run() {
         commands::im_query_dialog_list,
         commands::im_revoke,
         commands::im_create_channel,
+        commands::im_make_topic,
         commands::set_uc
     ]);
     #[cfg(not(feature = "webdriver"))]
@@ -135,7 +136,8 @@ pub fn run() {
         commands::im_ready,
         commands::im_query_dialog_list,
         commands::im_revoke,
-        commands::im_create_channel
+        commands::im_create_channel,
+        commands::im_make_topic
     ]);
 
     // Record 模式退出落盘：app 退出（RunEvent::Exit）时把录好的 tape 存到 tape_path。
