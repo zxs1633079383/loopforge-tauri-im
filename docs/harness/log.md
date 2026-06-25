@@ -124,3 +124,5 @@
 ✅ DONE UC-9.x 书签四面契约闭环（读族三命令 create/delete/load·①② 全绿·③④ N/A）@2026-06-25 17:58:12 CST | commit fb65a6e | 3/3 endpoint passing(6.1s) | loopforge-tauri-im/feat/uc-rollout | issue #30 closed
 
 ✅ DONE UC-10.1 待办列表四面闭环（①②③ 全绿·④ projection-only N/A·issue #31 closed） @2026-06-25 18:34:28 CST | commit 2731796 | 1/1 步 | loopforge-tauri-im/feat/uc-rollout
+
+✅ DONE UC-4.2 按需 sync notify 四面契约闭环（①②④③ 内核自驱 gap 全绿·issue #32 closed） @2026-06-25 18:58:08 CST | commit 9cbffc7 | 1/1 步·spec ×2 | loopforge-tauri-im/feat/uc-rollout
