@@ -47,3 +47,5 @@
 
 ✅ DONE UC-1.9 加急+加急已读四面全绿闭环（issue #10 closed） @2026-06-25 10:00 CST | commit a0c4d5d | 1/1 UC 四面全绿 | feat/uc-rollout
   阶段2 发消息族首个加急 UC：im_urgent_post/im_urgent_confirm 两命令接壳（helix-im outbound/urgent.rs 早注册·零改引擎）+ ML 行 urgent-btn/urgent-confirm-btn（C007）。live 四面全绿 ×2（不同 postId·corr_key sid=tasdeqxt.../8zmhp1c7...）：① urgentPost+urgentConfirm 两阶段 camelCase（diffOutboundPhases 逐段对齐）② im:post:updated fat 13 键 ③ post-row 重渲 ④ message batch_update（expedite_map 列）。契约更正 3 处（确凿证据·非为绿改 oracle）：message 必填去 message（*string omitempty）、storage batch_upsert→batch_update（type2 edit UPDATE·seq516）、DOM 去 data-urgent=1（projection-schema line186 expediteMap 不吐 HX-C005·加急态走 DB expedite_map 回读 line188·投影域外）。机器件：corr-key sid 别名 +msg_id（投影↔出站↔落库聚同束·Rust event.rs 同步）+ reducer diffOutboundPhases/sidAnchor + spec 关窗前等 post_update in-window（解 set_uc 早于 WS echo 窗口竞态）。验证：reducer 69 测全绿(含 3 可证伪对偶)·cargo test instrument 11 测·gate.sh 8 项全过·clippy 净。无新 harness card（单 UC 契约更正·未达三铁律）。
+
+✅ DONE UC-1.8 快捷回复 emoji 四面全绿（#11 closed）@2026-06-25 10:12 | loopforge c4b310d + helix bbbf809(parser 顶层 quickReply→props) | expect storage op batch_upsert→batch_update 更正 | feat/uc-rollout
