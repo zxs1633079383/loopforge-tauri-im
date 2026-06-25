@@ -128,6 +128,24 @@ export interface ChannelScheduleCreatedData {
 }
 
 /**
+ * UC-4.2 按需 sync notify 投影 channel（projection-schema 行 67 emit_channel_update_by_post·
+ * 真源 projection_control_effects.rs:153 `{channel_id, event_seq, msg_id}`·留瘦 channel-row）。
+ * 触发路径：cursor 落后（gap）→ 引擎自驱 `channel/sync/notify` → server 回放离线区间事件 →
+ * 每条可见 type1 新消息 emit 本投影（badge 触发位·与 fat im:post:received 配对·后者驱动增量
+ * 消息行追加）。壳收到即把该频道行 unread badge +1（data-unread 累加·channel-row 级未读计数·
+ * 壳纯渲染只透传投影信号累加·不在 JS 解析 increment 帧重组业务）。先于 message-row 分支
+ * （channel-row 信号·非 message_item_data fat 集）。
+ */
+export const CHANNEL_UPDATE_BY_POST_CHANNEL = "im:channel:update-by-post";
+
+/** im:channel:update-by-post data 形态（projection-schema 行 67·{channel_id, event_seq, msg_id}·瘦·snake 信号锚）。 */
+export interface ChannelUpdateByPostData {
+  channel_id: string;
+  event_seq: number;
+  msg_id: string;
+}
+
+/**
  * UC-2.4 读族回灌 channel（projection-schema §1.2 read_relay::emit_read_result）。
  * data 形态 = `{ req_id, body }`（成功）或 `{ req_id, error }`（失败）——body = 后端
  * getReplies/getReplyBranch 响应体原样透传（`{rootPost, replies}` / 分支结果·inner 不冻结）。

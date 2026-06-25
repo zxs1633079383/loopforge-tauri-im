@@ -204,6 +204,26 @@ pub async fn im_read_channel(
         .map_err(|e| format!("im_read_channel: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-4.2 按需 sync notify：触发引擎重连 → 重跑 hello 握手 → 重检 per-channel needSync gap →
+/// 对落后频道（cursor 落后于 server high-water）自驱出站 `POST channel/sync/notify`，body
+/// `{cursors:[{channelId, fromSeq}]}`（per-channel·真源 sync_http_effects.rs::sync_notify）→
+/// server 回放离线区间事件 → helix-im 兑现 im:post:received（fat 增量行）+ im:channel:update-by-post
+/// （瘦 badge 信号）+ message 落库 + channel_event_cursor 跳空洞。
+///
+/// 薄壳纪律：本命令无 payload（控制信号），入泵 helix-im 认的 `im_reconnect`（module.rs:304
+/// emit `im:net:reconnect_requested` → driver 观察后重连 NativeTransport·连接生命周期归 driver）。
+/// sync gap 检测 + sync/notify 出站全在 helix-im sans-IO 内核·壳不臆造 sync 逻辑。
+#[tauri::command]
+pub async fn im_sync_channels(state: State<'_, AppState>) -> Result<(), String> {
+    // 无参控制信号：helix-im `im_reconnect` 分支 payload 无须解析（module.rs:304）。
+    let tick = command("im_reconnect", serde_json::json!({}));
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_sync_channels: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-3.3 模板已收到回执：前端传 `postId`（模板消息 server id）→ 本命令把它打包成
 /// **camelCase** `{postId}` 入泵 `im_template_received`（helix-im `outbound/template_received.rs`
 /// `TemplateReceivedCommand` 兑现出站 `POST post/templateReceived {postId}`·**`/post` 单数前缀**

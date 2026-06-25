@@ -68,7 +68,7 @@
 |---|---|---|---|---|---|---|---|
 | [x] | 9.x 书签 | `post/bookmark/{create,delete,load}` | `partials/6 集合九` | `query::emit_read_result`(读族透传) | data-bookmark | `message`(书签) | M |
 | [x] | 10.1 待办列表 | (hello 收尾自驱)`posts/queryTodoList`{postIds} | `partials/8 http.rs:67` | `todo::emit_todo_updated`{items} | data-todo-id 列表 | N/A(projection-only·无 todo 表) | M |
-| [ ] | 4.2 按需 sync notify | `im_sync_channels`→`channel/sync/notify` | `partials/8 §2.1`{cursors:[{channelId,fromSeq}]} | `emit_post_*`+`emit_channel_update_by_post`(thin) | 增量行+badge | `message`+cursor 跳空洞 | M |
+| [x] | 4.2 按需 sync notify ✅四面全绿(#32·anchorCh=14jeie5y…·×2) | `im_sync_channels`→`channel/sync/notify`(gap 自驱) | `partials/8 §2.1`{cursors:[{channelId,fromSeq}]} | `emit_channel_update_by_post`(thin {channel_id,event_seq,msg_id})+`emit_post_received`(fat) | 增量行+badge(unread) | `message`+cursor 跳空洞 | M |
 | [~] | 4.5 陌生 channel 兜底 | `ensure_channel_loaded`→`channel/load/incrementByChannelId` | `partials/8 http.rs:47`{channelId} | `emit_channel_increment` | 单 channel 增量渲染 | `channel`+cursor | M |
 | [~] | 4.4 心跳 gap 补偿(3 面) | (Rust ping/pong piggyback 自驱) | `partials/8 §5.7`{cursors,allHash} | (补偿走 4.2 sync 投影) | **③ N/A（已移除该面）** | `channel_event_cursor` | M(①②④+cursor) |
 | [~] | 8.x 投票 CRUD | `vote/{createVote,vote,readVote,closeVote,deleteVote}`(:3399) | `partials/6 集合八` | `emit_post_updated`(fat) | data-vote | `message.props` | M |

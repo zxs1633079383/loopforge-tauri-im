@@ -73,11 +73,21 @@ cmd_up() {
 
 cmd_spec() {
   local uc="${1:-}"; [ -n "$uc" ] || die "用法：harness.sh spec <uc-id>（如 6.4）"
+  # 内核自驱 UC（UC-4.1 hello 增量 / UC-4.2 gap sync / UC-10.1 待办）的 hop 在 app boot 时已流过——
+  # 暖栈下 spec 跑在 boot 之后，若 truncate run.jsonl 会把 boot hop 全清空（reducer 抽空 → 假红）。
+  # 这类 UC 用 `harness.sh spec <uc> --keep` 跳过 truncate（保 boot 自驱 hop·见各 spec _note）。
+  # 普通前端命令 round-trip UC（窗口内 invoke 才产 hop）仍默认 truncate（防跨轮串味）。
+  local keep_jsonl=""
+  [ "${2:-}" = "--keep" ] && keep_jsonl="1"
   frontend_healthy  || die "前端 1420 未就绪 —— 先 \`harness.sh up\`"
   webdriver_healthy || die "webdriver 4445 未就绪 —— 先 \`harness.sh up\`（Rust 改了用 reload-app）"
   local spec_file="test/specs/uc-${uc}.e2e.mjs"
   [ -f "$REPO_ROOT/$spec_file" ] || die "spec 不存在：$spec_file"
-  : >"$HELIX_RUN_JSONL" 2>/dev/null || true   # 清旧 hop 防跨轮串味
+  if [ -n "$keep_jsonl" ]; then
+    info "保 run.jsonl（--keep·内核自驱 UC boot hop 不清·UC-4.1/4.2/10.1 类）"
+  else
+    : >"$HELIX_RUN_JSONL" 2>/dev/null || true   # 清旧 hop 防跨轮串味
+  fi
   info "暖栈跑 spec：${spec_file}（app 不重起·仅 wdio）"
   if run_wdio --spec "$spec_file"; then ok "四面报告全绿（uc-${uc}）"; return 0
   else warn "wdio 红（uc-${uc}）—— reducer「断在哪一跳」见上 / ${APP_LOG}"; return 1; fi
@@ -123,7 +133,7 @@ cmd_down() {
 
 case "${1:-}" in
   up)         cmd_up ;;
-  spec)       shift; cmd_spec "${1:-}" ;;
+  spec)       shift; cmd_spec "$@" ;;
   reload-app) shift; cmd_reload_app "$@" ;;
   status)     cmd_status ;;
   down)       cmd_down ;;

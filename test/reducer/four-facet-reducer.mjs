@@ -825,6 +825,138 @@ export function runFourFacetSelfDriven({ jsonl, expect, dom, ucId }) {
   };
 }
 
+// ── 内核自驱·按需 sync notify 族（①②④③ 四面齐）对账（UC-4.2 按需 sync notify）─────────────
+//
+// 与 self-driven 族 runFourFacetSelfDriven 的差异（真源 helix sync_http_effects.rs::sync_notify +
+// sync_effects.rs::sync_mutation_emits/batch_upsert_events_with_messages + projection_control_effects.rs:153）：
+//   - **内核自驱·gap 触发·锚 channel（非 ch;sid;seq 单束）**：UC-4.2 由 cursor 落后（behind-cursor seed）
+//     → hello 握手重检 per-channel needSync → 对落后频道自驱 `channel/sync/notify`（① per-channel 出站·
+//     body {cursors:[{channelId, fromSeq}]}·cursors[0].channelId = 锚 ch·decorator 探 body.cursors[0]
+//     抽 ch → ① keyed by ch）→ server 回放离线区间事件 → 每条可见 type1 emit ② im:channel:update-by-post
+//     （{channel_id, event_seq, msg_id}·瘦·badge）+ 配对 fat im:post:received（增量行）→ ④ message
+//     batch_upsert 逐事件落库 + channel_event_cursor monotonic_upsert 跳空洞。
+//   - **① 出站 + ②④ 投影/落库不在同一 corr_key 束**：sync/notify 出站是 ch-only 束（无 sid）；
+//     update-by-post 投影 + message 落库各带不同 sid（per-event）→ 散在多束。故不走 bundleByCorrKey
+//     单束锚，而在 **UC 窗口（uc_id 过滤）+ 锚 ch（corrAnchor.ch）** 内按 facet 各自聚合裁定（与
+//     relay 族多频道窗口聚合同模式）。
+//   - **断面 = ①②④③（四面齐·badge UC 特有）**：① 窗口内 channel/sync/notify 出站·body.cursors[0].channelId
+//     覆盖锚 ch（faithful·该次 sync 确实请求了锚 ch 的增量·非任取）；② 锚 ch 的 im:channel:update-by-post
+//     投影外层键集 {channel_id, event_seq, msg_id} 严格对齐（缺/多即红）；④ 锚 ch 的 message batch_upsert
+//     落库 ≥ minRows（sync 回放逐事件落库·cursor monotonic_upsert 旁证跳空洞）；③ DOM data-unread badge
+//     ≥1（CL 区频道行 badge·sync 增量后未读累加）+ 增量消息行（data-msg-id 非空·ML 区追加）。
+//
+// 窗口隔离保证可证伪（uc_id 过滤·bootstrap UC = 本 UC）：behind-cursor seed 后窗口内对锚 ch 的
+// sync/notify 出站唯一·update-by-post 投影 ≥1·非 tautology（无 gap → 不发 sync/notify → ① 红·
+// server 无回放 → 无 update-by-post → ② 红·未落库 → ④ 红·badge 未刷 → ③ 红·见单测可证伪对偶）。
+//
+// 机器件归属（非改冻结 oracle·C009）：本入口同属 reducer 领域件·契约 URL+body-shape 由 expect.outbound
+// （helix sync_notify 源码派生·真机curl真源 partials/8 §2.1）冻结·投影外层键集由 expect.projection
+// 冻结·badge/增量行由 expect.dom 冻结·绿由本 reducer 裁定。
+//
+// @param {object} args
+// @param {string} args.jsonl   run.jsonl 全文
+// @param {object} args.expect  期望（expect.corrAnchor.ch 锚频道·expect.outbound flat·expect.projection
+//                              {event,dataKeys}·expect.storage {op,table,minRows}·expect.dom dataAttrs）
+// @param {object} [args.dom]   e2e 注入的 DOM 面终态（data-* 扁平对象·键去 data- 前缀·含 unread + msg-id）
+// @param {string} [args.ucId]  默认取 expect.ucId
+// @returns {object} 报告（facets.outbound / projection / storage / dom）
+export function runFourFacetSyncNotify({ jsonl, expect, dom, ucId }) {
+  const uc = ucId ?? expect.ucId;
+  const anchorCh = expect.corrAnchor?.ch ?? null;
+  const { events, parseErrors } = parseJsonl(jsonl);
+
+  // 窗口内事件（uc 过滤）。
+  const inWin = (e) => uc === undefined || e.uc_id === uc;
+
+  // ① 出站：窗口内 channel/sync/notify 出站·body.cursors[0].channelId 覆盖锚 ch（faithful）。
+  const exp = expect.outbound ?? {};
+  const urlEnds = exp.urlEndsWith;
+  const syncHops = events.filter(
+    (e) =>
+      inWin(e) &&
+      e.facet === 'outbound' &&
+      e.hop === 'http-req' &&
+      (!urlEnds || urlEnds === '*' || String(e.payload?.url ?? '').endsWith(urlEnds))
+  );
+  // 锚 ch 覆盖那条优先（cursors[0].channelId === anchorCh）；无锚或未命中则取首条 sync/notify。
+  const syncHit =
+    (anchorCh &&
+      syncHops.find((h) => {
+        const cur = h.payload?.body?.cursors;
+        return Array.isArray(cur) && cur.some((c) => c && (c.channelId === anchorCh || c.channel_id === anchorCh));
+      })) ||
+    syncHops[0] ||
+    null;
+  const outboundFacet = diffOutbound(
+    exp,
+    syncHit ? { kind: 'http', method: syncHit.payload?.method, url: syncHit.payload?.url, body: syncHit.payload?.body ?? {} } : null
+  );
+
+  // ② 投影：窗口内锚 ch 的 im:channel:update-by-post（{channel_id, event_seq, msg_id}）·取首条。
+  const pexp = expect.projection ?? {};
+  const projHit =
+    events.find(
+      (e) =>
+        inWin(e) &&
+        e.facet === 'projection' &&
+        e.hop === 'projection' &&
+        (e.payload?.event ?? e.payload?.channel) === pexp.event &&
+        (!anchorCh ||
+          (e.payload?.data?.channel_id ?? e.payload?.data?.channelId) === anchorCh)
+    ) ?? null;
+  const projActual = projHit
+    ? { event: projHit.payload?.event ?? projHit.payload?.channel, data: projHit.payload?.data ?? {} }
+    : null;
+  const projFacet = diffProjection(pexp, projActual);
+
+  // ④ 落库：窗口内锚 ch 的 message batch_upsert 累计 rows ≥ minRows（sync 回放逐事件落库）。
+  const sexp = expect.storage ?? {};
+  const sTable = sexp.table ?? 'message';
+  let rowCount = 0;
+  let sawOp = null;
+  for (const e of events) {
+    if (!inWin(e)) continue;
+    if (e.facet !== 'storage') continue;
+    const p = e.payload ?? {};
+    if (!p.op || (sTable && p.table !== sTable)) continue;
+    // 锚 ch 过滤（message 落库 payload 带 channel_id）：只计锚频道的落库行（faithful·非任取窗口全部）。
+    if (anchorCh && (p.channel_id ?? p.channelId) !== anchorCh) continue;
+    sawOp = p.op;
+    rowCount += p.rows ?? p.keys ?? p.count ?? 1;
+  }
+  const storageFacet = sawOp
+    ? diffStorage(sexp, { op: sawOp, table: sTable, rows: rowCount })
+    : facetFail('storage', `无锚 ch 的 ${sTable} 落库写（断在 sync reply→reconcile→Storage 这跳）`, { expect: sexp });
+
+  // ③ DOM：e2e 注入·data-unread badge ≥1（CL 行）+ 增量消息行 data-msg-id 非空（ML 行）。
+  const domFacet = diffDom(expect.dom ?? {}, dom ?? null);
+
+  // 断面：①②④③（四面齐·badge UC）。
+  const facets = {
+    outbound: outboundFacet,
+    projection: projFacet,
+    storage: storageFacet,
+    dom: domFacet,
+  };
+  const order = ['outbound', 'projection', 'storage', 'dom'];
+  const brokenAt = order.find((f) => !facets[f].ok) ?? null;
+  const green = brokenAt === null && parseErrors.length === 0;
+
+  return {
+    ucId: uc,
+    green,
+    brokenAt,
+    anchorCh,
+    facets,
+    parseErrors,
+    summary: green
+      ? `✅ ${uc} 按需 sync notify 四面全绿（anchorCh=${anchorCh ?? 'n/a'}·endpoint=${urlEnds}·event=${pexp.event}）`
+      : `❌ ${uc} 断在 [${brokenAt ?? 'parse'}] 面：${
+          brokenAt ? facets[brokenAt].issues.join('; ') : `JSONL 解析 ${parseErrors.length} 行坏`
+        }`,
+  };
+}
+
 /**
  * 主入口：跑四面对账，出报告。
  *

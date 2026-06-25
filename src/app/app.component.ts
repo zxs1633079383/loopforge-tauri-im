@@ -666,9 +666,12 @@ export class AppComponent implements OnInit, OnDestroy {
     /* UC-5.8 接通 */
   }
 
-  /** UC-4.2 按需 sync。占位 → 接增量 sync notify。 */
+  /** UC-4.2 按需 sync：触发引擎重连 → 重检 per-channel needSync gap → 对落后频道自驱
+   *  channel/sync/notify → server 回放离线区间事件 → ML 增量消息行（im:post:received）+ CL
+   *  data-unread badge 累加（im:channel:update-by-post）+ message 落库 + cursor 跳空洞。
+   *  薄壳只调 store.syncChannels（invoke im_sync_channels·业务全在 helix-im·壳不臆造 sync 逻辑）。 */
   onSyncChannels(): void {
-    /* UC-4.2 接通 */
+    this.store.syncChannels();
   }
 
   /** UC-11.1 维护公司大群。占位 → 接 im_team_upsert。 */

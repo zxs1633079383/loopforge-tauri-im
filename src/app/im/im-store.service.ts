@@ -19,10 +19,12 @@ import {
   CHANNELS_PROJECTION_CHANNEL,
   CHANNEL_SCHEDULE_CREATED_CHANNEL,
   CHANNEL_CLOSED_CHANNEL,
+  CHANNEL_UPDATE_BY_POST_CHANNEL,
   ChannelCreatedData,
   ChannelClosedData,
   ChannelIncrementData,
   ChannelScheduleCreatedData,
+  ChannelUpdateByPostData,
   MESSAGE_ROW_CHANNELS,
   MEMBER_NICKNAME_CHANNEL,
   MemberNicknameData,
@@ -154,6 +156,19 @@ export class ImStoreService {
       clearTimeout(this.readyTimer);
       this.readyTimer = null;
     }
+  }
+
+  /**
+   * UC-4.2 按需 sync notify：触发引擎重连 → 重跑 hello 握手 → 重检 per-channel needSync gap →
+   * 对落后频道自驱 `channel/sync/notify`（出站 body {cursors:[{channelId, fromSeq}]}）→ server
+   * 回放离线区间事件 → im:post:received（增量行）+ im:channel:update-by-post（badge +1）+ message
+   * 落库 + cursor 跳空洞。薄壳只 invoke im_sync_channels（引擎 emit im:net:reconnect_requested →
+   * driver 重连·业务全在 helix-im·壳不臆造 sync 逻辑）。非 Tauri / 命令缺失 → 静默（dev 浏览器不卡）。
+   */
+  syncChannels(): void {
+    this.bridge.invoke<void>("im_sync_channels").catch(() => {
+      // 非 Tauri / 命令缺失 → 忽略（dev 单独调 UI 不卡）
+    });
   }
 
   /** 轮询 im_ready 直到 true；非 Tauri 环境 invoke reject → 停轮询（dev 单独调样式不卡死）。 */
@@ -1050,6 +1065,17 @@ export class ImStoreService {
       );
       return;
     }
+    // UC-4.2 按需 sync notify：im:channel:update-by-post（{channel_id, event_seq, msg_id}·瘦·sync
+    // 回放每条可见 type1 新消息触发·badge 触发位）→ 把该频道行 unread badge +1（data-unread 累加·
+    // channel-row 级未读计数·壳纯渲染只透传投影信号累加·不在 JS 解析 increment 帧重组业务）。增量
+    // 消息行追加由配对的 fat im:post:received（MESSAGE_ROW_CHANNELS 分支·applyMessageItem）驱动。
+    // 先于 message-row 分支（channel-row 信号·非 message_item_data fat 集）。
+    if (channel === CHANNEL_UPDATE_BY_POST_CHANNEL) {
+      this.applyChannelUpdateByPost(
+        env.payload?.data as ChannelUpdateByPostData | undefined,
+      );
+      return;
+    }
     // UC-6.3 改群昵称：im:channel:memberNickname（{channelId, userId, nickName}·WS
     // update_channel_member_nickName 透传·broadcast 到 channelId）→ 把 MB 区该成员行 nickname 刷成
     // nickName（data-nickname 回读·壳纯渲染透传投影 nickName·不在 JS 合成）；成员行缺则 upsert
@@ -1325,6 +1351,30 @@ export class ImStoreService {
     this._channels.update((rows) =>
       rows.map((c) =>
         c.channelId === channelId ? { ...c, hasSchedule: has } : c,
+      ),
+    );
+  }
+
+  /**
+   * UC-4.2：im:channel:update-by-post（{channel_id, event_seq, msg_id}·瘦·sync 回放每条可见 type1
+   * 新消息触发·badge 触发位）→ 把该频道行 unread badge +1（data-unread 累加·channel-row 级未读
+   * 计数）。壳纯渲染：每条 update-by-post 信号即未读 +1（投影驱动累加·不在 JS 解析 increment 帧/
+   * unreadCount 重组业务·与 fat im:post:received 配对：后者驱动 ML 增量行追加·本者驱动 CL badge）。
+   * channel_id 缺 → noop（无定点目标·守边界零信任·snake 信号锚）。行不存在则先 upsert 锚 data-channel-id。
+   */
+  private applyChannelUpdateByPost(
+    data: ChannelUpdateByPostData | undefined,
+  ): void {
+    if (!data || typeof data !== "object") return;
+    const channelId =
+      (typeof data.channel_id === "string" && data.channel_id) || "";
+    if (!channelId) return;
+    this.upsertChannelRow(channelId);
+    this._channels.update((rows) =>
+      rows.map((c) =>
+        c.channelId === channelId
+          ? { ...c, unread: (c.unread ?? 0) + 1 }
+          : c,
       ),
     );
   }

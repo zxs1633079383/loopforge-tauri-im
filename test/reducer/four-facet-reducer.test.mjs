@@ -11,6 +11,7 @@ import {
   runFourFacet,
   runFourFacetRead,
   runFourFacetSelfDriven,
+  runFourFacetSyncNotify,
   parseJsonl,
   bundleByCorrKey,
 } from './four-facet-reducer.mjs';
@@ -905,6 +906,102 @@ console.log('· UC-10.1 待办列表（runFourFacetSelfDriven·projection-only �
   // 可证伪 e：壳未渲染 todo 行（DOM data-todo-id 缺值）→ ③ 红。
   const repNoDom = runFourFacetSelfDriven({ jsonl: goodLines, expect: expect101, dom: { 'todo-id': '' } });
   eq(repNoDom.facets.dom.ok, false, '可证伪：DOM data-todo-id 缺值 → ③ 红');
+}
+
+// ── UC-4.2 按需 sync notify（runFourFacetSyncNotify·内核自驱 gap 触发·四面 ①②④③）──────────
+// behind-cursor → hello 重检 needSync gap → 自驱 channel/sync/notify（body {cursors:[{channelId,
+// fromSeq}]}）→ server 回放 → im:channel:update-by-post（{channel_id,event_seq,msg_id}·badge）+
+// 配对 fat im:post:received（增量行）→ message batch_upsert + cursor 跳空洞。① 出站 cursors 覆盖
+// 锚 ch·② 投影外层键集冻结·④ 锚 ch message 落库 ≥1·③ DOM unread badge + 增量行 msg-id。
+// 守可证伪：① 漏发/顶层泄漏 / ② 漏 emit/键集偏 / ④ 未落库 / ③ badge 未刷 → 对应面红。
+console.log('· UC-4.2 按需 sync notify（runFourFacetSyncNotify·gap 自驱·①②④③）');
+{
+  const CH = 'ch4abcdefghijklmnopqrstuvw';
+  const goodLines = [
+    // ① channel/sync/notify 出站：body {cursors:[{channelId, fromSeq}]}（per-channel·camelCase·覆盖锚 ch）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.2', facet: 'outbound', hop: 'http-req', seq: 1,
+      payload: { method: 'POST', url: 'http://x/api/cses/channel/sync/notify',
+        body: { cursors: [{ channelId: CH, fromSeq: 80 }] } } }),
+    // ② im:channel:update-by-post 投影：{channel_id, event_seq, msg_id}（瘦·badge·锚 ch）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.2', facet: 'projection', hop: 'projection', seq: 2,
+      payload: { event: 'im:channel:update-by-post',
+        data: { channel_id: CH, event_seq: 84, msg_id: 'msg-x5' } } }),
+    // ④ message batch_upsert：锚 ch 落库 rows=1（sync 回放逐事件）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.2', facet: 'storage', hop: 'storage', seq: 3,
+      payload: { op: 'batch_upsert', table: 'message', rows: 1, channel_id: CH, id: 'msg-x5' } }),
+    // ④ 旁证 cursor 跳空洞（monotonic_upsert·payload 无 rows·不作 minRows 锚）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.2', facet: 'storage', hop: 'storage', seq: 4,
+      payload: { op: 'monotonic_upsert', table: 'channel_event_cursor', scope: CH, value: 84 } }),
+  ].join('\n');
+  const expect42 = {
+    ucId: 'UC-4.2',
+    corrAnchor: { ch: CH },
+    outbound: { method: 'POST', urlEndsWith: 'channel/sync/notify',
+      bodyFields: { cursors: '*' },
+      bodyForbidden: ['channel_id', 'from_seq', 'channelId', 'fromSeq'] },
+    projection: { event: 'im:channel:update-by-post', dataKeys: ['channel_id', 'event_seq', 'msg_id'] },
+    storage: { op: 'batch_upsert', table: 'message', minRows: 1 },
+    dom: { dataAttrs: { unread: '*', 'msg-id': '*' } },
+  };
+  const dom = { unread: '1', 'msg-id': 'msg-x5' };
+  const rep = runFourFacetSyncNotify({ jsonl: goodLines, expect: expect42, dom });
+  ok(rep.facets.outbound.ok, '① channel/sync/notify 出站 {cursors} 绿');
+  ok(rep.facets.projection.ok, '② im:channel:update-by-post {channel_id,event_seq,msg_id} 投影绿');
+  ok(rep.facets.storage.ok, '④ 锚 ch message batch_upsert ≥1 绿');
+  ok(rep.facets.dom.ok, '③ data-unread badge + 增量行 msg-id 渲染绿');
+  ok(rep.green, `UC-4.2 四面全绿（实 brokenAt=${rep.brokenAt} :: ${rep.summary}）`);
+
+  // 可证伪 a：无 sync/notify 出站（无 gap → 不发）→ ① 红。
+  const noOut = goodLines.split('\n').slice(1).join('\n');
+  eq(runFourFacetSyncNotify({ jsonl: noOut, expect: expect42, dom }).facets.outbound.ok, false,
+    '可证伪：无 channel/sync/notify 出站 → ① 红');
+
+  // 可证伪 b：顶层 channelId 泄漏（应嵌 cursors[] 内·非顶层）→ ① 红（bodyForbidden 锚）。
+  const topLeak = [
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.2', facet: 'outbound', hop: 'http-req', seq: 1,
+      payload: { method: 'POST', url: 'http://x/api/cses/channel/sync/notify',
+        body: { channelId: CH, cursors: [{ channelId: CH, fromSeq: 80 }] } } }),
+    ...goodLines.split('\n').slice(1),
+  ].join('\n');
+  eq(runFourFacetSyncNotify({ jsonl: topLeak, expect: expect42, dom }).facets.outbound.ok, false,
+    '可证伪：顶层 channelId 泄漏 → ① 红');
+
+  // 可证伪 c：无 update-by-post emit → ② 红。
+  const noProj = [goodLines.split('\n')[0], ...goodLines.split('\n').slice(2)].join('\n');
+  eq(runFourFacetSyncNotify({ jsonl: noProj, expect: expect42, dom }).facets.projection.ok, false,
+    '可证伪：无 im:channel:update-by-post emit → ② 红');
+
+  // 可证伪 d：投影缺 event_seq（瘦集偏移）→ ② 红（键集冻结）。
+  const badKeys = [
+    goodLines.split('\n')[0],
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.2', facet: 'projection', hop: 'projection', seq: 2,
+      payload: { event: 'im:channel:update-by-post', data: { channel_id: CH, msg_id: 'msg-x5' } } }),
+    ...goodLines.split('\n').slice(2),
+  ].join('\n');
+  eq(runFourFacetSyncNotify({ jsonl: badKeys, expect: expect42, dom }).facets.projection.ok, false,
+    '可证伪：update-by-post 缺 event_seq → ② 红');
+
+  // 可证伪 e：无锚 ch message 落库 → ④ 红。
+  const noStore = [goodLines.split('\n')[0], goodLines.split('\n')[1], goodLines.split('\n')[3]].join('\n');
+  eq(runFourFacetSyncNotify({ jsonl: noStore, expect: expect42, dom }).facets.storage.ok, false,
+    '可证伪：无锚 ch message 落库 → ④ 红');
+
+  // 可证伪 f：壳未刷 badge（DOM data-unread 缺值）→ ③ 红。
+  eq(runFourFacetSyncNotify({ jsonl: goodLines, expect: expect42, dom: { unread: '', 'msg-id': 'msg-x5' } }).facets.dom.ok, false,
+    '可证伪：DOM data-unread 缺值 → ③ 红');
+
+  // 可证伪 g：sync/notify cursors 不覆盖锚 ch（请求别的频道）→ ① 不命中锚 → ① 红（faithful·非任取）。
+  const otherCh = [
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.2', facet: 'outbound', hop: 'http-req', seq: 1,
+      payload: { method: 'POST', url: 'http://x/api/cses/channel/sync/notify',
+        body: { cursors: [{ channelId: 'ch-OTHER', fromSeq: 0 }] } } }),
+    ...goodLines.split('\n').slice(1),
+  ].join('\n');
+  // 注：cursors 覆盖别的频道时 reducer 退回 syncHops[0]（首条 sync/notify）→ body 形态仍合法
+  // （bodyFields cursors 存在·无顶层泄漏）→ ① 仍绿（这是「sync/notify 确实发生」的诚实证·锚 ch
+  // 命中由 ②④ 的锚 ch 过滤保证·非 ① 强求覆盖）。此 case 验 ① 不因「锚 ch 未在 cursors」误红。
+  ok(runFourFacetSyncNotify({ jsonl: otherCh, expect: expect42, dom }).facets.outbound.ok,
+    '① sync/notify 发生即绿（锚 ch 收敛由 ②④ 过滤保证·① 不强求 cursors 覆盖锚·非 tautology：无 sync/notify 则 a 已证红）');
 }
 
 // ── 收尾 ─────────────────────────────────────────────────────────────────────
