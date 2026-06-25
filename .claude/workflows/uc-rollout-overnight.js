@@ -31,13 +31,23 @@ const DISCIPLINE = `
 # 你是 loopforge-tauri-im 自主工程 agent（cwd ${REPO}·分支 feat/uc-rollout）
 # 开局必读：根 CLAUDE.md §8/§9 + ${RUNBOOK}(单一执行真源) + docs/harness/C001-C012 + docs/spec/angular-ui-plan.md
 
+## 全权 autonomous（2026-06-25 用户授权·终态=真闭环）
+目标=**每个 issue 真实关闭·真代码+真测试·覆盖该 UC 全部 HTTP/WS(对 coverage-crossmap.md)**。用户已全权授权你**自己拍契约决策·不要停下问人**。**禁止拿 status=blocked/yellow 当退路**——必须自决修到四面真绿。
+
+## 契约 vs 环境失配决策范式（live 四面失配时·自己拍·优先级从高到低）
+1. **改环境对齐契约**(首选·oracle 不动)：如 expect 编码冷启动 increment-delta 但本机 DB 是 current-cursor → **重置 channel_event_cursor.last_event_seq=0 落后态**，并把「run 前重置」固化成可复跑 seed/hook(别留一次性手工态)。
+2. **改测试机器件**(reducer/装饰器/seed·非冻结 oracle·允许改)：如 ① batch 出站无单 channel corr_key → 装饰器 \`crates/helix-driver-instrument/src/event.rs\` extract_corr_key 加 \`body.cursors[0].channelId\` 探针归束(契约 URL+body-shape 没变=不算改契约)。
+3. **改冻结契约**(最后手段·需确凿证据该 expect 本身错)：可改但 commit body 必写「契约变更提案+证据(run.jsonl)」。
+
 ## 铁律
-- **契约只读**：禁改冻结 expect/tape/真源(真机curl真源/projection-schema)让红变绿；绿由 reducer 裁定(C009)。
-- **确认即修+验证**：红→四段日志(${RUNBOOK} §6.1)定位哪一端→确认 loopforge/helix 缺陷就**改实现+复跑验证**(helix 在 /Users/mac28/workspace/rustWorkspace/helix 改+commit·不 merge helix 主线)。go-server 默认对。
-- **gRPC 信号**：/tmp/mm-go.log 出现 'no service available'/'grpcx9.go' → 隧道断 → \`sudo bash /Users/mac28/workspace/java/zlc_ai/GenericAgent/tp-connect.sh\`(密码输四个空格)+ \`pkill -f cses\` + \`cd /Users/mac28/workspace/java/cses && ./gradlew run > /tmp/cses-java.log 2>&1 &\`(Micronaut)→ 等起好重发。
-- **不回退已绿** UC-1.1/1.2/1.5(冻结集禁改)；前端事件必配组件方法(C007)。
-- **绝不 merge main**；commit 前 \`bash scripts/gate.sh\` 须绿；conventional 中文 commit。
-- 卡死/超预算/helix 改不动 → 标 status=blocked/yellow + gh issue comment 贴 bug 报告 + ledger 标 🟡 + **不阻塞·返回继续下一个**。
+- **冻结 oracle 永不为绿而改**：\`test/expect/*.expect.json\` / projection-schema / 真机curl真源 / golden tape。**可改机器件**：reducer four-facet-reducer.mjs / 装饰器 extract_corr_key / seed·cursor 脚本 / 渲染壳 / helix 引擎实现。绿由 reducer 裁定(C009)。
+- **确认即修+验证**：红→四段日志(${RUNBOOK} §6.1)定位哪一端→loopforge/helix/reducer/装饰器/环境缺陷就**改+复跑验证**(helix 在 /Users/mac28/workspace/rustWorkspace/helix 改+commit·不 merge 主线)。go-server 默认对。
+- **infra 真相纠偏(别再误判 down)**：go-mattermost 跑在 GoLand 里→**没有 /tmp/mm-go.log 是正常的**·别据此判 go 未起；验 go 用 \`curl -s localhost:8065/api/v4/system/ping\`(200=健康)。app 实际打开的 DB 是**字面名文件** \`/tmp/loopforge-im.db?mode=rwc\`(engine.rs:101 format 串把 ?mode=rwc 拼进文件名)·**plain /tmp/loopforge-im.db 是 0 字节幽灵文件·别据此判 db 空/infra down**。cses-java 是 graalvm Micronaut(端口 7091/3399/3391)。
+- **gRPC 隧道断**(确认是连接非逻辑)：/tmp/mm-go.log 或 go 控制台出现 'no service available'/'grpcx9.go' → \`sudo bash /Users/mac28/workspace/java/zlc_ai/GenericAgent/tp-connect.sh\`(密码四空格·若交互 sudo 失败则在 issue 留 NEED_TUNNEL comment 让 main 协调·不死磕)。
+- **#7(UC-4.1 cold-increment) 已知 yellow=真 server-data-gap（cursor 重置后 hello 仍回空增量·server 无 channel event 历史可回放·commit 63bfc7e ①③已绿）·不阻塞任何下游 UC**：建群(#8)/发消息(#10)/已读/历史 都是独立流·**不依赖 cold-increment**。遇 issue 上"Blocked by #7"一律视为可推进·别再回头死磕 #7。#7 留到所有数据生成类 UC 后由收尾复跑（那时 server 已有真事件→②④ 多半自愈转绿）。
+- **不回退已绿** UC-1.1/1.2/1.5 + UC-4.1 的 ①③(63bfc7e/f72fdf2)；前端事件必配组件方法(C007)。
+- **绝不 merge main / 不 push**；commit 前验 pwd 在仓内 + branch=feat/uc-rollout + \`bash scripts/gate.sh\` 须绿；conventional 中文结构化 commit。
+- **唯一允许 yellow 的情形**：确凿 server-side 数据 gap(如 cursor 重置后 hello 仍回空增量=cses-java 无该 channel event 历史)·必带 run.jsonl 证据 + issue comment 说明·**其余一律修到绿**。
 - 完成/中断写终态行到 docs/harness/log.md。
 `
 
@@ -45,12 +55,13 @@ function ucPrompt(uc) {
   return `${DISCIPLINE}
 
 ## 本任务：闭环解决 GitHub issue #${uc.n}（${uc.uc} ${uc.title || ''}）${uc.notes ? '·' + uc.notes : ''}
-1. \`gh issue view ${uc.n} --comments\` 读四面锚点 + Angular 需求 + Blocked by（blocker 未绿先跳过本 UC 返回 blocked）。
+0. **幂等跳过**：\`gh issue view ${uc.n} --json state -q .state\`。若已 CLOSED 且 test/specs/uc-${uc.id}.e2e.mjs + test/expect/uc-${uc.id}.expect.json 存在 + \`bash scripts/gate.sh\` 绿 → 直接返回 status=green（note="已闭环·跳过"）不重做。否则继续。
+1. \`gh issue view ${uc.n} --comments\` 读四面锚点 + Angular 需求 + Blocked by（blocker 未绿先做 blocker 再回本 UC；blocker 已 CLOSED 视为绿可直接推进·别再标 blocked 退路）。
 2. **若无** test/expect/uc-${uc.id}.expect.json + test/specs/uc-${uc.id}.e2e.mjs → 照 test/expect/uc-send-1.* 模板从冻结真源(helix 真机curl真源.md ① / projection-schema.md ②④)派生 author（契约只读·找不到 endpoint 标 ambiguity 别臆造）。
 3. 接最简 Angular UI：按 angular-ui-plan 往 #46 骨架绑数据/加交互件（加法式·事件配方法 C007）。
 4. \`for p in 1420 4445; do pid=$(lsof -ti tcp:$p); [ -n "$pid" ] && kill -9 $pid; done; pkill -f loopforge-tauri-im; sleep 1\`；改了 Rust 才 \`cargo build --manifest-path src-tauri/Cargo.toml\`。
 5. \`bash scripts/run.sh -- --spec test/specs/uc-${uc.id}.e2e.mjs\`（默认 seeded db）。
-6. 四面 reducer：**绿**→翻 docs/uc-coverage-ledger.md ✅ + 勾 docs/uc-rollout/rollout-checklist.md + \`gh issue close ${uc.n} --comment "四面全绿 corr_key=..."\` + \`bash scripts/gate.sh\` + commit → status=green。**红**→§6.1 四段日志定位→确认即修(loopforge/helix)/gRPC 自重启→复跑；迭代到绿或判定 helix 缺陷改不动→bug 报告 + 🟡 + status=yellow（不阻塞）。
+6. 四面 reducer：**绿**→翻 docs/uc-coverage-ledger.md ✅ + 勾 docs/uc-rollout/rollout-checklist.md + \`gh issue close ${uc.n} --comment "四面全绿 corr_key=..."\` + \`bash scripts/gate.sh\` + commit → status=green。**红**→§6.1 四段日志定位 + 套「契约 vs 环境决策范式」**自决修到绿**(改环境/机器件/helix 实现·迭代复跑)。**禁 blocked/yellow 退路**——只有确凿 server-side 数据 gap(带 run.jsonl 证据)才 yellow，其余必修到四面真绿。覆盖核对：本 UC 的 HTTP/WS 都在 spec 里被实跑覆盖(对 coverage-crossmap.md)。
 ${uc.notes && uc.notes.includes('预期红') ? '   注：本 UC ① 预期红(acl fix 在 helix round3 不在 pin 的 round6)——可在 helix 仓 cherry-pick/移植该 fix 到 round6 后验证；移植不动则标 🟡 出 bug 报告。' : ''}
 7. 返回 UC_RESULT 结构。`
 }
@@ -111,11 +122,13 @@ const summary = await agent(`${DISCIPLINE}
 
 ## 本任务：整任务收尾
 逐项结果：绿 ${green.length} · 黄 ${yellow.length} · blocked ${blocked.length}。
+0. **复跑 #7(UC-4.1) 自愈尝试**：现在 #8/#10 等数据生成类 UC 已在 server 造出真 channel+消息事件 → \`bash scripts/seed-behind-cursor.sh\`(或 run.sh 已内置)重置 cursor=0 + \`bash scripts/run.sh -- --spec test/specs/uc-4.1.e2e.mjs\` 复跑。若 ②④ 现有 increment 帧(reducer 四面绿) → 翻 ledger ✅ + 勾 checklist + \`gh issue close 7\` + commit。仍回空增量(cursor 跑后仍 0) → 维持 yellow(确凿 server gap·留 issue 开·带证据)。其余 yellow UC 同理各试一次复跑。
 1. 核对 docs/uc-coverage-ledger.md 绿数 = checklist 勾数 = gh 关闭的 issue 数（C011 诚实出账·不一致则修正）。
-2. \`bash scripts/gate.sh\` 须绿。
-3. 写总终态行到 docs/harness/log.md：'✅ DONE/⚠️ PARTIAL UC rollout 阶段0-7 | commit 范围 | 绿N/黄M/blocked K | feat/uc-rollout'。
-4. \`git log --oneline -1\` + \`git tag -l 'v0.1-phase*'\` 汇总。
-返回 UC_RESULT（uc='FINAL'·status=green 若全绿否则 yellow·note 写最终统计 + tag 列表 + 剩余黄/blocked 清单）。`,
+2. **HTTP/WS 覆盖审计**：对 docs/uc-rollout/coverage-crossmap.md 逐条核——每个非排除的 HTTP/WS 是否都有一个**实跑过的绿 UC spec** 覆盖。列出任何未覆盖的 HTTP/WS（排除项 bot/5.6/5.7/7.x/4.3/🌙1.3/L2 不算）。有缺口则在 note 标明"覆盖缺口:[...]"供下一轮补。
+3. \`bash scripts/gate.sh\` 须绿。
+4. 写总终态行到 docs/harness/log.md：'✅ DONE/⚠️ PARTIAL UC rollout 阶段0-7 | commit 范围 | 绿N/黄M/blocked K | HTTP/WS 覆盖 X/Y | feat/uc-rollout'。
+5. \`git log --oneline -1\` + \`git tag -l 'v0.1-phase*'\` 汇总。
+返回 UC_RESULT（uc='FINAL'·status=green 若全绿且 HTTP/WS 全覆盖否则 yellow·note 写最终统计 + tag 列表 + 剩余黄清单 + 覆盖缺口）。`,
   { label: 'finalize', phase: 'Finalize', schema: UC_RESULT, effort: 'high' })
 
 return {
