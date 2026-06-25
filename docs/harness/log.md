@@ -126,3 +126,5 @@
 ✅ DONE UC-10.1 待办列表四面闭环（①②③ 全绿·④ projection-only N/A·issue #31 closed） @2026-06-25 18:34:28 CST | commit 2731796 | 1/1 步 | loopforge-tauri-im/feat/uc-rollout
 
 ✅ DONE UC-4.2 按需 sync notify 四面契约闭环（①②④③ 内核自驱 gap 全绿·issue #32 closed） @2026-06-25 18:58:08 CST | commit 9cbffc7 | 1/1 步·spec ×2 | loopforge-tauri-im/feat/uc-rollout
+
+✅ DONE UC-4.5 陌生 channel 兜底读族四面闭环（issue #33 closed·e2e 真跑全绿） @2026-06-25T19:16+08:00 | commit 131a424 | ①② green · ③④ N/A(读路径·is_read=true 校正) | loopforge-tauri-im/feat/uc-rollout
