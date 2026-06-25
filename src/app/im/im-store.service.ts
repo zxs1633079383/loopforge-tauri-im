@@ -24,6 +24,8 @@ import {
   ChannelIncrementData,
   ChannelScheduleCreatedData,
   MESSAGE_ROW_CHANNELS,
+  MEMBER_NICKNAME_CHANNEL,
+  MemberNicknameData,
   MESSAGES_QUERY_RESULT_CHANNEL,
   MessageItemData,
   MessagesQueryResultData,
@@ -382,6 +384,37 @@ export class ImStoreService {
       });
     } catch {
       // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（置顶态靠投影驱动·无乐观合成）。
+    }
+  }
+
+  /**
+   * UC-6.3 改群昵称：invoke('im_update_member_nickname', {channelId, userId?, nickname}）。
+   *
+   * **壳不臆造 body**：endpoint + camelCase body（{channelId, nickname[, userId]}）由 Rust/helix-im
+   * 兜底（commands.rs im_update_member_nickname → outbound/channel_existing.rs UpdateNicknameCommand →
+   * POST channel/member/change/nickname）。壳只供 channelId（目标频道）+ userId（被改昵称的成员·
+   * 缺省则 Go 侧用 session 自身）+ nickname（新昵称·空 → Go 侧清空）。WS 回
+   * update_channel_member_nickName（broadcast 到 channelId·{channelId, userId, nickName}）→ ④
+   * channel_member 表 BatchUpsert（复合 PK·仅改 nick_name 列）+ ② im:channel:memberNickname →
+   * applyMemberNickname 把 MB 区成员行 data-nickname 刷新（壳纯渲染只透传投影 nickName·无乐观合成）。
+   * 非 Tauri / 命令缺失 → 静默。
+   */
+  async changeMemberNickname(
+    channelId: string,
+    userId: string,
+    nickname: string,
+  ): Promise<void> {
+    const ch = channelId.trim();
+    if (!ch) return;
+    const uid = userId.trim();
+    try {
+      await this.bridge.invoke<void>("im_update_member_nickname", {
+        channelId: ch,
+        userId: uid || undefined,
+        nickname,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（昵称靠投影驱动·无乐观合成）。
     }
   }
 
@@ -793,6 +826,14 @@ export class ImStoreService {
       );
       return;
     }
+    // UC-6.3 改群昵称：im:channel:memberNickname（{channelId, userId, nickName}·WS
+    // update_channel_member_nickName 透传·broadcast 到 channelId）→ 把 MB 区该成员行 nickname 刷成
+    // nickName（data-nickname 回读·壳纯渲染透传投影 nickName·不在 JS 合成）；成员行缺则 upsert
+    // （投影驱动成员入列·data-member-id=userId）。先于 message-row 分支（member-row 信号·非 fat 集）。
+    if (channel === MEMBER_NICKNAME_CHANNEL) {
+      this.applyMemberNickname(env.payload?.data as MemberNicknameData | undefined);
+      return;
+    }
 
     // UC-1.5 撤回：在线 im:post:batch-updated（{channel_id, posts}）/ 离线 im:post:deleted（fat）
     // → 按 server id 标行 data-revoke=1。先于 MESSAGE_ROW_CHANNELS fat 覆写分支处理。
@@ -1025,6 +1066,32 @@ export class ImStoreService {
         c.channelId === channelId ? { ...c, hasSchedule: has } : c,
       ),
     );
+  }
+
+  /**
+   * UC-6.3：im:channel:memberNickname（{channelId, userId, nickName}·WS update_channel_member_nickName
+   * 透传·broadcast 到 channelId）→ 把 MB 区该成员行 nickname 刷成 nickName（data-nickname 回读·
+   * 壳纯渲染只透传投影 nickName·不在 JS 合成）。成员行缺则 upsert（投影驱动成员入列·data-member-id=
+   * userId）——投影是该成员昵称的权威产出者（WS handler 复合 PK upsert channel_member·缺行插占位）。
+   * userId 缺 → noop（无定点目标·守边界零信任）。
+   */
+  private applyMemberNickname(data: MemberNicknameData | undefined): void {
+    if (!data || typeof data !== "object") return;
+    const userId =
+      (typeof data.userId === "string" && data.userId) || "";
+    if (!userId) return; // 无定点成员 → noop（与 helix WS handler 三键缺一 noop 一致）
+    const nickName = typeof data.nickName === "string" ? data.nickName : "";
+    let found = false;
+    this._members.update((rows) => {
+      const next = rows.map((m) => {
+        if (m.memberId !== userId) return m;
+        found = true;
+        return { ...m, nickname: nickName };
+      });
+      if (found) return next;
+      // 成员行缺 → upsert（投影驱动成员入列·data-member-id=userId·data-nickname=nickName）。
+      return [...next, { memberId: userId, nickname: nickName }];
+    });
   }
 
   /**

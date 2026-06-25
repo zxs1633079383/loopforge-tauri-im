@@ -653,6 +653,46 @@ pub async fn im_channel_change_top(
         .map_err(|e| format!("im_channel_change_top: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-6.3 改群昵称：前端传 `channelId`（目标频道）+ `userId`（被改昵称的成员·缺省则 Go 侧用
+/// session 自身）+ `nickname`（新昵称·trim 空 → Go 侧清空昵称·故不在壳强校非空）→ 转 snake_case
+/// 入泵 `im_update_member_nickname`（helix-im `outbound/channel_existing.rs` `UpdateNicknameCommand`
+/// 兑现出站 `POST channel/member/change/nickname {channelId, nickname[, userId]}`·真机curl真源
+/// partials/6 UC-6.3 + Go command.UpdateChannelMemberNickname）。
+///
+/// WS 回 `update_channel_member_nickName`（broadcast 到 channelId·{channelId, userId, nickName}·
+/// camelN）→ ④ channel_member 表 BatchUpsert（复合 PK channel_id,user_id·仅改 nick_name 列）+
+/// ② `im:channel:memberNickname`（{channelId, userId, nickName}·to_effect_s1::emit_member_nickname）
+/// → ③ DOM data-nickname 回读。薄壳纪律：只翻译入参 + 入泵，body camelCase 化 + endpoint 全在
+/// helix-im，本壳不臆造。
+#[tauri::command]
+pub async fn im_update_member_nickname(
+    state: State<'_, AppState>,
+    channel_id: String,
+    user_id: Option<String>,
+    nickname: String,
+) -> Result<(), String> {
+    if channel_id.trim().is_empty() {
+        return Err("im_update_member_nickname: channelId 为空".into());
+    }
+    // nickname 允许空（Go 侧 trim 空 → 清空昵称）；userId 缺省 → helix outbound 不带该字段 →
+    // Go 侧用 session 自身 userId 覆盖（真源 channel.go:539-541）。
+    let mut args = serde_json::json!({
+        "channel_id": channel_id,
+        "nickname": nickname,
+    });
+    if let Some(uid) = user_id {
+        if !uid.trim().is_empty() {
+            args["user_id"] = serde_json::Value::String(uid);
+        }
+    }
+    let tick = command("im_update_member_nickname", args);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_update_member_nickname: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-5.3 关闭/退出群：前端传 `channelId`（目标频道）→ 转 snake_case 入泵 `im_channel_close`
 /// （helix-im `outbound/channel_existing.rs` `ChannelCloseCommand` 兑现出站 `POST channel/close
 /// {channelId}`·真机curl真源 §6）。

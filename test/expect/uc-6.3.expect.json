@@ -1,0 +1,58 @@
+{
+  "$schema-note": "四面期望文件 (UC-6.3 改群昵称) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现 / 本仓渲染壳 / 机器件（reducer target 选择·装饰器抽键·seed）。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-6.3",
+  "title": "改群昵称：MB 区改成员群昵称 → 出站 channel/member/change/nickname {channelId, nickname[, userId]} → WS 推 update_channel_member_nickName {channelId, userId, nickName}（camelN·broadcast 到 channelId）→ 投影 im:channel:memberNickname{channelId,userId,nickName} + ④ channel_member 表 BatchUpsert（复合 PK channel_id,user_id·仅改 nick_name 列）+ ③ DOM data-nickname 回读",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/src/outbound/channel_existing.rs UpdateNicknameCommand（im_update_member_nickname → POST channel/member/change/nickname · body {channelId, nickname}·可选 userId） + Go command.UpdateChannelMemberNickname（真源 partials/2 §31 + partials/6 UC-6.3·{ChannelId, UserId, Nickname}）",
+    "projection": "projection-schema.md 行 71 to_effect_s1::emit_member_nickname（im:channel:memberNickname·{channelId, userId, nickName}·全 camel·nickName 驼峰）；触发 WS update_channel_member_nickName（真源 ws/handlers/update_channel_member_nickname.rs）",
+    "dom": "docs/uc-coverage-ledger.md §UC-6.3 ③ data-nickname 回读（im:channel:memberNickname nickName → 壳 applyMemberNickname 把 MB 区成员行 data-nickname 刷成 nickName）",
+    "storage": "helix/crates/helix-im/src/acl/to_effect_s1.rs update_member_nickname（BatchUpsert channel_member·复合 PK channel_id,user_id·conflict 仅改 nick_name 列·exclude_from_update team_id/role）"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：改群昵称作用于已存在 channelId（出站 body.channelId = 该 channelId）。四面全锚 ch=<channelId>：① 出站 body.channelId（顶层 probe pick channelId→ch）·② 投影 data.channelId（probe pick channelId→ch）·④ channel_member upsert 行 channel_id（storage corr_cols 抽 channel_id→ch·非 server post id）·③ DOM e2e 注入 member 行 data-*。无 sid/tmp（昵称改 = channel-member 级·非 post 级·无 server post id）。e2e 选锚频道（本人新建·有 admin 权限·含已知成员 userId）填实 ch + 注入 userId/nickName 覆写下列动态字段。",
+    "ch": null
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "channel/member/change/nickname",
+    "bodyFields": {
+      "channelId": "*",
+      "nickname": "*"
+    },
+    "bodyForbidden": ["channel_id", "nickName", "id", "orient"],
+    "_note": "UpdateNicknameCommand 真源：body = {channelId, nickname}（+ 可选 userId·e2e 显式传成员定点·全 camelCase）。bodyForbidden 锚——昵称 body 只该携 channelId+nickname(+userId)，不该混入 channel_id（snake 泄漏）/ nickName（投影面的 camelN·出站 body 是 lowercase nickname·真源 Go command.UpdateChannelMemberNickname.Nickname json:nickname）/ id（channel/change/* 才用 id 别名·本 endpoint 用 channelId）/ orient。① 出站经顶层 probe pick channelId → ch 归锚束（窗口内唯一一条 member/change/nickname）。"
+  },
+
+  "projection": {
+    "event": "im:channel:memberNickname",
+    "dataKeys": [
+      "channelId",
+      "userId",
+      "nickName"
+    ],
+    "dataValues": {
+      "channelId": "*",
+      "userId": "*",
+      "nickName": "*"
+    },
+    "_note": "改群昵称 server echo = WS update_channel_member_nickName（{channelId, userId, nickName}·camelN）→ to_effect_s1::emit_member_nickname emit im:channel:memberNickname。字段集严格对齐冻结三键（channelId/userId/nickName·缺/多即 fail）。dataValues userId/nickName 由 e2e 注入（动态值·与 ch 锚同理·守可证伪：echo 回的成员 ≠ 目标 / 昵称 ≠ 新值即 ② 红）。"
+  },
+
+  "storage": {
+    "op": "batch_upsert",
+    "table": "channel_member",
+    "minRows": 1,
+    "_note": "WS update_channel_member_nickName → update_member_nickname Effect：BatchUpsert channel_member（复合 PK channel_id,user_id·conflict 仅改 nick_name 列·exclude team_id/role）≥1 行。装饰器 facet④ payload 暴露 {op:batch_upsert, table:channel_member, rows, channel_id}（corr_cols 抽 channel_id）；channel_id → ch 与 ②③ 同束。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "member-id": "*",
+      "nickname": "*"
+    },
+    "_note": "ledger §UC-6.3 ③：MB 区成员行 data-member-id（=userId）+ data-nickname（=nickName）。im:channel:memberNickname 投影 → 壳 applyMemberNickname 把该成员行 nickname 刷成 nickName（成员行缺则 upsert·投影驱动入列）·壳纯渲染只透传投影 nickName·不在 JS 臆造。e2e 等该成员行 data-nickname == 新昵称后读注入 reducer（dataValues 动态匹配新昵称由 e2e 覆写 dataAttrs.nickname）。"
+  }
+}

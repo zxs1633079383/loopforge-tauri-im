@@ -175,6 +175,22 @@ export interface OlderLoadedData {
   hasMore: boolean;
 }
 
+/**
+ * UC-6.3 改群昵称投影 channel（projection-schema 行 71 to_effect_s1::emit_member_nickname）。
+ * data 形态 = `{ channelId, userId, nickName }`（全 camelCase·nickName 驼峰·现网 wire 透传）。
+ * 触发路径 WS update_channel_member_nickName action（broadcast 到 channelId·成员各收）。壳收到即
+ * 把 MB 区该成员行 nickname 刷成 nickName（data-nickname 回读·壳纯渲染只透传投影 nickName·不在
+ * JS 合成）；成员行缺则 upsert（投影驱动成员入列·data-member-id=userId）。
+ */
+export const MEMBER_NICKNAME_CHANNEL = "im:channel:memberNickname";
+
+/** im:channel:memberNickname data 形态（projection-schema 行 71·{channelId, userId, nickName}·全 camel）。 */
+export interface MemberNicknameData {
+  channelId: string;
+  userId: string;
+  nickName: string;
+}
+
 /** message-row 类 channel（携 message_item_data fat 完整集） */
 export const MESSAGE_ROW_CHANNELS: ReadonlySet<string> = new Set([
   "im:post:received",

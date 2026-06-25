@@ -412,13 +412,14 @@
 - **③ DOM**：`data-admin`。
 - **④ 落库**：`channel_member`。
 
-### UC-6.3 改群昵称 — `⬜ pending`（认领 M）
+### UC-6.3 改群昵称 — `✅ 四面全绿`（e2e 真跑·corr_key=ch=<channelId>·issue #26）
 
-- **① 出站 HTTP**：`channel/member/change/nickname`（待核·partial 6 UC-6.3）。
-- **① WS 推送**：action=`update_channel_member_nickName`（camelN·data.channelId 命中·helix ledger 实证）。
-- **② 投影**：`emit_member_nickname`（`{channelId, userId, nickName}`）。
-- **③ DOM**：`data-nickname`。
-- **④ 落库**：`channel_member`。
+- **① 出站 HTTP**：`POST channel/member/change/nickname`·body `{channelId, nickname[, userId]}`（全 camelCase·bodyForbidden channel_id snake / nickName camelN / id 别名·真源 UpdateNicknameCommand + Go command.UpdateChannelMemberNickname）。✅ 实证 run.jsonl：`{channelId, nickname, userId:445}`。
+- **① WS 推送**：action=`update_channel_member_nickName`（camelN·{channelId, userId, nickName}·broadcast 到 channelId·成员各收）。
+- **② 投影**：`im:channel:memberNickname`（`{channelId, userId, nickName}`·to_effect_s1::emit_member_nickname·缺/多即 fail + dataValues userId/nickName 守可证伪）。✅ 实证 run.jsonl。
+- **③ DOM**：`data-member-id`(=userId) + `data-nickname`(=nickName)·壳 applyMemberNickname upsert MB 区成员行（投影驱动入列·壳纯渲染）。✅ waitUntil 等 data-nickname==新昵称。
+- **④ 落库**：`channel_member` BatchUpsert（复合 PK channel_id,user_id·conflict 仅改 nick_name 列·exclude team_id/role·O(1) 单行 upsert）。✅ 实证 run.jsonl rows=1。
+- **接通件**：Rust `im_update_member_nickname`(commands.rs + lib.rs 双 feature 注册) · 壳 store.changeMemberNickname + applyMemberNickname（projection.types MEMBER_NICKNAME_CHANNEL）· UI MB 区 change-nickname-input + onChangeNickname · expect/uc-6.3.expect.json + specs/uc-6.3.e2e.mjs。
 
 ### UC-6.4 成员快照/全量 — `⬜ pending`（认领 M）
 

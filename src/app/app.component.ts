@@ -315,11 +315,22 @@ import { MessageRow } from "./im/message-row.model";
             >
               <span class="mem__name">{{ mem.nickname || mem.memberId }}</span>
               <span class="mem__ops">
+                <input
+                  class="im__mini-input"
+                  type="text"
+                  data-testid="change-nickname-input"
+                  placeholder="昵称"
+                  #memNickInput
+                  (click)="$event.stopPropagation()"
+                />
                 <button
                   class="im__mini"
                   type="button"
                   data-testid="change-nickname-btn"
-                  (click)="onChangeNickname(mem.memberId, '')"
+                  (click)="
+                    $event.stopPropagation();
+                    onChangeNickname(mem.memberId, memNickInput.value)
+                  "
                 >名</button>
                 <button
                   class="im__mini"
@@ -818,9 +829,18 @@ export class AppComponent implements OnInit, OnDestroy {
     /* UC-6.1 接通 */
   }
 
-  /** UC-6.3 改群昵称。占位 → 接 member/change nickName。 */
-  onChangeNickname(_memberId: string, _nick: string): void {
-    /* UC-6.3 接通 */
+  /**
+   * UC-6.3 改群昵称：memberId=被改昵称的成员 userId·nick=新昵称（输入框值）→
+   * store.changeMemberNickname（invoke im_update_member_nickname → 出站
+   * channel/member/change/nickname {channelId, userId, nickname}）。channelId=当前活动频道
+   * （MB 区成员属于当前会话）。昵称回读靠 helix `im:channel:memberNickname`（{channelId, userId,
+   * nickName}）投影驱动 → MB 区该成员行 data-nickname 更新（壳纯渲染）。无 memberId / 无活动频道
+   * → 不发。e2e 走 bridge 直 invoke 注入真实 channelId/userId 覆盖此 UI 便捷路径。
+   */
+  onChangeNickname(memberId: string, nick: string): void {
+    const channelId = this.store.activeChannel();
+    if (!memberId || !channelId) return;
+    void this.store.changeMemberNickname(channelId, memberId, nick);
   }
 
   /** UC-6.2 设/撤管理员。占位 → 接 add/remove manger。 */
