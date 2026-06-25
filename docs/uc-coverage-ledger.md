@@ -141,13 +141,13 @@
 - **③ DOM**：多 channel 消息行 data-msg-id。
 - **④ 落库**：`message` ×N（每目标 channel 一行）。
 
-### UC-1.8 快捷回复 emoji — `⬜ pending`（认领 S）
+### UC-1.8 快捷回复 emoji — `✅ e2e-green`（live 四面全绿·corr_key sid=owd8oao7wbbo9jxye1wfgpts8w·seq=54·2026-06-25）
 
-- **① 出站 HTTP**：`POST /api/cses/posts/quickReply`，body `{userId, postId, emoji}`（待核·partial 6 UC-1.8）。
-- **① WS 推送**：action=`post_update`，data 带 `quickReply:[{emoji, userIds:[self]}]`（helix ledger 实证 emoji👍·userIds:[444]）。
-- **② 投影**：`emit_post_updated`（fat）。
-- **③ DOM**：`data-reactions`。
-- **④ 落库**：`message.props`。
+- **① 出站 HTTP**：`POST /api/cses/posts/quickReply`，body `{emoji, postId, userId}`（全 camelCase·**实证 run.jsonl** seq510 userId=444·bodyForbidden snake 锚守）。helix `outbound/quick_reply.rs` QuickReplyCommand 兑现；loopforge `im_send_quick_reply` 命令补自身 userId（identity 单一真源·壳不臆造）。
+- **① WS 推送**：action=`post_update`（quickReply toggle 后服务端 `a.Publish(WebsocketEventPostUpdate, post.ToMap())`·cses_post.go:1574）→ emit `im:post:updated`。
+- **② 投影**：`emit_post_updated`（fat 13 键）。**契约实现 gap 修复**（helix parser bbbf809）：服务端 `post.ToMap()` 把 emoji 反应作**顶层** `quickReply` 字段下发（`[{emoji, userIds:[self]}]`·copy_post.go:72），原 `extract_post_fields` 只读 post.props → quickReply 整丢。修复后顶层 quickReply 合并进 `props.quickReply` 搭 fat 投影顺风车下传（projection-schema 13 键集**不变**·quickReply 寄生 props）。
+- **③ DOM**：`data-reactions`（含 emoji👍）。loopforge `applyMessageItem` 从 `props.quickReply` 抽 emoji 串渲染（server id 锚命中既有行·patch 只增不清）。**实证** reactions=👍。
+- **④ 落库**：`message` 表 `batch_update`（quickReply patch 既有 post 行·UPDATE WHERE id·post 已由原 send 插入）→ 反应态落 `message.quick_reply` 列（helix schema.rs:49）。**契约更正**：op=`batch_update`（**非 `batch_upsert`**·Phase1 草拟误·与 UC-1.5 撤回/UC-1.9 加急同形态同纠正·证据 run.jsonl {op:batch_update,table:message,keys:1,id=postId}）。
 
 ### UC-1.9 加急 + 加急已读 — `✅ e2e-green`（live 四面全绿·corr_key sid=tasdeqxtubbrzbigoic5iya77o·2026-06-25）
 

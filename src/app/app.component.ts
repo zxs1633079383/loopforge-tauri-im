@@ -573,9 +573,14 @@ export class AppComponent implements OnInit, OnDestroy {
     /* UC-3.3 接通 */
   }
 
-  /** UC-1.8 快捷回复 emoji。占位 → 接 posts/quickReply。 */
-  onQuickReply(_row: MessageRow, _emoji: string): void {
-    /* UC-1.8 接通 */
+  /** UC-1.8 快捷回复 emoji：postId=消息 server id + emoji（用户选）→ store.quickReply
+   *  （自身 userId 由 Rust 从 identity 补·壳不臆造）。无 server id（未对账消息）→ 不发。
+   *  reactions 由 helix `im:post:updated`（props.quickReply）投影驱动 data-reactions·壳纯渲染。
+   *  e2e 走 bridge 直 invoke 注入真实 postId/emoji 覆盖此 UI 便捷路径。 */
+  onQuickReply(row: MessageRow, emoji: string): void {
+    const postId = row.msgId;
+    if (!postId || !emoji) return; // 无 server id（未对账消息）/ 无 emoji → 不发
+    void this.store.quickReply(postId, emoji);
   }
 
   /** UC-1.7 转发/合并。占位 → 接 im_create_posts。 */

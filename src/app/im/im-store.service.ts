@@ -298,6 +298,29 @@ export class ImStoreService {
     }
   }
 
+  /**
+   * UC-1.8 快捷回复 emoji：invoke('im_send_quick_reply', {postId, emoji}）。
+   *
+   * **壳不臆造 body**：自身 userId 由 Rust 从 identity 补 + camelCase 化 + endpoint 全在
+   * helix-im（commands.rs im_send_quick_reply → outbound/quick_reply.rs QuickReplyCommand →
+   * POST posts/quickReply {postId, userId, emoji}）。壳只供 postId（被回复消息 server id）+
+   * emoji（用户选的表情）。data-reactions 由 helix `im:post:updated`（fat·props.quickReply）
+   * 投影驱动·壳纯渲染·无乐观合成。非 Tauri / 命令缺失 → 静默（dev 浏览器单独调 UI 不卡）。
+   */
+  async quickReply(postId: string, emoji: string): Promise<void> {
+    const post = postId.trim();
+    const em = emoji.trim();
+    if (!post || !em) return;
+    try {
+      await this.bridge.invoke<void>("im_send_quick_reply", {
+        postId: post,
+        emoji: em,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（reactions 靠投影驱动·无乐观合成）。
+    }
+  }
+
   // ——— 私有 ———
 
   private onBus(env: BusEnvelope): void {
@@ -514,13 +537,20 @@ export class ImStoreService {
     const serverId = d.msg_id ?? "";
     const eventSeq = typeof d.event_seq === "number" ? d.event_seq : null;
     const readBits = this.toReadBits(d.readBits);
+    // UC-1.8：从 fat 投影 props 抽快捷回复 emoji 串（命中 → data-reactions·壳纯渲染·无乐观合成）。
+    const reactions = this.extractReactions(d.props);
 
+    // UC-1.8 post_update echo 复用既有消息（无 temporaryId 乐观行）→ 按 server id 命中行覆写
+    //   reactions（emoji patch）。先试 temporaryId 锚（发送对账），再退 server id 锚（quickReply
+    //   等纯 props patch 路径·复用消息无 tmp）。
     const idx = temporaryId
       ? this._rows().findIndex((r) => r.temporaryId === temporaryId)
-      : -1;
+      : serverId
+        ? this._rows().findIndex((r) => r.msgId === serverId)
+        : -1;
 
     if (idx >= 0) {
-      // 覆写既有乐观行（temporaryId 不变）
+      // 覆写既有行（temporaryId 不变；quickReply patch 走 server id 锚命中既有行）
       this._rows.update((rows) => {
         const next = rows.slice();
         const prev = next[idx];
@@ -532,6 +562,8 @@ export class ImStoreService {
           readBits,
           text: d.message ?? prev.text,
           type: d.type || prev.type,
+          // reactions 命中则覆写（patch 只增不清·无 quickReply 的 echo 不抹既有 reactions）。
+          reactions: reactions ?? prev.reactions,
         };
         return next;
       });
@@ -555,8 +587,41 @@ export class ImStoreService {
         readBits,
         text: d.message ?? "",
         type: d.type || "TEXT",
+        reactions: reactions ?? undefined,
       },
     ]);
+  }
+
+  /**
+   * 从 fat 投影 props 抽快捷回复 emoji 串（UC-1.8·data-reactions 渲染源）。
+   *
+   * server post_update echo 把 quickReply 携进 post props（`props.quickReply`）：形态
+   * `[{emoji, userIds:[...]}]`（expect.json §projection 注·Go 组装）。壳纯渲染：把命中的
+   * emoji 聚成串（如 "👍"·多 emoji 逗号连）作 data-reactions。无 quickReply → 返回 null
+   * （不覆写既有 reactions）。props 形态容错（对象/数组/字符串）·解析失败静默回 null。
+   */
+  private extractReactions(props: unknown): string | null {
+    if (props == null) return null;
+    let obj: unknown = props;
+    if (typeof props === "string") {
+      if (!props.trim()) return null;
+      try {
+        obj = JSON.parse(props);
+      } catch {
+        return null;
+      }
+    }
+    if (!obj || typeof obj !== "object") return null;
+    const qr = (obj as Record<string, unknown>)["quickReply"];
+    if (!Array.isArray(qr) || qr.length === 0) return null;
+    const emojis = qr
+      .map((e) =>
+        e && typeof e === "object"
+          ? (e as Record<string, unknown>)["emoji"]
+          : undefined,
+      )
+      .filter((e): e is string => typeof e === "string" && !!e);
+    return emojis.length > 0 ? emojis.join(",") : null;
   }
 
   private patchByTemp(

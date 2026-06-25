@@ -287,6 +287,42 @@ pub async fn im_make_topic(
         .map_err(|e| format!("im_make_topic: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-1.8 快捷回复 emoji：前端传 `postId`（被回复消息 server id）+ `emoji`（用户选的表情）→
+/// 本命令补上自身 `userId`（AppState.identity·身份单一真源·壳不臆造 creds）转 snake_case 入泵
+/// `im_quick_reply`（helix-im `outbound/quick_reply.rs` `QuickReplyCommand` 兑现出站
+/// `POST posts/quickReply {postId, emoji, userId}`·全 camelCase·真机curl真源 partials/6 UC-1.8）。
+///
+/// WS 回 `post_update`（quickReply patch 进 props）→ 投影 `im:post:updated`（fat）→ DOM
+/// data-reactions（emoji→userIds 聚合）。薄壳纪律：只翻译入参 + 补身份 + 入泵，body camelCase
+/// 化 + endpoint 全在 helix-im，本壳不臆造。
+#[tauri::command]
+pub async fn im_send_quick_reply(
+    state: State<'_, AppState>,
+    post_id: String,
+    emoji: String,
+) -> Result<(), String> {
+    if post_id.trim().is_empty() {
+        return Err("im_send_quick_reply: postId 为空（须指定被回复消息 server id）".into());
+    }
+    if emoji.trim().is_empty() {
+        return Err("im_send_quick_reply: emoji 为空".into());
+    }
+    let self_id = state.identity.user_id.clone();
+    if self_id.is_empty() {
+        return Err("im_send_quick_reply: 自身 userId 为空（profile cookieId 未注入）".into());
+    }
+    // user_id 透传给 helix（QuickReplyCommand 把它写进 body.userId·真源 {postId,userId,emoji}）。
+    let tick = command(
+        "im_quick_reply",
+        serde_json::json!({ "post_id": post_id, "emoji": emoji, "user_id": self_id }),
+    );
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_send_quick_reply: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// 就绪 probe：前端轮询此命令直到返回 `true`（increment 流动 + 静默窗口达成）。
 ///
 /// 返回值真精确度的边界见 `state::ReadinessProbe` 注释 + integration_todos（inflight==0

@@ -49,10 +49,10 @@
   },
 
   "storage": {
-    "op": "batch_upsert",
+    "op": "batch_update",
     "table": "message",
     "minRows": 1,
-    "_note": "post_update echo 落 message 行 props 字段（quickReply patch），PK=postId。装饰器 facet④ payload 只暴露 {op,table,rows}（不含行内容，避隐私/体积）；行内容由 harness 直接查库二选一（four-facet-oracle §1 ④）。"
+    "_note": "post_update echo（quickReply patch）落既有 message 行（UPDATE WHERE id·post 已由原 send 插入）→ storage op=batch_update（**非 batch_upsert**·Phase1 草拟误·与 UC-1.5 撤回/UC-1.9 加急同形态同纠正；证据 run.jsonl {op:batch_update,table:message,keys:1,id=postId}）。message 表 quick_reply 列承反应态（helix schema.rs:49）·props.quickReply 搭 fat 投影下传（parser bbbf809 合并顶层 quickReply→props）。装饰器 facet④ payload 只暴露 {op,table,rows}（不含行内容·避隐私/体积）。"
   },
 
   "dom": {
