@@ -79,7 +79,10 @@ pub fn extract_corr_key(payload: &Value) -> Option<String> {
         };
         let ch = pick(&["channelId", "channel_id", "channelID"]);
         let tmp = pick(&["temporaryId", "temporary_id"]);
-        let sid = pick(&["id", "postId", "post_id", "serverId", "server_id"]);
+        // msg_id：投影 envelope（im:post:received/updated）携 server post id 的键——加入 sid 别名
+        // 使「投影(msg_id) ↔ 出站(postId) ↔ 落库(id)」三面经 sid 聚同束（UC-1.9 加急·与 reducer
+        // corr-key.mjs sid 别名同步）。tmp 仍为 send 主事件首选锚·msg_id 入 sid 为附加锚。
+        let sid = pick(&["id", "postId", "post_id", "serverId", "server_id", "msg_id"]);
         let seq = pick(&["eventSeq", "event_seq", "seq"]);
         // 任一维度命中即组键；全空返回 None。
         if ch.is_none() && tmp.is_none() && sid.is_none() && seq.is_none() {
@@ -177,6 +180,18 @@ mod tests {
         // 回归：message 落库 id 仍是 server post id → 抽 sid（table != channel）。
         let p = json!({"id": "s7", "op": "batch_upsert", "table": "message", "rows": 1});
         assert_eq!(extract_corr_key(&p).as_deref(), Some("sid=s7"));
+    }
+
+    #[test]
+    fn projection_msg_id_extracts_as_sid() {
+        // UC-1.9 加急：im:post:updated 投影 data 携 server post id 用 `msg_id`（非 id）。
+        // msg_id 入 sid 别名 → 投影与出站(postId)/落库(id) 经 sid 聚同束（缺则投影只抽 ch/tmp/seq·④ 永红）。
+        let p = json!({"channelId": "c", "msg_id": "3acq", "temporaryId": "ec39", "event_seq": 42});
+        // tmp 仍在·sid 附加：ch + tmp + sid + seq 全命中。
+        assert_eq!(
+            extract_corr_key(&p).as_deref(),
+            Some("ch=c;tmp=ec39;sid=3acq;seq=42")
+        );
     }
 
     #[test]

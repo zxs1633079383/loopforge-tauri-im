@@ -24,11 +24,10 @@
       "bodyFields": {
         "channelId": "*",
         "postId": "*",
-        "targetIds": "*",
-        "message": "*"
+        "targetIds": "*"
       },
       "bodyForbidden": ["channel_id", "post_id", "target_ids"],
-      "_note": "真机curl真源 + 后端 UrgentPostVO struct（full-map §1-7）：camelCase 必填 channelId/postId/targetIds（数组）；message 可选（？符号表可选但若有则检验）。targetIds = 目标用户ID数组。"
+      "_note": "真机curl真源 + 后端 UrgentPostVO struct（full-map §1-7·post.go L502-509）：camelCase 必填 channelId/postId/targetIds（数组）。message 为 `Message *string json:\"message\"`（指针·无 validate tag = 可选 omitempty），故不入必填 bodyFields（仅 helix-im build 时 if-Some 透传，缺省不发）——契约更正：原 bodyFields 误列 message 为必填，与本 _note 自身「message 可选」+ Go *string 语义矛盾（证据见 commit body）。targetIds = 目标用户ID数组（Go Validate 拒空）。"
     },
     "phase2_urgentConfirm": {
       "method": "POST",
@@ -59,23 +58,22 @@
       "readBits",
       "viewers"
     ],
-    "_note": "projection-schema §1 emit_post_updated fat 完整集（13 键）。加急属性归一化后透传在 props.expediteMap（后端权威）。缺/多即 fail（FixB 反转：少一字段=漂移）。"
+    "_note": "projection-schema §1 emit_post_updated fat 完整集（13 键）。**契约更正**：加急 post_update 走 type2 编辑路径 emit im:post:updated（fat 13 键·props 由 gate 合成 {channel_event_seq}）。projection-schema line186 明确：业务扩展字段（expediteMap…）**不吐**（HX-C005 热路径回读铁律·吐了须扩 PostFields 碰 parser 热路径）→ 加急标记**不在 post 投影**，权威在 DB message.expedite_map 列 + channel 表 urgent 列（line188：前端按 msg_id 回读）。原 _note「props.expediteMap 透传」与 line186 矛盾·已纠正。缺/多即 fail（FixB 反转：少一字段=漂移）。"
   },
 
   "storage": {
-    "op": "batch_upsert",
+    "op": "batch_update",
     "table": "message",
     "minRows": 1,
-    "_note": "spec §2 facet④：加急状态落 message 行 props.expediteMap（包含 recipients/sender 映射）。"
+    "_note": "facet④（加急权威落点）：加急 post_update 经 gate edit_content_op patch message 行（UPDATE WHERE id·保留本地 read_bits）→ storage op=batch_update（**非 batch_upsert**·原契约误·证据 run.jsonl seq514 {op:batch_update,table:message,keys:1}）。message 表有 expedite_map 列（helix schema.rs:47）承加急态·channel 表另有 has_urgent_post/urgent_post_list 列（seq511 channel batch_update）。"
   },
 
   "dom": {
     "dataAttrs": {
       "msg-id": "*",
-      "urgent": "1",
       "channel-id": "*",
       "event-seq": "*"
     },
-    "_note": "spec §4 + UC-1.9：加急消息加 data-urgent=1 标记；msg-id 已存在（消息已发送，非乐观生成）；event-seq 信号字段。"
+    "_note": "facet③（投影可观测面）：加急 post_update emit im:post:updated → 壳 applyMessageItem 覆写消息行（data-msg-id/-channel-id/-event-seq 投影驱动·壳纯渲染）。**契约更正**：data-urgent=1 **不可投影驱动**（projection-schema line186 expediteMap 不吐）——加急视觉标记须 DB 回读 message.expedite_map（line188·minimal 壳投影域外）·故本 DOM 面只断投影可观测的 post-row 重渲（msg-id/channel-id/event-seq），不断 data-urgent（原契约 urgent:1 与 line186 矛盾·已移除）。urgent 落点由 facet④ message.expedite_map UPDATE 守。"
   }
 }

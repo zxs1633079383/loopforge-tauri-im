@@ -368,6 +368,78 @@ console.log('· UC-5.1 create 出站归束（① 建群 channel/create 无 chann
   eq(repLeak.facets.outbound.ok, false, '可证伪：建群 body 泄漏 channelId → ① 红');
 }
 
+// ── UC-1.9 加急两阶段 outbound（phase1 urgentPost + phase2 urgentConfirm 同 corr_key=postId）──
+// UC-1.9 expect.outbound 有 `phase*` 子对象 → reducer 走 diffOutboundPhases：束内**所有**
+// outbound http-req 里按 urlEndsWith 找每段逐字段断言。faithful（两段都必须出现且 camelCase 对齐），
+// 非 tautology（少发一段 / body 泄漏 snake → 该 phase 红）。
+console.log('· UC-1.9 加急两阶段 outbound（urgentPost + urgentConfirm 同束）');
+{
+  const CH = 'urgCh01';
+  const SID = 'urgPost77';
+  const lines = [
+    // 阶段① urgentPost 出站（camelCase）·corr_key=sid 归 post 束。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-1.9', facet: 'outbound', hop: 'http-req', seq: 1,
+      corr_key: `ch=${CH};sid=${SID}`,
+      payload: { method: 'POST', url: 'http://x/api/cses/posts/urgentPost',
+        body: { channelId: CH, postId: SID, targetIds: ['u9', 'u8'] } } }),
+    // 阶段② urgentConfirm 出站（camelCase）·同 sid 归同束。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-1.9', facet: 'outbound', hop: 'http-req', seq: 2,
+      corr_key: `ch=${CH};sid=${SID}`,
+      payload: { method: 'POST', url: 'http://x/api/cses/posts/urgentConfirm',
+        body: { postId: SID, channelId: CH } } }),
+    // ② 加急投影 fat 13 键。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-1.9', facet: 'projection', hop: 'projection', seq: 3,
+      corr_key: `ch=${CH};sid=${SID}`,
+      payload: { event: 'im:post:updated', data: {
+        channel_id: CH, event_seq: 9, msg_id: SID, temporaryId: '', channelId: CH, userId: '444',
+        type: 'TEXT', message: '', props: '{}', createAt: 1, updateAt: 2, readBits: '0', viewers: [] } } }),
+    // ④ 落库 message 行（加急 = type2 edit_content_op patch → batch_update·非 upsert）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-1.9', facet: 'storage', hop: 'storage', seq: 4,
+      corr_key: `ch=${CH};sid=${SID}`,
+      payload: { id: SID, op: 'batch_update', table: 'message', keys: 1 } }),
+  ].join('\n');
+  const expect19 = JSON.parse(
+    readFileSync(join(ROOT, 'test', 'expect', 'uc-1.9.expect.json'), 'utf8')
+  );
+  const expectAnchored = { ...expect19, corrAnchor: { ...expect19.corrAnchor, postId: SID, channelId: CH } };
+  // DOM 面（投影可观测）：post-row 重渲 msg-id/channel-id/event-seq（不含 data-urgent·不可投影驱动·见 expect _note）。
+  const dom = { 'msg-id': SID, 'channel-id': CH, 'event-seq': '9' };
+  const rep = runFourFacet({ jsonl: lines, expect: expectAnchored, dom });
+  ok(rep.facets.outbound.ok, `① 两阶段 outbound 绿（实 ${rep.facets.outbound.issues.join('; ')}）`);
+  ok(rep.facets.projection.ok, '② 加急投影 fat 13 键绿');
+  ok(rep.facets.storage.ok, '④ message 落库绿');
+  ok(rep.facets.dom.ok, '③ DOM data-urgent=1 绿');
+  ok(rep.green, `UC-1.9 四面全绿（实 brokenAt=${rep.brokenAt} :: ${rep.summary}）`);
+
+  // 可证伪 a：删阶段② urgentConfirm 出站 → phase2 无匹配 → ① 红。
+  const noConfirm = [lines.split('\n')[0], ...lines.split('\n').slice(2)].join('\n');
+  const repNoConfirm = runFourFacet({ jsonl: noConfirm, expect: expectAnchored, dom });
+  eq(repNoConfirm.facets.outbound.ok, false, '可证伪：缺 urgentConfirm 段 → ① 红');
+  eq(repNoConfirm.brokenAt, 'outbound', '① 断点定位 outbound');
+
+  // 可证伪 b：phase1 body 泄漏 snake target_ids（旧形态）→ bodyForbidden 命中 → ① 红。
+  const leak = [
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-1.9', facet: 'outbound', hop: 'http-req', seq: 1,
+      corr_key: `ch=${CH};sid=${SID}`,
+      payload: { method: 'POST', url: 'http://x/api/cses/posts/urgentPost',
+        body: { channelId: CH, postId: SID, target_ids: ['u9'] } } }),
+    ...lines.split('\n').slice(1),
+  ].join('\n');
+  const repLeak = runFourFacet({ jsonl: leak, expect: expectAnchored, dom });
+  eq(repLeak.facets.outbound.ok, false, '可证伪：urgentPost body 泄漏 snake target_ids → ① 红');
+
+  // 可证伪 c：phase1 缺必填 targetIds → ① 红。
+  const noTargets = [
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-1.9', facet: 'outbound', hop: 'http-req', seq: 1,
+      corr_key: `ch=${CH};sid=${SID}`,
+      payload: { method: 'POST', url: 'http://x/api/cses/posts/urgentPost',
+        body: { channelId: CH, postId: SID } } }),
+    ...lines.split('\n').slice(1),
+  ].join('\n');
+  const repNoTargets = runFourFacet({ jsonl: noTargets, expect: expectAnchored, dom });
+  eq(repNoTargets.facets.outbound.ok, false, '可证伪：urgentPost 缺 targetIds → ① 红');
+}
+
 // ── 收尾 ─────────────────────────────────────────────────────────────────────
 
 console.log('');

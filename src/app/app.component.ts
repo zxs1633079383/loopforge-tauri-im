@@ -195,6 +195,18 @@ import { MessageRow } from "./im/message-row.model";
                 <button
                   class="im__mini"
                   type="button"
+                  data-testid="urgent-btn"
+                  (click)="onUrgentPost(m)"
+                >急</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="urgent-confirm-btn"
+                  (click)="onUrgentConfirm(m)"
+                >确</button>
+                <button
+                  class="im__mini"
+                  type="button"
                   data-testid="reply-drawer-btn"
                   (click)="onLoadReplies(m)"
                 >回</button>
@@ -447,9 +459,35 @@ export class AppComponent implements OnInit, OnDestroy {
   // 这些方法当前**只占位**（保证模板编译 + 事件挂载位就绪），真实 invoke 由对应 UC issue 实现。
   // 占位实现：no-op（不在壳合成业务），仅消费参数避免 unused 告警。
 
-  /** UC-1.9 加急。占位 → 接 posts/urgentPost。 */
+  /** UC-1.9 加急（composer 便捷入口）：对当前频道最近一条已发送消息（有 msgId·非乐观）发加急。
+   *  targetIds 取当前成员区已加载成员（无则空·则不发·e2e 走 bridge 注入真实 targetIds）。
+   *  真实加急驱动经 onUrgentPost(row)·此便捷入口仅为 UI 完整性。 */
   onSendUrgent(): void {
-    /* UC-1.9 接通 */
+    const sent = this.store.rows().filter((m) => !!m.msgId);
+    const row = sent[sent.length - 1];
+    if (!row) return;
+    this.onUrgentPost(row);
+  }
+
+  /** UC-1.9 加急（消息行）：rootId=消息所在群 channelId·postId=消息 server id →
+   *  store.urgentPost（targetIds 取成员区已加载成员·壳不臆造）。e2e 走 bridge 直 invoke
+   *  注入真实 targetIds 覆盖此 UI 便捷路径。 */
+  onUrgentPost(row: MessageRow): void {
+    const channelId = row.channelId;
+    const postId = row.msgId;
+    if (!channelId || !postId) return; // 无频道 / 无 server id（未对账消息）→ 不发
+    const targetIds = this.store.members().map((m) => m.memberId).filter(Boolean);
+    if (targetIds.length === 0) return; // 无目标成员（后端 Validate 拒空）
+    void this.store.urgentPost(channelId, postId, targetIds);
+  }
+
+  /** UC-1.9 确认收到加急（消息行·阶段②）：postId=消息 server id + channelId →
+   *  store.urgentConfirm。e2e 走 bridge 直 invoke 覆盖。 */
+  onUrgentConfirm(row: MessageRow): void {
+    const channelId = row.channelId;
+    const postId = row.msgId;
+    if (!channelId || !postId) return;
+    void this.store.urgentConfirm(postId, channelId);
   }
 
   /** UC-1.10 定时消息。占位 → 接 posts/createSchedule。 */

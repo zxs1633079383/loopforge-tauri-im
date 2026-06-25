@@ -71,6 +71,73 @@ pub async fn im_revoke(state: State<'_, AppState>, post_id: String) -> Result<()
         .map_err(|e| format!("im_revoke: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-1.9 加急消息（阶段①）：前端传 `channelId` + `postId`（已发送消息 server id）+
+/// `targetIds`（目标用户 server id 数组·非空）+ 可选 `message` → 本命令转 snake_case 入泵
+/// `im_urgent_post`（helix-im `outbound/urgent.rs` `UrgentPostCommand` 校验后兑现出站
+/// `POST posts/urgentPost {channelId, postId, targetIds, message?}`·全 camelCase·真机curl真源
+/// §1-7 UrgentPostVO）。WS 回 `post_update`（加急标记）→ 投影 `im:post:updated` → DOM data-urgent=1。
+///
+/// 薄壳纪律：只翻译入参 + 入泵，body camelCase 化 + targetIds 非空校验全在 helix-im，本壳不臆造。
+#[tauri::command]
+pub async fn im_urgent_post(
+    state: State<'_, AppState>,
+    channel_id: String,
+    post_id: String,
+    target_ids: Vec<String>,
+    message: Option<String>,
+) -> Result<(), String> {
+    if channel_id.is_empty() {
+        return Err("im_urgent_post: channelId 为空".into());
+    }
+    if post_id.is_empty() {
+        return Err("im_urgent_post: postId 为空".into());
+    }
+    if target_ids.is_empty() {
+        return Err("im_urgent_post: targetIds 为空（须指定目标成员·后端 Validate 拒空）".into());
+    }
+    let mut payload = serde_json::json!({
+        "channel_id": channel_id,
+        "post_id": post_id,
+        "target_ids": target_ids,
+    });
+    if let Some(msg) = message.filter(|m| !m.is_empty()) {
+        payload["message"] = serde_json::json!(msg);
+    }
+    let tick = command("im_urgent_post", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_urgent_post: 入泵失败（泵已退出？）：{e}"))
+}
+
+/// UC-1.9 确认收到加急（阶段②）：前端传 `postId` + `channelId` → 本命令转 snake_case 入泵
+/// `im_urgent_confirm`（helix-im `outbound/urgent.rs` `UrgentConfirmCommand` 兑现出站
+/// `POST posts/urgentConfirm {postId, channelId}`·camelCase·真机curl真源 §1-10）。WS 回
+/// `post_update` → 投影 `im:post:updated`。薄壳只翻译入泵，body camelCase 化在 helix-im。
+#[tauri::command]
+pub async fn im_urgent_confirm(
+    state: State<'_, AppState>,
+    post_id: String,
+    channel_id: String,
+) -> Result<(), String> {
+    if post_id.is_empty() {
+        return Err("im_urgent_confirm: postId 为空".into());
+    }
+    if channel_id.is_empty() {
+        return Err("im_urgent_confirm: channelId 为空".into());
+    }
+    let tick = command(
+        "im_urgent_confirm",
+        serde_json::json!({ "post_id": post_id, "channel_id": channel_id }),
+    );
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_urgent_confirm: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// 会话列表 bootstrap：拉本地 `channel` 表 dialogList（helix emit `im:channels:projection`）。
 ///
 /// 最简壳只靠增量流冒频道，而增量是严格 cursor delta——清/旧 DB 无新活动时拿不到 active

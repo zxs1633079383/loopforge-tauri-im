@@ -8,7 +8,11 @@
 // 领域映射（spec §2 / four-facet-oracle）：
 //   ch  = channelId   (channel_id / channelID)
 //   tmp = temporaryId (temporary_id)
-//   sid = serverId    (id / postId / post_id / serverId / server_id)
+//   sid = serverId    (id / postId / post_id / serverId / server_id / msg_id)
+//         msg_id 是投影 envelope（im:post:received/updated）携 server post id 的键——加入 sid 别名
+//         使「投影(msg_id) ↔ 出站(postId) ↔ 落库(id)」三面经 sid 聚同束（UC-1.9 加急 post_update
+//         投影用 msg_id 非 id；不加则投影只抽 tmp/ch/seq·与 sid 锚的出站/落库不并束 → ④ 永红）。
+//         tmp 仍是 send 主事件首选锚（sameEvent tmp 优先），msg_id 入 sid 为附加锚·不破坏 tmp 聚束。
 //   seq = eventSeq    (event_seq / seq)
 //
 // ⚠️ 只读语义：本文件是 oracle 的领域规则，属契约族；改抽键规则 = 改对账口径，
@@ -21,7 +25,7 @@ export const DIMS = /** @type {const} */ (['ch', 'tmp', 'sid', 'seq']);
 const ALIASES = {
   ch: ['channelId', 'channel_id', 'channelID'],
   tmp: ['temporaryId', 'temporary_id'],
-  sid: ['id', 'postId', 'post_id', 'serverId', 'server_id'],
+  sid: ['id', 'postId', 'post_id', 'serverId', 'server_id', 'msg_id'],
   seq: ['eventSeq', 'event_seq', 'seq'],
 };
 

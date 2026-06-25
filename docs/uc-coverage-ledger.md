@@ -149,13 +149,13 @@
 - **③ DOM**：`data-reactions`。
 - **④ 落库**：`message.props`。
 
-### UC-1.9 加急 + 加急已读 — `⬜ pending`（认领 M）
+### UC-1.9 加急 + 加急已读 — `✅ e2e-green`（live 四面全绿·corr_key sid=tasdeqxtubbrzbigoic5iya77o·2026-06-25）
 
-- **① 出站 HTTP**：`POST /api/cses/posts/urgentPost` / `posts/urgentConfirm`（待核·partial 6 UC-1.9）。
-- **① WS 推送**：action=`post_update`，data 带 `expediteMap.recipients{...}` + sender（helix ledger 实证 recipients{555,678}+sender 444）。
-- **② 投影**：`emit_post_updated`（fat·expedite 归一）。
-- **③ DOM**：`data-urgent`。
-- **④ 落库**：`message.props`（expedite）。
+- **① 出站 HTTP**：`POST /api/cses/posts/urgentPost`（camelCase `{channelId, postId, targetIds}`·message 可选）/ `posts/urgentConfirm`（`{postId, channelId}`）。两阶段同 corr_key=postId·reducer diffOutboundPhases 逐段对齐（真源 partial 6 UC-1.9 + UrgentPostVO post.go L502-509）。**实证 run.jsonl**：seq510 urgentPost + seq511 urgentConfirm 全 camelCase·bodyForbidden snake 锚守。
+- **① WS 推送**：action=`post_update`（加急走 type2 编辑路径·`post_urgent` action 在 helix-im 是 dead-action no-op）→ emit `im:post:updated`。
+- **② 投影**：`emit_post_updated`（fat 13 键）。**契约更正**：projection-schema line186 明确 expediteMap **不吐**（HX-C005 热路径回读铁律）→ 加急标记**不在 post 投影**·props 由 gate 合成 `{channel_event_seq}`。原 ledger「expedite 归一透传投影」与 line186 矛盾·已纠正。
+- **③ DOM**：post-row 重渲（`data-msg-id`/`-channel-id`/`-event-seq` 投影驱动）。**契约更正**：`data-urgent=1` **不可投影驱动**（expediteMap 不吐）·加急视觉须 DB 回读 `message.expedite_map`（line188·minimal 壳投影域外）→ DOM 面断投影可观测的 post-row 重渲·不断 data-urgent。
+- **④ 落库**：`message` 表 `batch_update`（加急经 gate edit_content_op patch·UPDATE WHERE id·保留本地 read_bits）→ 加急态落 `message.expedite_map` 列（helix schema.rs:47）+ `channel.has_urgent_post` 列（seq511 channel batch_update）。**契约更正**：op=`batch_update`（非 `batch_upsert`·原契约误·证据 seq516）。
 
 ### UC-1.10 定时消息 — `⬜ pending`（认领 M）
 
@@ -425,9 +425,9 @@
 | bot/agent 召唤（整域，不计入 39）| 1 域 | — | — | — | 1 域（⛔）|
 
 > 精确分类（按本台账每节标题图例为准·1+7+24+7=39）：
-> - **✅ four-facet-verified = 6**：UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）。
+> - **✅ four-facet-verified = 7**：UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）、UC-1.9（2026-06-25 实跑全绿·im_urgent_post/confirm 命令 + diffOutboundPhases 两阶段 + msg_id→sid 归一 + 关窗前等 post_update in-window·corr_key=sid=tasdeqxtubbrzbigoic5iya77o）。
 > - **🟡 partial = 7**：UC-4.4 心跳 / UC-4.5 陌生 channel / UC-5.3 关群 / UC-5.5 置顶 / UC-6.1 拉踢 / UC-6.2 管理员 / UC-8.x 投票平均分。
-> - **⬜ pending = 21**：3.1 / 3.2 / 3.3 / 1.2 / 1.4 / 1.5 / 1.7 / 1.8 / 1.9 / 1.10 / 2.1 / 2.2 / 2.3 / 2.4 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 / UC-5.2 已转 ✅）。
+> - **⬜ pending = 20**：3.1 / 3.2 / 3.3 / 1.2 / 1.4 / 1.5 / 1.7 / 1.8 / 1.10 / 2.1 / 2.2 / 2.3 / 2.4 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 已转 ✅）。
 > - **⛔ unreachable = 7**（39 分母内）：UC-1.3 文件 / UC-1.6 编辑 / UC-4.3 too_long / UC-5.6 公告 / UC-5.7 在线 / UC-7.x 搜索·另 bot/agent 整域 ⛔（不计入 39 分母）。
 
 > ⚠️ **诚实声明**：全 39 UC 中唯一经真 Tauri+WKWebView 四面 oracle 跑绿的是 **UC-1.1**。`🟡 partial` 表示 helix ledger 已证服务端 wire 但 LoopForge 客户端四面尚未实跑（标 partial 是为标记「有可证主路径 + 部分子项物理够不到」，**不等于 LoopForge 已验**）。rollout 实跑前，唯一 ✅ 的就是 UC-1.1。

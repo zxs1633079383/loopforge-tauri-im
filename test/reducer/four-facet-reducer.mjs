@@ -138,6 +138,17 @@ function actualOutbound(bundle, opts = {}) {
   return null;
 }
 
+/** 取束内**所有** outbound http-req hop（多阶段 UC 用·如 UC-1.9 加急两段 urgentPost+urgentConfirm）。 */
+function allOutboundHttp(bundle) {
+  return bundle.hops
+    .filter((h) => h.facet === 'outbound' && h.hop === 'http-req')
+    .map((h) => ({
+      method: h.payload?.method,
+      url: h.payload?.url,
+      body: h.payload?.body ?? {},
+    }));
+}
+
 /**
  * ② projection：取 {event, data}（data 键集是冻结对象）。
  *
@@ -186,6 +197,32 @@ function diffOutbound(expect, actual) {
     if (k in body) issues.push(`body 不该有字段 ${k}（旧形态泄漏）`);
   }
   return facetReport('outbound', issues, actual);
+}
+
+/**
+ * 多阶段 outbound 对齐（UC-1.9 加急：phase1_urgentPost + phase2_urgentConfirm 等）。
+ *
+ * expect.outbound 含 `phase*` 子对象时启用：每个 phase 是一份 flat outbound 期望
+ * （{method, urlEndsWith, bodyFields, bodyForbidden}）。在束内**所有** outbound http-req 里
+ * 按 urlEndsWith 找匹配那条逐字段断言——任一 phase 无匹配请求或字段偏离即 fail。
+ * faithful（两段都必须出现且 body 对齐），非 tautology（少发一段 → 该 phase 红·见单测可证伪对偶）。
+ */
+function diffOutboundPhases(phases, httpHops) {
+  const issues = [];
+  const seen = [];
+  for (const [phaseName, pexp] of Object.entries(phases)) {
+    const hit = httpHops.find(
+      (h) => pexp.urlEndsWith && String(h.url ?? '').endsWith(pexp.urlEndsWith)
+    );
+    if (!hit) {
+      issues.push(`${phaseName}: 无匹配出站（期望 url 以 ${pexp.urlEndsWith} 结尾）`);
+      continue;
+    }
+    seen.push(phaseName);
+    const sub = diffOutbound(pexp, { kind: 'http', method: hit.method, url: hit.url, body: hit.body });
+    for (const iss of sub.issues) issues.push(`${phaseName}: ${iss}`);
+  }
+  return facetReport('outbound', issues, { phases: seen, httpCount: httpHops.length });
 }
 
 /** ② 投影字段集严格对齐：缺/多即 fail（projection-schema 冻结语义）。 */
@@ -277,12 +314,16 @@ export function runFourFacet({ jsonl, expect, dom, ucId }) {
   // + per-channel projection/storage 经同 ch 聚一束·target 须锁那个 ch 而非任取首束）。
   const tmpAnchor = expect.corrAnchor?.tmp;
   const chAnchor = expect.corrAnchor?.ch;
+  // sid 锚（UC-1.9 加急·两阶段同 server postId）：corrAnchor.postId / .sid → 锁 sid 那束
+  //   （加急 post_update 投影 msg_id + 出站 postId + 落库 id 经 sid 聚一束·见 corr-key msg_id 别名）。
+  const sidAnchor = expect.corrAnchor?.sid ?? expect.corrAnchor?.postId;
   // 锚优先级：① 显式 tmp 锚（send 族主事件）② 显式 ch 锚的纯频道束（UC-4.1 hello 增量·锚 ch
   // 无 tmp/sid）—— **须先于** generic any-tmp 兜底，否则 UC-4.1 窗口里混入的 post 束（带 tmp）
   // 会被任取为 target → ②④ 误锚 post 而非锚频道增量。③ generic any-tmp（无显式锚的 send 自测）
   // ④ 任意有键束兜底。
   let target =
     (tmpAnchor && bundles.find((b) => b.dims.tmp === tmpAnchor)) ||
+    (sidAnchor && bundles.find((b) => b.dims.sid === sidAnchor)) ||
     (chAnchor && bundles.find((b) => b.dims.ch === chAnchor && !b.dims.tmp)) ||
     bundles.find((b) => b.dims.tmp) ||
     bundles.find((b) => b.key) ||
@@ -315,11 +356,22 @@ export function runFourFacet({ jsonl, expect, dom, ucId }) {
       )
     : [];
 
+  // 多阶段 outbound（UC-1.9 加急两段）：expect.outbound 有 `phase*` 子对象 → 走 phases 对齐。
+  const outboundExp = expect.outbound ?? {};
+  const phaseKeys = Object.keys(outboundExp).filter((k) => k.startsWith('phase'));
+  const outboundFacet =
+    phaseKeys.length > 0
+      ? diffOutboundPhases(
+          Object.fromEntries(phaseKeys.map((k) => [k, outboundExp[k]])),
+          target ? allOutboundHttp(target) : []
+        )
+      : diffOutbound(
+          outboundExp,
+          target && actualOutbound(target, { batchOutbound, anchorCh, createOutbound })
+        );
+
   const facets = {
-    outbound: diffOutbound(
-      expect.outbound ?? {},
-      target && actualOutbound(target, { batchOutbound, anchorCh, createOutbound })
-    ),
+    outbound: outboundFacet,
     projection: diffProjection(expect.projection ?? {}, target && actualProjection(target, expect.projection?.event)),
     storage: diffStorage(expect.storage ?? {}, target && actualStorage(target, expect.storage?.table)),
     dom: diffDom(expect.dom ?? {}, dom ?? null),

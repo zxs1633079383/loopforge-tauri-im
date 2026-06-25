@@ -246,6 +246,58 @@ export class ImStoreService {
     }
   }
 
+  /**
+   * UC-1.9 加急消息（阶段①）：invoke('im_urgent_post', {channelId, postId, targetIds, message?}）。
+   *
+   * **壳不臆造 body**：camelCase 化 + targetIds 非空校验由 Rust/helix-im 兜底（commands.rs
+   * im_urgent_post → outbound/urgent.rs UrgentPostCommand → POST posts/urgentPost）。壳只供
+   * channelId（当前活动频道）+ postId（已发送消息 server id）+ targetIds（目标成员 server id）。
+   * 加急标记由 helix `im:post:updated` 投影驱动 data-urgent=1（壳纯渲染·无乐观合成）。
+   * 非 Tauri / 命令缺失 → 静默（dev 浏览器单独调 UI 不卡）。
+   */
+  async urgentPost(
+    channelId: string,
+    postId: string,
+    targetIds: string[],
+    message?: string,
+  ): Promise<void> {
+    const ch = channelId.trim();
+    const post = postId.trim();
+    if (!ch || !post || targetIds.length === 0) return;
+    try {
+      await this.bridge.invoke<void>("im_urgent_post", {
+        channelId: ch,
+        postId: post,
+        targetIds,
+        message,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（加急标记靠投影驱动·无乐观合成）。
+    }
+  }
+
+  /**
+   * UC-1.9 确认收到加急（阶段②）：invoke('im_urgent_confirm', {postId, channelId}）。
+   *
+   * **壳不臆造 body**：camelCase 化由 Rust/helix-im 兜底（commands.rs im_urgent_confirm →
+   * outbound/urgent.rs UrgentConfirmCommand → POST posts/urgentConfirm）。壳只供 postId + channelId。
+   * 确认后状态由 helix `im:post:updated` 投影驱动（壳纯渲染）。
+   * 非 Tauri / 命令缺失 → 静默（dev 浏览器单独调 UI 不卡）。
+   */
+  async urgentConfirm(postId: string, channelId: string): Promise<void> {
+    const post = postId.trim();
+    const ch = channelId.trim();
+    if (!post || !ch) return;
+    try {
+      await this.bridge.invoke<void>("im_urgent_confirm", {
+        postId: post,
+        channelId: ch,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默。
+    }
+  }
+
   // ——— 私有 ———
 
   private onBus(env: BusEnvelope): void {
