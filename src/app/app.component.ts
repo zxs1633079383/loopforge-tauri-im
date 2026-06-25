@@ -806,9 +806,13 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.store.closeChannel(channelId);
   }
 
-  /** UC-11.2 退出公司。占位 → 接 im_team_quit。 */
+  /** UC-11.2 退出公司：点频道行「退」→ store.teamQuit（invoke im_team_quit → 出站 DELETE
+   *  teams/member/quit·body {userId, teamId} 由 Rust 从 profile 单一真源拼·壳不臆造 creds）。
+   *  退公司=退该 team 下所有群；CL 区行移除靠 helix 配套 `channel_close` / `channel_member_update`
+   *  投影驱动（壳纯渲染·无乐观合成·quit_company 帧本身 helix graceful no-op）。channel 参数仅作
+   *  UI 触发点（退的是整个 team·非单频道）。e2e 走 bridge 直 invoke im_team_quit 覆盖此 UI 便捷路径。 */
   onTeamQuit(_channel: unknown): void {
-    /* UC-11.2 接通 */
+    void this.store.teamQuit();
   }
 
   /**

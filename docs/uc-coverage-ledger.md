@@ -521,6 +521,14 @@
 - **④ 落库**：`channel` batch_upsert ≥1 行（建群路径落 channel·表感知归一·channel 表 id 抽成 ch→与 ② 同束）。✅ 实证 run.jsonl rows≥1。
 - **Tauri 命令新缝**：commands.rs 新增 `im_team_upsert`（薄壳从 profile 拼 CreateChannelSpecifyOwner·身份单一真源·对 helix TeamUpsertCommand）+ lib.rs 双 invoke_handler 注册；Angular app.component `onTeamUpsert`（C007 配方法·team-upsert-btn 已绑）+ im-store `teamUpsert`。冻结 oracle 零改（C004）·绿由 reducer 裁定（C009）。
 
+### UC-11.2 退出公司 — `🟡 ① L1-verified · ②③④ L2-facet`（issue #40·① DELETE teams/member/quit 严格绿·②③④ 退出者本连接结构性不可观测·须 L2 #48）
+
+- **e2e 真跑（暖栈 ×2 复现·helix dep bumped 4cc33c2→bb00d4d 含 im_team_quit→DELETE 修复）**：bridge 直 invoke `im_team_quit {}`（身份由 Rust 从 profile 拼 userId=444/teamId=64118eeb...）→ 出站 `DELETE teams/member/quit {userId, teamId}` → server `LeaveAllChannelsForTeam` 退该 team 所有群（HTTP **200 空 body**·现网源 bug·实证 run.jsonl）。
+- **① 出站 HTTP（L1 严格可验绿）**：`DELETE teams/member/quit`·body `{userId, teamId}`（QuitTeamReq·全 camelCase·真源 quit_team.go:3-6 + partials/3 §6）。窗口内按 URL endsWith teams/member/quit 直接定位（唯一一条·窗口隔离·非 tautology）→ 严格断 `method=DELETE`（regress 回 POST→红·实证 POST→go 404）+ body 含 userId/teamId + bodyForbidden channelId/snake 别名/id/displayName。✅ 实证 run.jsonl `method=DELETE body={teamId,userId}`。
+- **②③④ 离群移除（🟡 L2-facet·退出者本连接结构性不可观测·非 yellow 糊弄·带 run.jsonl 证据）**：server `quit_company` 多播给 `idsByTeamId`（同 team **其余**受影响用户·partials/5 §2.18 + §4 UserIds 多用户定向）而**非退出者本人**；helix `quit_company` handler 亦 graceful no-op（quit_company.rs default vec![]·无独立投影/落库）。实证 run.jsonl：DELETE 200 success 后退出者本连接**零** quit_company / channel_close WS 帧（spec 第 2 用例可证伪断言：若 server 某日也推退出者→红→提示提升回 L1）→ ②（im:channel:closed）/ ③（DOM 行移除）/ ④（channel batch_update）L1 单账号造不出 → **须 L2 双账号**（B 在公司·A 退公司 → B 收 quit_company → B 视图移除 A 相关 channelMember·追踪 issue **#48**·与 UC-5.3b member-leave 广播 #44 同族）。
+- **helix 修复（C004 缺陷确认即修·不改 oracle）**：实测 ① 出站 `POST teams/member/quit`→go **404**（DELETE-only 路由）。根因=pinned helix `4cc33c2` registry 写死 POST。在 helix worktree(feat/cses-round6-uc-reclaim) 加 surgical commit `bb00d4d`（registry `outbound_method` 按命令名产 method·im_team_quit→DELETE·http_post→http_request 加 method 参数·回填上游 e005638 的 im_team_quit 部分）→ loopforge `cargo update` 四 crate 同步到 bb00d4d（C001 单版本）。
+- **Tauri 命令新缝**：commands.rs 新增 `im_team_quit`（薄壳从 profile 拼 userId/teamId·身份单一真源·对 helix TeamQuitCommand）+ lib.rs 双 invoke_handler 注册；Angular app.component `onTeamQuit`（C007 配方法·team-quit-btn 已绑）+ im-store `teamQuit`。冻结 oracle 零改（C004）·绿由 reducer/spec 裁定（C009）。
+
 ### bot / agent 召唤 — `🚫 已移除`（bot-agent 不在测试范围·2026-06-24 用户裁决）
 
 > **物理够不到 + 后端真阻塞**：message-v3 service 层无独立 bot 端点（客户端无对应 invoke）·`BotAgentWebhookEvent` Pulsar fanout（缺口矩阵 P1-3）未接。客户端侧无用例 → 整域标 ⛔（如需覆盖从服务端 csesapi 侧梳理·超 testbed 范围）。

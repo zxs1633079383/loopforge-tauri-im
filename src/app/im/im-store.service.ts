@@ -330,6 +330,23 @@ export class ImStoreService {
   }
 
   /**
+   * UC-11.2 退出公司：invoke('im_team_quit')。
+   *
+   * **壳不臆造 body / 不传 creds**：自身 userId（cookieId）+ teamId（companyId）由 Rust 命令从
+   * profile 单一真源拼装（src-tauri commands.rs im_team_quit·出站 DELETE teams/member/quit·
+   * body {userId, teamId}）。退公司=退该 team 下所有 channel；离群本地态由 helix 配套
+   * `channel_close` / `channel_member_update` 投影驱动 CL 区行移除（壳纯渲染·无乐观合成·
+   * quit_company 帧本身 helix graceful no-op）。非 Tauri / 命令缺失 → 静默（dev 浏览器单独调 UI 不卡）。
+   */
+  async teamQuit(): Promise<void> {
+    try {
+      await this.bridge.invoke<void>("im_team_quit", {});
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（行移除靠配套投影驱动·无乐观合成）。
+    }
+  }
+
+  /**
    * UC-5.2 创建话题（消息转话题）：invoke('im_make_topic', {rootId, postId, displayName, memberIds})。
    *
    * **壳不臆造 body**：teamId / 自身 userId（CREATOR）由 Rust 命令从 profile 单一真源拼装

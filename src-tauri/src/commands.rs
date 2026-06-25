@@ -908,6 +908,38 @@ pub async fn im_team_upsert(
         .map_err(|e| format!("im_team_upsert: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-11.2 退出公司：退出当前 team 下所有 channel。身份单一真源——`user_id`（自身 cookieId）+
+/// `team_id`（companyId）取自 AppState.identity（**不在前端 TS 硬编 creds**·守 src-tauri 纪律 5）→
+/// 转 snake_case 入泵 `im_team_quit`（helix-im `TeamQuitCommand`·`outbound/user_misc.rs`·真源
+/// QuitTeamReq{userId,teamId}·quit_team.go:3-6）兑现出站 `DELETE /api/cses/teams/member/quit`
+/// （registry method=DELETE·body `{userId, teamId}` 仍带·现网 Methods("DELETE") 且 body 透传）。
+///
+/// **成功无响应体**（现网源 bug·helix 透传·partials/3 §6）。服务端 `LeaveAllChannelsForTeam` 单 tx
+/// 退所有群 + 推 WS `quit_company`（`{channels:[]ChannelMemberMinimal}`·多播受影响 userIds·含自身）。
+/// helix `quit_company` handler 对齐真源 graceful no-op（router 默认 vec![]·无独立投影/落库副作用）；
+/// 离群本地态由配套 `channel_close` / `channel_member_update` 覆盖（见 quit_company.rs 注记）。
+///
+/// 薄壳纪律：只翻译身份 + 入泵；出站 endpoint/method/body camelCase 化全在 helix-im·本壳不臆造 body。
+#[tauri::command]
+pub async fn im_team_quit(state: State<'_, AppState>) -> Result<(), String> {
+    let team_id = state.identity.team_id.clone();
+    let self_id = state.identity.user_id.clone();
+    if self_id.is_empty() {
+        return Err("im_team_quit: 自身 userId 为空（profile cookieId 未注入）".into());
+    }
+
+    // helix TeamQuitCommand require_str(user_id) + require_str(team_id)（snake_case 入泵）。
+    let tick = command(
+        "im_team_quit",
+        serde_json::json!({ "user_id": self_id, "team_id": team_id }),
+    );
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_team_quit: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-5.4 群属性修改（改群名）：前端传 `channelId`（目标频道）+ `displayName`（新群名）→ 转
 /// snake_case 入泵 `im_channel_change_display_name`（helix-im `outbound/channel_change_dedicated.rs`
 /// `ChangeDisplayNameCommand` 兑现出站 `POST channel/change/displayName {id, displayName}`·全
