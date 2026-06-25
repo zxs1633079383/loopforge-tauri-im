@@ -93,3 +93,4 @@
 ✅ DONE UC-6.3 改群昵称四面契约闭环（issue #26 CLOSED） @2026-06-25 14:33:21 | commit 2128686 | 9 files +408 | loopforge/feat-uc-rollout · 四面真绿 corr_key=ch=bamm9... · gate.sh 全绿
 
 ✅ DONE 暖栈提速专项（torn-line 容忍 + O_APPEND + UC-6.4 四面绿 + workflow 接暖栈）@2026-06-25 CST | loopforge feat/uc-rollout | warm spec ~3s(vs 冷启 10-16min) | 修 run.jsonl 截断-写者下 NUL 空洞坏行(log_sink O_APPEND)+reducer torn 末行容忍(仅放末行·守 C008)·UC-6.4 issue #27 双 endpoint(channels/member/byIds + channel/member/snapshot)读族①②全绿·复现≥2轮·UC-5.5 reload 后仍绿(状态隔离)·gate.sh 全绿(125 reducer 断言)·ucPrompt 第4-5步冷启 run.sh→暖栈 harness.sh up/reload-app/spec
+✅ DONE issue #46 Angular UI 骨架(6 语义区+MessageRow 8 待加字段·覆盖所有 UC 渲染容器) @2026-06-25 15:28:53 CST | commit 已落 2c7b9a3 链(app.component.ts+message-row.model.ts+im-store.service.ts) | ng build 无 TS 错·gate.sh 绿·UC-send-1 四面不回退绿 | loopforge-tauri-im/feat/uc-rollout · issue CLOSED
