@@ -49,6 +49,13 @@ import { MessageRow } from "./im/message-row.model";
           data-testid="health-btn"
           (click)="onHealth()"
         >health</button>
+        <button
+          class="im__mini"
+          type="button"
+          data-testid="read-channel-btn"
+          [disabled]="!store.activeChannel()"
+          (click)="onReadChannel()"
+        >已读</button>
       </header>
 
       <div class="im__body">
@@ -509,9 +516,14 @@ export class AppComponent implements OnInit, OnDestroy {
     /* UC-1.10 接通 */
   }
 
-  /** UC-3.1 会话已读。占位 → 接 im_read_channel。 */
+  /** UC-3.1 会话已读：进/看当前会话 → store.readChannel（会话/区间模式标整会话已读·body 仅
+   *  channelId 由 Rust/helix 拼·壳不臆造）。无 activeChannel → 不发。data-read-bits 由 helix
+   *  `im:post:read`（fat·WS post_read type6 echo）投影驱动·壳纯渲染·无乐观合成。e2e 走 bridge
+   *  直 invoke 注入真实 channelId 覆盖此 UI 便捷路径。 */
   onReadChannel(): void {
-    /* UC-3.1 接通 */
+    const channelId = this.store.activeChannel();
+    if (!channelId) return; // 无活动会话 → 不发
+    void this.store.readChannel(channelId);
   }
 
   /** UC-12.1 健康探针。占位 → 接 im_health → GET /health。 */

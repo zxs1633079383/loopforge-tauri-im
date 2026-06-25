@@ -96,6 +96,14 @@ export function extractDims(payload) {
     const p0 = payload?.posts?.[0] ?? payload?.body?.posts?.[0];
     if (typeof p0 === 'string' && p0.length > 0) dims.sid = p0;
   }
+  // 会话已读出站（channels/view·UC-3.1）：body = {channels:[{id:channelId}]}。channels[0].id 是
+  // **channelId**（非 server post id）→ 上面 probes 不下探 channels[0]，且 id 在 sid 别名里会被误抽。
+  // 专探：当 ch 仍缺且 body.channels[0].id 是非空字符串 → 补 ch（非 sid），使 ① 出站与 per-channel
+  // ②④（ch 锚）同束（与装饰器 event.rs::extract_corr_key channels[0].id→ch 规则同步）。
+  if (dims.ch === undefined) {
+    const c0 = payload?.channels?.[0]?.id ?? payload?.body?.channels?.[0]?.id;
+    if (typeof c0 === 'string' && c0.length > 0) dims.ch = c0;
+  }
   return dims;
 }
 

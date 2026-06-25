@@ -4,7 +4,7 @@
   "title": "会话已读回执：用户进/看会话 → outbound channels/view → WS post_read(type6) → 投影 im:post:read(fat) → DOM data-read-bits self 位置 1 → 落库 message.read_bits 单调覆盖",
   "contractReadonly": true,
   "contractSources": {
-    "outbound": "ledger UC-3.1 §① POST /api/cses/channels/view body{channels:[{id}]}（⚠️ 待核：真机curl真源.md 未收录该端点，仅 6 端点+附录A createPosts；ledger 标『待核·指向 full-map partial 6 UC-3.1』。endpoint/body 形态以 ledger 为据，非冻结 curl 真抓包，Phase2 接线前需 helix 实现侧或 partial 6 文档复核）",
+    "outbound": "POST /api/cses/channels/view body{channels:[{id}]}（会话已读·fire-and-forget·无 HTTP 返回处理）。真源 full-map/partials/6--client-usecases.md:136-140 UC-3.1：messageDialog.service.ts → MessageService.onChannelRead({channels:[{id:channelId}]}) → POST channels/view。已读语义=server 写 channelmembers.last_read_seq。helix outbound/channel_change_dedicated.rs:175 ViewChannelsCommand（im_channels_view）build channels/view{channels}。【Phase2 复核纠偏 2026-06-25】曾误改为 post/read{channelId}（区间模式）实跑被 Go 拒『post read is empty』（区间读须带 startTime/endTime 或 posts，纯 channelId 非法）→ 回正 channels/view，与 partials/6 真源一致。",
     "projection": "helix/crates/helix-im/docs/projection-schema.md §1 to_effect::emit_post_read (im:post:read · fat · 同 emit_post_received 完整 13 键) · 在线 WS post_read(type6)。离线路径 to_effect::emit_channel_read_echo (im:channel:read_echo · fat) e2e 单连接在线无法观测，故以在线主路径作期望。",
     "dom": "ledger UC-3.1 §③ data-read-bits（self 位置 1）；projection-schema §3 Message.MessageItemData readBits 列（禁前端算）",
     "storage": "projection-schema.md §3/§4 readBits → message.read_bits 列（C2 单调覆盖落库·禁前端算）+ ledger UC-3.1 §④ message.read_bits 单调覆盖"
@@ -21,8 +21,8 @@
     "bodyFields": {
       "channels": "*"
     },
-    "bodyForbidden": ["channel_id", "channelId", "post_id", "postId"],
-    "_note": "ledger UC-3.1：POST /api/cses/channels/view body={channels:[{id}]}（fire-and-forget·会话级已读上报）。bodyFields.channels=* 仅校验键存在（值为 [{id}] 数组，id 随 run 变）。bodyForbidden 锚：会话级已读上报 body 顶层不应出现单条 channel_id/channelId 标量或 post_id/postId（那是 UC-3.2 单条已读 post/read 的形态，混入即 fail）。⚠️ 待核：真机curl真源.md 未收录 channels/view，endpoint/body 形态以 ledger 为据非冻结真抓包，Phase2 复核。"
+    "bodyForbidden": ["channel_id", "channelId", "post_id", "postId", "posts"],
+    "_note": "POST /api/cses/channels/view body={channels:[{id}]}（fire-and-forget·会话级已读上报）。真源 full-map/partials/6:139 onChannelRead({channels:[{id}]})。bodyFields.channels=* 仅校验键存在（值为 [{id}] 数组，id 随 run 变）。bodyForbidden 锚：会话级已读 body 顶层不应出现单条 channel_id/channelId 标量或 post_id/postId/posts（那是 UC-3.2 单条已读 post/read 的形态，混入即 fail）。WS read echo：server 写 channelmembers.last_read_seq → event_type=6 在线 echo → im:post:read（partials/6:140 getPostRead$）。"
   },
 
   "projection": {
@@ -42,14 +42,14 @@
       "readBits",
       "viewers"
     ],
-    "_note": "projection-schema §1 emit_post_read = im:post:read（fat·同 emit_post_received 完整 13 键集）。在线 WS post_read(type6) 触发。缺/多即 fail（FixB 反转：少一字段=漂移）。命名陷阱 createAt 非 createdAt 已由键集锁定。已读语义体现在 readBits（self 位置由后端权威置位·禁前端算）；e2e 可加 dataValues.readBits 断言（待 helix 实证 self 位编码后细化，当前仅断键集存在）。"
+    "_note": "projection-schema §1 emit_post_read = im:post:read（fat·同 emit_post_received 完整 13 键集）。在线 WS post_read(type6) 触发。缺/多即 fail（FixB 反转：少一字段=漂移）。命名陷阱 createAt 非 createdAt 已由键集锁定。已读语义体现在 readBits（self 位置由后端权威置位·禁前端算）。【L1 观测性·2026-06-25 实跑】此投影由 read echo `event_type=6` 驱动·而 read echo 是**多设备 echo**（partials/6:140·只广播给该用户其他设备·不回灌发起读的本连接）→ L1 单账号单连接 e2e 此 ② 面结构性观测不到（非 bug·server 多设备语义）。spec 用可证伪护栏断 ② 缺席（gap 自愈即翻红）；真绿须 L2 双账号。键集定义不变（多设备到帧时仍按此 13 键校验）。"
   },
 
   "storage": {
     "op": "batch_upsert",
     "table": "message",
     "minRows": 1,
-    "_note": "projection-schema §3/§4：readBits 落 message.read_bits 列（C2 单调覆盖·热路径 PK=temporary_id upsert·B5 禁 RMW）。op 取 batch_upsert（与 UC-1.1 echo 落库同 message upsert 路径·read_bits 列覆盖）。⚠️ 待核：read 应用是否复用 batch_upsert 还是定向 update read_bits 列待 helix 实现侧确认；若实证为 update 则 Phase2 据实改 op。装饰器 facet④ payload 只暴露 {op,table,rows}（不含行内容）；read_bits 列具体值由 harness 直接查库验（four-facet-oracle §1 ④）。"
+    "_note": "projection-schema §3/§4：readBits 落 message.read_bits 列（C2 单调覆盖·热路径 PK=temporary_id upsert·B5 禁 RMW）。op 取 batch_upsert（与 UC-1.1 echo 落库同 message upsert 路径·read_bits 列覆盖）。装饰器 facet④ payload 只暴露 {op,table,rows}（不含行内容）；read_bits 列具体值由 harness 直接查库验（four-facet-oracle §1 ④）。【L1 观测性·2026-06-25 实跑】此落库由 read echo 驱动（同 ② 投影）·read echo 多设备-only → L1 单连接结构性观测不到此 ④ 面（非 bug）。spec 可证伪护栏断 ④ 缺席（gap 自愈即翻红）；真绿须 L2 双账号。op/table/minRows 定义不变。"
   },
 
   "dom": {

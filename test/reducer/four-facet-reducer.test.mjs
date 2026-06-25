@@ -84,6 +84,25 @@ console.log('· corr-key 领域规则');
   // sameEvent：tmp 贯穿乐观→echo。
   ok(sameEvent({ tmp: 't', ch: 'c' }, { tmp: 't', sid: 's' }), 'sameEvent: 同 tmp 聚束');
   ok(!sameEvent({ tmp: 't1' }, { tmp: 't2' }), 'sameEvent: 异 tmp 不聚');
+  // UC-3.1 会话已读出站 channels/view：body={channels:[{id:channelId}]}。channels[0].id 是
+  // channelId（非 server post id）→ 必抽成 ch（非 sid），使 ① 出站与 per-channel ②④ 同束。
+  const viewOut = extractDims({
+    method: 'POST',
+    url: 'http://x/api/cses/channels/view',
+    body: { channels: [{ id: 'chViewAnchor' }] },
+  });
+  eq(viewOut.ch, 'chViewAnchor', 'channels/view body.channels[0].id 抽成 ch');
+  eq(viewOut.sid, undefined, 'channels/view 的 channels[0].id 不抽成 sid（非 post id）');
+  eq(
+    keyOf({ method: 'POST', url: 'http://x/channels/view', body: { channels: [{ id: 'cv1' }] } }),
+    'ch=cv1',
+    'keyOf channels/view → ch=cv1（① 与 ②④ ch 锚同束）'
+  );
+  // 可证伪对偶：若 channels[0].id 被误抽成 sid（破坏），ch 维缺失 → 与 ②④(ch) 聚不上束 → ①永红。
+  ok(
+    sameEvent(viewOut, extractDims({ event: 'im:post:read', data: { channel_id: 'chViewAnchor' } })),
+    'sameEvent: ① channels/view(ch) 与 ② im:post:read(ch) 聚同束'
+  );
 }
 
 // ── JSONL 解析 + 聚束 ─────────────────────────────────────────────────────────

@@ -168,6 +168,21 @@ pub fn extract_corr_key(payload: &Value) -> Option<String> {
             return Some(k);
         }
     }
+    // 会话已读出站（channels/view·UC-3.1）：body = {channels:[{id:channelId}]}。channels[0].id 是
+    // **channelId**（非 server post id）——probe 会把 `id` 误抽成 sid，故专探：取 channels[0].id 组
+    // ch 键，使 ① 出站与 per-channel ② projection / ④ storage（ch 锚）同束。批次首元素代表本束
+    // （会话已读单频道·与 reducer corr-key.mjs::extractDims channels[0].id→ch 规则同步）。
+    if let Some(id) = payload
+        .get("body")
+        .and_then(|b| b.get("channels"))
+        .and_then(|c| c.as_array())
+        .and_then(|a| a.first())
+        .and_then(|e| e.get("id"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        return Some(format!("ch={id}"));
+    }
     None
 }
 
@@ -264,5 +279,28 @@ mod tests {
         assert_eq!(extract_corr_key(&empty).as_deref(), Some("ch=c9"));
         let non_str = json!({"channelId": "c9", "posts": [{"id": "x"}]});
         assert_eq!(extract_corr_key(&non_str).as_deref(), Some("ch=c9"));
+    }
+
+    #[test]
+    fn channels_view_outbound_body_extracts_ch() {
+        // UC-3.1 会话已读 ① 面（http.rs::req_payload）：body = {channels:[{id:channelId}]}。
+        // channels[0].id 是 channelId（非 post id）→ 专探取 ch（否则 probe 把 id 误抽 sid·与 ②④
+        // ch 锚聚不上束 → ① 永红）。顶层只有 method/url/headers/body。
+        let p = json!({
+            "method": "POST",
+            "url": "http://x/api/cses/channels/view",
+            "headers": [],
+            "body": {"channels": [{"id": "chView"}]}
+        });
+        assert_eq!(extract_corr_key(&p).as_deref(), Some("ch=chView"));
+    }
+
+    #[test]
+    fn channels_view_falsifiable_empty_no_key() {
+        // 可证伪对偶：channels 空数组 / 元素无 id → 不组 ch 键（不臆造束·保 None）。
+        let empty = json!({"method": "POST", "url": "http://x/channels/view", "body": {"channels": []}});
+        assert_eq!(extract_corr_key(&empty), None);
+        let no_id = json!({"method": "POST", "url": "http://x/channels/view", "body": {"channels": [{"foo": 1}]}});
+        assert_eq!(extract_corr_key(&no_id), None);
     }
 }

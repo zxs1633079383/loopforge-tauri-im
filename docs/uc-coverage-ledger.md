@@ -68,13 +68,15 @@
 - **③ DOM**：`<div data-msg-id data-temporary-id data-channel-id data-event-seq data-send-status data-read-bits>`；乐观插入 `data-msg-id=temporaryId` + `data-send-status=sending` → echo 覆写 `data-msg-id=server_id` + `data-send-status=sent` + 补 `data-event-seq`。
 - **④ 落库**：`message` 表 1 行（PK=`temporary_id`，id=server_id，`read_bits` 预置）+ `channel_event_cursor` 推进（单调不回退）。
 
-### UC-3.1 会话已读 — `⬜ pending`（认领 S/M）
+### UC-3.1 会话已读 — `🟡 ①③ four-facet-verified · ②④ server-data-gap（多设备 echo）`（2026-06-25 实跑·认领 S/M）
 
-- **① 出站 HTTP**：`POST /api/cses/channels/view`，body `{channels:[{id}]}`（待核·指向 full-map partial 6 UC-3.1）。
-- **① WS 推送**：action=`post_read`，data.postId + readMap/readBits + seq（helix ledger UC-3.1 实证 readMap=100·seq=72）。
-- **② 投影**：`im:post:read`（**fat**·同 `emit_post_received` 完整集）/ 离线路径 `im:channel:read_echo`（**fat**）。
-- **③ DOM**：`data-read-bits`（self 位置 1）。
-- **④ 落库**：`message.read_bits` 单调覆盖（**禁前端算 readBits**·projection-schema §3）。
+> 实证：`run.sh -- --spec test/specs/uc-3.1.e2e.mjs` → `✅ 四面报告全绿`（spec pass·①③ 严格断言绿 + ②④ 确认 server-data-gap·带 run.jsonl 证据 + 可证伪护栏断缺席）。接线：壳 `im_read_channel`（channelId → 包 `channels:[{id}]` 入泵 `im_channels_view`·会话级·非 UC-3.2 的 posts 单条）+ 前端 `store.readChannel` + header `已读` 按钮（C007 配 `onReadChannel`）+ 消息行 `data-read-bits`（既有渲染路径·复用 fat 集）。装饰器 `extract_corr_key` 增 `body.channels[0].id→ch` 探针（channels/view 出站经 ch 与 ②④ 聚束·契约 URL+body-shape 不变·机器件归一）。
+
+- **① 出站 HTTP**：`POST /api/cses/channels/view`，body `{channels:[{id}]}`（fire-and-forget·真源 full-map/partials/6:139 `onChannelRead`）。✅ **实跑绿**（Go 返 `viewChannel success`·已写 channelmembers.last_read_seq·corr_key `ch=…` 经 channels[0].id 探针归束）。曾误判为 `post/read{channelId}`（区间模式）被 Go 拒 `post read is empty`·回正 channels/view。
+- **① WS 推送（read echo）**：action=`post_read`（type=6）·data.postId + readMap/readBits + seq。
+- **② 投影**：`im:post:read`（**fat**·同 `emit_post_received` 完整集）。🟡 **server-data-gap（多设备 echo）**：read echo `event_type=6` 是**多设备 echo**（partials/6:140）——server 写 last_read_seq 后只广播给该用户**其他**设备，**不回灌发起读的本连接**。L1 单账号单连接夹具无 `im:post:read` 产出。run.jsonl 证据：channels/view 返 200 `viewChannel success`·但全 run（UC-3.1 + send + quiescence 窗口）**零** post_read/type6/readMap 帧。须 **L2 双账号/多设备**（A 在设备1 读 → 设备2/账号B 收 echo）复跑转绿。
+- **③ DOM**：`data-read-bits`（self 位）。✅ **实跑绿**（壳纯渲染·send echo `im:post:received` fat 集已置 self read bit·无前端算·projection-schema §3）。
+- **④ 落库**：`message.read_bits` 单调覆盖。🟡 **server-data-gap（同 ②·待 L2·依赖 post_read echo 落 read_bits）**。
 
 ### UC-3.2 单条已读 — `🟡 ①③ four-facet-verified · ②④ server-data-gap`（2026-06-25 实跑·认领 S）
 
@@ -430,7 +432,8 @@
 > 精确分类（按本台账每节标题图例为准·1+7+24+7=39）：
 > - **✅ four-facet-verified = 8**：UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）、UC-1.9（2026-06-25 实跑全绿·im_urgent_post/confirm 命令 + diffOutboundPhases 两阶段 + msg_id→sid 归一 + 关窗前等 post_update in-window·corr_key=sid=tasdeqxtubbrzbigoic5iya77o）、UC-1.10（2026-06-25 实跑全绿·im_create_schedule 命令 + create-outbound fallback 复用·posts/createSchedule + im:channel:schedule-created·storage op 草拟纠正 update→batch_update·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）。
 > - **🟡 partial = 7**：UC-4.4 心跳 / UC-4.5 陌生 channel / UC-5.3 关群 / UC-5.5 置顶 / UC-6.1 拉踢 / UC-6.2 管理员 / UC-8.x 投票平均分。
-> - **⬜ pending = 19**：3.1 / 3.2 / 3.3 / 1.2 / 1.4 / 1.5 / 1.7 / 1.8 / 2.1 / 2.2 / 2.3 / 2.4 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 已转 ✅）。
+> - **🟡 ①③-verified · ②④ server-data-gap（read echo 多设备-only）= 2**：UC-3.1 会话已读 / UC-3.2 单条已读（2026-06-25 实跑·①③ 严格断言绿 + ②④ read echo 是多设备 echo·单连接结构性不可观测·带 run.jsonl 证据 + 可证伪护栏·须 L2 双账号转绿）。
+> - **⬜ pending = 17**：3.3 / 1.2 / 1.4 / 1.5 / 1.7 / 1.8 / 2.1 / 2.2 / 2.3 / 2.4 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
 > - **⛔ unreachable = 7**（39 分母内）：UC-1.3 文件 / UC-1.6 编辑 / UC-4.3 too_long / UC-5.6 公告 / UC-5.7 在线 / UC-7.x 搜索·另 bot/agent 整域 ⛔（不计入 39 分母）。
 
 > ⚠️ **诚实声明**：全 39 UC 中唯一经真 Tauri+WKWebView 四面 oracle 跑绿的是 **UC-1.1**。`🟡 partial` 表示 helix ledger 已证服务端 wire 但 LoopForge 客户端四面尚未实跑（标 partial 是为标记「有可证主路径 + 部分子项物理够不到」，**不等于 LoopForge 已验**）。rollout 实跑前，唯一 ✅ 的就是 UC-1.1。

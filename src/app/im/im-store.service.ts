@@ -378,6 +378,27 @@ export class ImStoreService {
     }
   }
 
+  /**
+   * UC-3.1 会话已读：invoke('im_read_channel', {channelId}）。
+   *
+   * 进/看会话触发——**会话级**标整会话已读（vs UC-3.2 markRead 的 posts 单条模式）。
+   * **壳不臆造 body**：endpoint（channels/view）+ channels 数组包装全在 helix-im（commands.rs
+   * im_read_channel → 包 channels:[{id:channelId}] → 入泵 im_channels_view →
+   * outbound/channel_change_dedicated.rs ViewChannelsCommand → POST channels/view）。壳只供
+   * channelId。fire-and-forget 无 HTTP 返回；readBits 由 helix `im:post:read`（fat·WS read echo
+   * event_type=6）投影驱动 data-read-bits·壳纯渲染·无乐观合成（read_bits 单调覆盖由 applyMessageItem
+   * 既有路径处理·复用 im:post:received 同 fat 集）。非 Tauri / 命令缺失 → 静默（dev 浏览器不卡）。
+   */
+  async readChannel(channelId: string): Promise<void> {
+    const ch = channelId.trim();
+    if (!ch) return;
+    try {
+      await this.bridge.invoke<void>("im_read_channel", { channelId: ch });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（readBits 靠投影驱动·无乐观合成）。
+    }
+  }
+
   // ——— 私有 ———
 
   private onBus(env: BusEnvelope): void {

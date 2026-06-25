@@ -170,6 +170,40 @@ pub async fn im_mark_read(
         .map_err(|e| format!("im_mark_read: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-3.1 会话已读：前端进/看会话 → 标整个会话已读 → 入泵 `im_channels_view`（helix-im
+/// `outbound/channel_change_dedicated.rs` `ViewChannelsCommand`）→ 兑现出站
+/// `POST channels/view {channels:[{id:channelId}]}`（fire-and-forget·无 HTTP 返回处理）。Go 写
+/// `channelmembers.last_read_seq` → 多设备 echo `event_type=6` → 在线走 WS read echo → helix
+/// 投影 `im:post:read`（fat·含 readBits）→ message.read_bits 单调覆盖落库 + DOM data-read-bits 更新。
+/// 真源 full-map/partials/6--client-usecases.md:136-140（onChannelRead({channels:[{id}]})）。
+///
+/// **与 UC-3.2 `im_mark_read` 的区别**：3.2 走 `post/read` posts 列表模式标**单条**（{channelId,
+/// posts:[postId]}）；3.1 走 `channels/view` **会话级**标整会话（{channels:[{id}]}）。不同 endpoint、
+/// 不同 body 形态。注：纯 `post/read {channelId}` 被 Go 拒『post read is empty』（区间读须带
+/// startTime/endTime 或 posts），故会话已读走 channels/view 而非 post/read。
+///
+/// 薄壳纪律：只翻译入参（channelId）→ 包成 `channels:[{id:channelId}]`（对齐 helix ViewChannelsCommand
+/// 透传 channels 数组·元素键 camelCase id）+ 入泵 `im_channels_view`，endpoint / casing 全在 helix-im。
+#[tauri::command]
+pub async fn im_read_channel(
+    state: State<'_, AppState>,
+    channel_id: String,
+) -> Result<(), String> {
+    if channel_id.trim().is_empty() {
+        return Err("im_read_channel: channelId 为空".into());
+    }
+    // 会话级已读：channels 数组单元素 {id:channelId}（helix ViewChannelsCommand 透传·元素键 wire camelCase）。
+    let tick = command(
+        "im_channels_view",
+        serde_json::json!({ "channels": [{ "id": channel_id }] }),
+    );
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_read_channel: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// 会话列表 bootstrap：拉本地 `channel` 表 dialogList（helix emit `im:channels:projection`）。
 ///
 /// 最简壳只靠增量流冒频道，而增量是严格 cursor delta——清/旧 DB 无新活动时拿不到 active
