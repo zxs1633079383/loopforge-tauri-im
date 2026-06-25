@@ -70,7 +70,7 @@
 | [x] | 10.1 待办列表 | (hello 收尾自驱)`posts/queryTodoList`{postIds} | `partials/8 http.rs:67` | `todo::emit_todo_updated`{items} | data-todo-id 列表 | N/A(projection-only·无 todo 表) | M |
 | [x] | 4.2 按需 sync notify ✅四面全绿(#32·anchorCh=14jeie5y…·×2) | `im_sync_channels`→`channel/sync/notify`(gap 自驱) | `partials/8 §2.1`{cursors:[{channelId,fromSeq}]} | `emit_channel_update_by_post`(thin {channel_id,event_seq,msg_id})+`emit_post_received`(fat) | 增量行+badge(unread) | `message`+cursor 跳空洞 | M |
 | [x] | 4.5 陌生 channel 兜底 | `im_ensure_channel_loaded`→`channel/load/incrementByChannelId` | `channel_read.rs`{channelId}·is_read=true | `im:read:result`{req_id,body}（读族·C004 校正） | N/A（读路径） | N/A（不落新行·cursor 不推进） | M✅ |
-| [~] | 4.4 心跳 gap 补偿(3 面) | (Rust ping/pong piggyback 自驱) | `partials/8 §5.7`{cursors,allHash} | (补偿走 4.2 sync 投影) | **③ N/A（已移除该面）** | `channel_event_cursor` | M(①②④+cursor) |
+| [x] | 4.4 心跳 gap 补偿(3 面) | (Rust ping/pong piggyback 自驱) | `partials/8 §5.7`{cursors,allHash} | (补偿走 4.2 sync 投影) | **③ N/A（已移除该面）** | `channel_event_cursor` | ✅三面真绿(①②④·e2e #34) |
 | [~] | 8.x 投票 CRUD | `vote/{createVote,vote,readVote,closeVote,deleteVote}`(:3399) | `partials/6 集合八` | `emit_post_updated`(fat) | data-vote | `message.props` | M |
 | [~] | 8.x 平均分 CRUD | `average/{publish,attend,read,close,delete}`(:3399) | `partials/6 集合八` | `emit_post_updated`(fat) | data-average | `message.props` | M |
 | [ ] | 10.2 系统通知 | (WS 帧触发·无独立 HTTP) | — | `emit_post_received`/`updated`(系统消息) | data-system-notice | `message`(SYSTEM/SYSTEN 类型) | M |

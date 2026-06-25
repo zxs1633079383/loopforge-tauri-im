@@ -12,6 +12,7 @@ import {
   runFourFacetRead,
   runFourFacetSelfDriven,
   runFourFacetSyncNotify,
+  runFourFacetHeartbeatGap,
   parseJsonl,
   bundleByCorrKey,
 } from './four-facet-reducer.mjs';
@@ -1002,6 +1003,91 @@ console.log('· UC-4.2 按需 sync notify（runFourFacetSyncNotify·gap 自驱·
   // 命中由 ②④ 的锚 ch 过滤保证·非 ① 强求覆盖）。此 case 验 ① 不因「锚 ch 未在 cursors」误红。
   ok(runFourFacetSyncNotify({ jsonl: otherCh, expect: expect42, dom }).facets.outbound.ok,
     '① sync/notify 发生即绿（锚 ch 收敛由 ②④ 过滤保证·① 不强求 cursors 覆盖锚·非 tautology：无 sync/notify 则 a 已证红）');
+}
+
+// ── UC-4.4 心跳 gap 补偿（runFourFacetHeartbeatGap·心跳 ping piggyback·三面 ①②④·③ DOM N/A）──
+// behind-cursor → 8s 周期心跳 ping piggyback {action:"ping", data:{cursors, allHash}} → server pong
+// 回 {gaps, hashMismatch} → compensate_from_pong 自驱 sync/notify 补偿 → server 回放 →
+// im:channel:update-by-post（{channel_id,event_seq,msg_id}·badge）→ message batch_upsert + cursor 跳空洞。
+// ① ws-send ping 帧 data 层含 cursors+allHash 且 cursors 覆盖锚 ch·② 投影外层键集冻结·④ 锚 ch message ≥1。
+// ③ DOM N/A（issue #34 已移除该面·补偿增量经 4.2 路径渲染）。
+// 守可证伪：① 无 ping 帧/缺 allHash/不含锚 ch / ② 漏 emit/键集偏 / ④ 未落库 → 对应面红。
+console.log('· UC-4.4 心跳 gap 补偿（runFourFacetHeartbeatGap·心跳 ping piggyback·①②④·③ N/A）');
+{
+  const CH = 'ch44abcdefghijklmnopqrstuv';
+  const goodLines = [
+    // ① ws-send ping 帧：{action:"ping", seq, data:{cursors:[{channelId, fromSeq}], allHash}}（覆盖锚 ch）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.4', facet: 'outbound', hop: 'ws-send', seq: 1,
+      payload: { action: 'ping', seq: 7,
+        data: { cursors: [{ channelId: CH, fromSeq: 80 }], allHash: 'a1b2c3d4e5f60718' } } }),
+    // ② im:channel:update-by-post 投影：{channel_id, event_seq, msg_id}（补偿回放·锚 ch）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.4', facet: 'projection', hop: 'projection', seq: 2,
+      payload: { event: 'im:channel:update-by-post',
+        data: { channel_id: CH, event_seq: 84, msg_id: 'msg-y9' } } }),
+    // ④ message batch_upsert：补偿 sync 回放逐事件落库 rows=1（锚 ch）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.4', facet: 'storage', hop: 'storage', seq: 3,
+      payload: { op: 'batch_upsert', table: 'message', rows: 1, channel_id: CH, id: 'msg-y9' } }),
+    // ④ 旁证 cursor 跳空洞（monotonic_upsert·不作 minRows 锚）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.4', facet: 'storage', hop: 'storage', seq: 4,
+      payload: { op: 'monotonic_upsert', table: 'channel_event_cursor', scope: CH, value: 84 } }),
+  ].join('\n');
+  const expect44 = {
+    ucId: 'UC-4.4',
+    corrAnchor: { ch: CH },
+    outbound: { frame: 'ws-send', action: 'ping', dataFields: { cursors: '*', allHash: '*' } },
+    projection: { event: 'im:channel:update-by-post', dataKeys: ['channel_id', 'event_seq', 'msg_id'] },
+    storage: { op: 'batch_upsert', table: 'message', minRows: 1 },
+  };
+  const rep = runFourFacetHeartbeatGap({ jsonl: goodLines, expect: expect44 });
+  ok(rep.facets.outbound.ok, '① ws-send ping 帧 {action,data:{cursors,allHash}} 覆盖锚 ch 绿');
+  ok(rep.facets.projection.ok, '② im:channel:update-by-post {channel_id,event_seq,msg_id} 投影绿');
+  ok(rep.facets.storage.ok, '④ 锚 ch message batch_upsert ≥1 绿');
+  ok(rep.green, `UC-4.4 三面全绿（实 brokenAt=${rep.brokenAt} :: ${rep.summary}）`);
+  eq(rep.facets.dom, undefined, '③ DOM 面 N/A（reducer 不产 dom facet·已移除）');
+
+  // 可证伪 a：无 ping 帧（心跳未发/未连接）→ ① 红。
+  const noPing = goodLines.split('\n').slice(1).join('\n');
+  eq(runFourFacetHeartbeatGap({ jsonl: noPing, expect: expect44 }).facets.outbound.ok, false,
+    '可证伪：无 ws-send ping 帧 → ① 红');
+
+  // 可证伪 b：ping 帧缺 allHash（piggyback 漏算·根群非空却不带 hash）→ ① 红。
+  const noHash = [
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.4', facet: 'outbound', hop: 'ws-send', seq: 1,
+      payload: { action: 'ping', seq: 7, data: { cursors: [{ channelId: CH, fromSeq: 80 }] } } }),
+    ...goodLines.split('\n').slice(1),
+  ].join('\n');
+  eq(runFourFacetHeartbeatGap({ jsonl: noHash, expect: expect44 }).facets.outbound.ok, false,
+    '可证伪：ping 帧缺 allHash → ① 红');
+
+  // 可证伪 c：ping 帧 cursors 不覆盖锚 ch（携别群快照·锚 ch 未参与对账）→ ① 红（faithful·非任取）。
+  const otherCh = [
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.4', facet: 'outbound', hop: 'ws-send', seq: 1,
+      payload: { action: 'ping', seq: 7,
+        data: { cursors: [{ channelId: 'ch-OTHER', fromSeq: 0 }], allHash: 'deadbeefdeadbeef' } } }),
+    ...goodLines.split('\n').slice(1),
+  ].join('\n');
+  eq(runFourFacetHeartbeatGap({ jsonl: otherCh, expect: expect44 }).facets.outbound.ok, false,
+    '可证伪：ping cursors 不覆盖锚 ch → ① 红（faithful）');
+
+  // 可证伪 d：无 update-by-post emit（pong 无 gap → 不补偿）→ ② 红。
+  const noProj = [goodLines.split('\n')[0], ...goodLines.split('\n').slice(2)].join('\n');
+  eq(runFourFacetHeartbeatGap({ jsonl: noProj, expect: expect44 }).facets.projection.ok, false,
+    '可证伪：无 im:channel:update-by-post emit → ② 红');
+
+  // 可证伪 e：投影缺 msg_id（瘦集偏移）→ ② 红（键集冻结）。
+  const badKeys = [
+    goodLines.split('\n')[0],
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.4', facet: 'projection', hop: 'projection', seq: 2,
+      payload: { event: 'im:channel:update-by-post', data: { channel_id: CH, event_seq: 84 } } }),
+    ...goodLines.split('\n').slice(2),
+  ].join('\n');
+  eq(runFourFacetHeartbeatGap({ jsonl: badKeys, expect: expect44 }).facets.projection.ok, false,
+    '可证伪：update-by-post 缺 msg_id → ② 红');
+
+  // 可证伪 f：无锚 ch message 落库 → ④ 红。
+  const noStore = [goodLines.split('\n')[0], goodLines.split('\n')[1], goodLines.split('\n')[3]].join('\n');
+  eq(runFourFacetHeartbeatGap({ jsonl: noStore, expect: expect44 }).facets.storage.ok, false,
+    '可证伪：无锚 ch message 落库 → ④ 红');
 }
 
 // ── 收尾 ─────────────────────────────────────────────────────────────────────

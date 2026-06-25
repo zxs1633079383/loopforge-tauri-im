@@ -1,0 +1,42 @@
+{
+  "$schema-note": "四面期望文件 (UC-4.4 心跳 gap 补偿) — oracle 本体。只读契约 (contract-readonly-autofix.md §1 / harness C004)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现或本仓渲染壳 / 机器件（reducer/装饰器/seed）。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-4.4",
+  "title": "心跳 ping piggyback {cursors, allHash}（ws-send）→ server pong 回 {gaps, hashMismatch} → compensate_from_pong 自驱 channel/sync/notify 补偿 → server 回放离线区间事件 → im:channel:update-by-post（badge）→ DB message batch_upsert + channel_event_cursor 跳空洞推进。③ DOM 面 N/A（已移除·补偿增量经 4.2 路径渲染·本 UC 不独立断 DOM）。",
+  "contractReadonly": true,
+  "facesAsserted": ["outbound", "projection", "storage"],
+  "domFaceRemoved": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/src/acl/transport_effects.rs::ping_frame（出站 WS 帧·{action:\"ping\", seq, data:{cursors:[{channelId, fromSeq}], allHash}}·cursors 全量根群确定性升序·allHash = sync_increment::all_hash_fnv1a 16-hex 小写·空根群省 allHash）。真源 partials/8 §5.7（PingData·types/sync.ts:242）。注：心跳 piggyback 是 ws-send 帧·非 6 个前端命令 HTTP 端点之一·真源 = helix ping_frame 工厂源码 + types/sync.ts:242。",
+    "projection": "helix/crates/helix-im/src/acl/projection_control_effects.rs::emit_channel_update_by_post（im:channel:update-by-post·{channel_id, event_seq, msg_id}·瘦·channel-row badge）。补偿走 4.2 sync 投影路径：pong gap → compensate_from_pong → sync/notify → sync_effects.rs::sync_mutation_emits 逐 PostUpsert emit update-by-post + projection-schema.md 行 67。",
+    "storage": "helix/crates/helix-im/src/acl/sync_effects.rs::batch_upsert_events_with_messages（补偿 sync 回放逐 PostUpsert → batch_upsert message）+ advance_cursor（monotonic_upsert channel_event_cursor 跳空洞·旁证 cursor 推进）。",
+    "dom": "N/A（issue #34：③ DOM 面已移除·补偿后增量经 4.2 路径渲染·本 UC 不独立断 DOM 行；CL badge / ML 增量行的 DOM 断言归 UC-4.2）。"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚 = channelId（ch 维·gap 落后根群）。UC-4.4 内核自驱·心跳 ping piggyback 触发：① ws-send ping 帧 data.cursors[*].channelId 全量根群快照（含锚 ch·非单 ch·decorator 探不出单 ch → ① 按窗口找 action=ping 且 data.cursors 含锚 ch 的 ws-send 帧）；server pong 回 {gaps[].channelId, hashMismatch} → compensate_from_pong 对落后 ch 自驱 sync/notify → ②④ 各带 channel_id = 锚 ch（散在 per-event 多束·reducer runFourFacetHeartbeatGap 按窗口 + 锚 ch 各 facet 聚合裁定·非单 corr_key 束）。e2e 运行时把补偿命中的真实落后根群 id 填入本字段 ch。",
+    "ch": null
+  },
+
+  "outbound": {
+    "frame": "ws-send",
+    "action": "ping",
+    "dataFields": {
+      "cursors": "*",
+      "allHash": "*"
+    },
+    "_note": "心跳 ping piggyback：ws-send 帧 payload {action:\"ping\", seq, data:{cursors:[{channelId, fromSeq}], allHash}}。① 锚 = 窗口内 action==ping 且 data.cursors 含锚 ch 的 ws-send 帧（faithful：该次心跳确实携带了锚 ch 的 cursor 快照参与 allHash 对账）。dataFields 校验 data 层有 cursors + allHash 两键（allHash 仅在根群非空时带·本 UC behind-cursor seed 后根群非空必带）。cursors 内层元素 camelCase {channelId, fromSeq}（区别于顶层泄漏）。"
+  },
+
+  "projection": {
+    "event": "im:channel:update-by-post",
+    "dataKeys": ["channel_id", "event_seq", "msg_id"],
+    "_note": "projection-schema 行 67 emit_channel_update_by_post：data {channel_id, event_seq, msg_id}（瘦·留 channel-row·补偿 sync 回放每条可见 type1 新消息触发·badge 信号）。严格键集（缺/多即 fail）。补偿复用 4.2 sync 投影路径（issue #34 / blocked by #32）。"
+  },
+
+  "storage": {
+    "op": "batch_upsert",
+    "table": "message",
+    "minRows": 1,
+    "_note": "batch_upsert_events_with_messages → 补偿 sync 回放逐 PostUpsert event 落 batch_upsert message（每事件 rows=1·reducer 按锚 ch 累计 ≥ minRows）。channel_event_cursor monotonic_upsert（scope=ch·value=high-water·跳空洞）旁证 cursor 推进·payload 无 rows 不作 minRows 锚（④ 锚 message batch_upsert·与 UC-4.1/4.2 同纪律）。"
+  }
+}

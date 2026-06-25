@@ -957,6 +957,150 @@ export function runFourFacetSyncNotify({ jsonl, expect, dom, ucId }) {
   };
 }
 
+// ── 心跳 gap 补偿族（①②④ 三面·③ DOM N/A 已移除）对账（UC-4.4 心跳 ping piggyback）──────────
+//
+// 与按需 sync notify 族 runFourFacetSyncNotify 的差异（真源 helix transport_effects.rs::ping_frame +
+// pong_compensate.rs::compensate_from_pong + sync_effects.rs/projection_control_effects.rs）：
+//   - **① 出站 = ws-send ping 帧（非 http-req sync/notify）**：UC-4.4 由 8s 周期心跳 ping piggyback
+//     `{action:"ping", seq, data:{cursors:[{channelId, fromSeq}], allHash}}`（全量根群确定性升序快照
+//     + FNV-1a allHash）触发。server pong 回 `{gaps[].channelId, hashMismatch}` → compensate_from_pong
+//     对落后 ch 自驱 sync/notify 补偿（补偿出站走 4.2 路径·非本面锚·② 真锚是补偿后的投影）。
+//     ① 锚 = 窗口内 action==ping 且 data.cursors 含锚 ch 的 ws-send 帧（faithful：该次心跳确实把锚 ch
+//     的 cursor 快照纳入 allHash 对账·非任取）。
+//   - **断面 = ①②④（三面·③ DOM N/A）**：① ping 帧 data 层有 cursors + allHash 且 cursors 覆盖锚 ch；
+//     ② 补偿回放触发的 im:channel:update-by-post 外层键集 {channel_id, event_seq, msg_id}（缺/多即红）；
+//     ④ 锚 ch 的 message batch_upsert 落库 ≥ minRows（补偿 sync 回放逐事件落库·cursor monotonic_upsert
+//     旁证跳空洞）。③ DOM 面已移除（issue #34·补偿增量经 4.2 路径渲染·DOM 断言归 UC-4.2）。
+//
+// 窗口隔离保证可证伪（uc_id 过滤·bootstrap UC = UC-4.4）：behind-cursor seed 后心跳 ping 的 allHash
+// 与 server 权威水位不符 → pong 回 hashMismatch/gaps → 补偿真发生 → 窗口内 ① ping 帧含锚 ch·② update-by-post
+// ≥1·④ message ≥1 —— 非 tautology（无 gap → pong 无 mismatch → 不补偿 → 无 update-by-post → ② 红·
+// 未落库 → ④ 红；ping 帧缺 allHash / 不含锚 ch → ① 红·见单测可证伪对偶）。
+//
+// 机器件归属（非改冻结 oracle·C009）：本入口同属 reducer 领域件·ws-send ping wire shape 由 expect.outbound
+// （helix ping_frame 源码派生·partials/8 §5.7 / types/sync.ts:242）冻结·投影外层键集由 expect.projection
+// 冻结·绿由本 reducer 裁定。
+//
+// @param {object} args
+// @param {string} args.jsonl   run.jsonl 全文
+// @param {object} args.expect  期望（expect.corrAnchor.ch 锚根群·expect.outbound {frame,action,dataFields}·
+//                              expect.projection {event,dataKeys}·expect.storage {op,table,minRows}）
+// @param {string} [args.ucId]  默认取 expect.ucId
+// @returns {object} 报告（facets.outbound / projection / storage·三面无 dom）
+export function runFourFacetHeartbeatGap({ jsonl, expect, ucId }) {
+  const uc = ucId ?? expect.ucId;
+  const anchorCh = expect.corrAnchor?.ch ?? null;
+  const { events, parseErrors } = parseJsonl(jsonl);
+
+  const inWin = (e) => uc === undefined || e.uc_id === uc;
+
+  // ① 出站：窗口内 ws-send ping 帧（payload.action==='ping'·data.cursors 含锚 ch·data.allHash 非空）。
+  const exp = expect.outbound ?? {};
+  const wantAction = exp.action ?? 'ping';
+  const pingHops = events.filter(
+    (e) =>
+      inWin(e) &&
+      e.facet === 'outbound' &&
+      e.hop === 'ws-send' &&
+      (e.payload?.action ?? null) === wantAction
+  );
+  // 锚 ch 覆盖那帧优先（data.cursors[*].channelId === anchorCh）；无锚或未命中则取首条 ping 帧。
+  const pingHit =
+    (anchorCh &&
+      pingHops.find((h) => {
+        const cur = h.payload?.data?.cursors;
+        return (
+          Array.isArray(cur) &&
+          cur.some((c) => c && (c.channelId === anchorCh || c.channel_id === anchorCh))
+        );
+      })) ||
+    pingHops[0] ||
+    null;
+  const outboundFacet = diffPingFrame(exp, pingHit ? pingHit.payload : null, anchorCh);
+
+  // ② 投影：窗口内锚 ch 的 im:channel:update-by-post（{channel_id, event_seq, msg_id}）·取首条。
+  const pexp = expect.projection ?? {};
+  const projHit =
+    events.find(
+      (e) =>
+        inWin(e) &&
+        e.facet === 'projection' &&
+        e.hop === 'projection' &&
+        (e.payload?.event ?? e.payload?.channel) === pexp.event &&
+        (!anchorCh ||
+          (e.payload?.data?.channel_id ?? e.payload?.data?.channelId) === anchorCh)
+    ) ?? null;
+  const projActual = projHit
+    ? { event: projHit.payload?.event ?? projHit.payload?.channel, data: projHit.payload?.data ?? {} }
+    : null;
+  const projFacet = diffProjection(pexp, projActual);
+
+  // ④ 落库：窗口内锚 ch 的 message batch_upsert 累计 rows ≥ minRows（补偿 sync 回放逐事件落库）。
+  const sexp = expect.storage ?? {};
+  const sTable = sexp.table ?? 'message';
+  let rowCount = 0;
+  let sawOp = null;
+  for (const e of events) {
+    if (!inWin(e)) continue;
+    if (e.facet !== 'storage') continue;
+    const p = e.payload ?? {};
+    if (!p.op || (sTable && p.table !== sTable)) continue;
+    if (anchorCh && (p.channel_id ?? p.channelId) !== anchorCh) continue;
+    sawOp = p.op;
+    rowCount += p.rows ?? p.keys ?? p.count ?? 1;
+  }
+  const storageFacet = sawOp
+    ? diffStorage(sexp, { op: sawOp, table: sTable, rows: rowCount })
+    : facetFail('storage', `无锚 ch 的 ${sTable} 落库写（断在 pong→compensate→sync reply→Storage 这跳）`, { expect: sexp });
+
+  // 断面：①②④（三面·③ DOM N/A·issue #34 已移除该面）。
+  const facets = {
+    outbound: outboundFacet,
+    projection: projFacet,
+    storage: storageFacet,
+  };
+  const order = ['outbound', 'projection', 'storage'];
+  const brokenAt = order.find((f) => !facets[f].ok) ?? null;
+  const green = brokenAt === null && parseErrors.length === 0;
+
+  return {
+    ucId: uc,
+    green,
+    brokenAt,
+    anchorCh,
+    facets,
+    parseErrors,
+    summary: green
+      ? `✅ ${uc} 心跳 gap 补偿三面全绿（①②④·③ DOM N/A·anchorCh=${anchorCh ?? 'n/a'}·ping piggyback→pong gap→compensate→event=${pexp.event}）`
+      : `❌ ${uc} 断在 [${brokenAt ?? 'parse'}] 面：${
+          brokenAt ? facets[brokenAt].issues.join('; ') : `JSONL 解析 ${parseErrors.length} 行坏`
+        }`,
+  };
+}
+
+/** ① ws-send ping 帧对账：payload.action + data 层字段（cursors/allHash）+ cursors 覆盖锚 ch。 */
+function diffPingFrame(expect, payload, anchorCh) {
+  if (!payload) return facetFail('outbound', '无 ws-send ping 帧（断在心跳 timer→ping_frame→Transport::send 这跳）', { expect });
+  const issues = [];
+  const wantAction = expect.action ?? 'ping';
+  if ((payload.action ?? null) !== wantAction)
+    issues.push(`action 期望 ${wantAction} 实得 ${payload.action}`);
+  const data = payload.data ?? {};
+  for (const [k, want] of Object.entries(expect.dataFields ?? {})) {
+    if (!(k in data)) issues.push(`data 缺字段 ${k}（${k === 'allHash' ? '根群非空时心跳须带 allHash·缺=piggyback 漏算' : 'piggyback 漏带'}）`);
+    else if (want !== '*' && !valEq(data[k], want))
+      issues.push(`data.${k} 期望 ${JSON.stringify(want)} 实得 ${JSON.stringify(data[k])}`);
+  }
+  // faithful：cursors 必须覆盖锚 ch（该次心跳确实把锚 ch 快照纳入 allHash 对账·非任取空帧）。
+  if (anchorCh) {
+    const cur = data.cursors;
+    const covers =
+      Array.isArray(cur) && cur.some((c) => c && (c.channelId === anchorCh || c.channel_id === anchorCh));
+    if (!covers) issues.push(`data.cursors 未覆盖锚 ch=${anchorCh}（该次心跳未携带锚 ch 快照·② 补偿无从触发）`);
+  }
+  return facetReport('outbound', issues, { action: payload.action, dataKeys: Object.keys(data) });
+}
+
 /**
  * 主入口：跑四面对账，出报告。
  *

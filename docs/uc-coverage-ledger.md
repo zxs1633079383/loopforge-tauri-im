@@ -388,15 +388,18 @@
 > **物理/数据够不到（非 wire-bug·代码侧实现完整有单测）**：testbed 无「注入本地落后 cursor」入口·冷启动 cursor=0 走 increment 不进 too_long 分支·也无法把本地 cursor 顶到远落后服务端 seq 的态（helix ledger 同标 harness-gap）。
 > **② 投影**：`emit_sync_too_long`（`{channelId, resetTo}`·channel.rs:223 emit / module.rs:760 清表·由 helix-im 单测覆盖）；**③ DOM**：清表重渲首屏；**④ 落库**：`message` 清+重拉·cursor=resetTo-1。e2e 触发态待 testbed 加注入入口或服务端构造超阈 gap。
 
-### UC-4.4 心跳 gap 补偿 — `🟡 partial·三面`（①②④+cursor 可测·③ DOM N/A 已移除该面要求）
+### UC-4.4 心跳 gap 补偿 — `✅ 三面全绿`（①②④ e2e 真跑·③ DOM N/A 已移除该面要求·issue #34）
 
-> **纯 Rust ping/pong 自驱**（8s piggyback）·无前端 invoke 触发·无独立 DOM → ③ 面物理不可达（helix ledger ✅ 但属服务端 wire 视角·LoopForge 客户端四面只能 ①②④ + cursor 不变量 + 间接证）。
+> **纯 Rust ping/pong 自驱**（8s piggyback·`ping_interval_ms=8000`）·无前端 invoke 触发·③ DOM 面已移除（补偿增量经 4.2 路径渲染·DOM 断言归 UC-4.2）。三面 ①②④ + cursor 经 `runFourFacetHeartbeatGap` reducer 真跑裁定全绿（e2e 暖跑·anchorCh=`181jj6htd7nn3xx51z78bhuhcr`·ping∩update-by-post∩message 三面交集命中 94 频道）。
+>
+> **环境前置（C003/C004 决策 A·改环境不改 oracle）**：`scripts/seed-behind-cursor.sh` 把 cursor 拉回落后态 → 心跳 ping piggyback 的 `allHash`（FNV-1a 16-hex·实证 `97b4cbbb048f0f04`）与 server 权威水位不符 → pong 回 `{gaps, hashMismatch}` → `pong_compensate::compensate_from_pong` 自驱补偿。bootstrap UC=UC-4.4（`reload-app --uc UC-4.4`·心跳/补偿 hop 归 UC-4.4）。
 
-- **① 出站**：ping piggyback `{cursors, allHash}`（FNV-1a 锚定向量·待核 partial 8 §5.7）·**出站 ping 帧体 host 不落日志** → 以服务端 pong 回声 `seq_reply` 锚定为往返证据（helix ledger 实证 seq_reply 逐一锚定 ping seq）。
-- **① WS 推送**：pong `{status:OK, seq_reply, data:{gaps, hashMismatch}}`（hashMismatch:true 触发全量根群对账补偿）。
-- **② 投影**：补偿走 sync 投影（§UC-4.2）·无独立投影。
-- **③ DOM**：N/A（间接·靠 `all_hash` 锚定向量 + 补偿后 sync 投影间接证）。
-- **④ 落库**：`channel_event_cursor`。
+- **① 出站**：ws-send ping 帧 `{action:"ping", seq, data:{cursors:[{channelId, fromSeq}], allHash}}`（`acl::transport_effects::ping_frame`·全量根群确定性升序快照·实证 152 cursors·allHash 16-hex 小写）。**✅ 真绿**：Transport::send decorator tee facet① hop=ws-send → reducer 找 action==ping 且 data.cursors 含锚 ch 的 ws-send 帧（faithful·覆盖锚 ch·allHash 非空）。
+- **① WS 推送（输入·非断言面）**：pong `{status:OK, seq_reply, data:{gaps, hashMismatch}}`（hashMismatch:true 触发全量根群对账补偿）。
+- **② 投影**：`im:channel:update-by-post`（`{channel_id, event_seq, msg_id}`·瘦 badge·补偿 sync 回放每条可见 type1 触发）。**✅ 真绿**：外层键集严格对齐（缺/多即红）·实证 885 条·data keys 精确 `{channel_id, event_seq, msg_id}`。
+- **③ DOM**：N/A（issue #34 已移除该面·补偿增量经 4.2 路径渲染·DOM 断言归 UC-4.2）。
+- **④ 落库**：`message` batch_upsert（补偿 sync 回放逐 PostUpsert 落库·锚 ch 累计 ≥1·实证 94 频道 batch_upsert）+ `channel_event_cursor` monotonic_upsert 跳空洞旁证。**✅ 真绿**。
+- **接通件**：复用 helix `ping_frame`（产侧）+ `pong_compensate::compensate_from_pong`（消费侧·blocked by #7 cursor 根 + #32 补偿走 4.2 sync 投影·均 CLOSED）· reducer `runFourFacetHeartbeatGap`（三面 ①②④·③ N/A·6 可证伪对偶）· expect/uc-4.4.expect.json + specs/uc-4.4.e2e.mjs（e2e 真跑三面全绿）。无独立 Angular UI（③ 面已移除·issue #34 acceptance「无独立 UI」）。
 
 ---
 
@@ -521,7 +524,7 @@
 | 域 | UC 条目 | `✅ four-facet-verified` | `🟡 partial` | `⬜ pending` | `⛔ unreachable` |
 |---|---|---|---|---|---|
 | A posts（收发/历史/已读）| 17 | **1**（1.1）| 0 | 14 | 2（1.3 文件 / 1.6 编辑）|
-| B channel/sync（同步/频道管理）| 12 | 5（4.1 / 4.2 / 4.5 / 5.1 / 5.2）| 3（4.4 / 5.3 / 5.5）| 1（5.4）| 3（4.3 / 5.6 / 5.7）|
+| B channel/sync（同步/频道管理）| 12 | 6（4.1 / 4.2 / 4.4 / 4.5 / 5.1 / 5.2）| 2（5.3 / 5.5）| 1（5.4）| 3（4.3 / 5.6 / 5.7）|
 | C user-misc（成员/搜索/待办/书签）| 7 | 0 | 2（6.1 / 6.2）| 4（6.3 / 6.4 / 9.x / 10.1）| 1（7.x 搜索）|
 | D bot-agent / 互动卡片 | 3 | 0 | 1（8.x）| 1（10.2）| 1（8.x vote 子项归 8.x partial 母项·不单计）+ — |
 | **合计（39 分母）** | **39** | **2** | **6** | **24** | **7** |
@@ -529,7 +532,7 @@
 
 > 精确分类（按本台账每节标题图例为准·1+7+24+7=39）：
 > - **✅ four-facet-verified = 16**：UC-4.5（2026-06-25 暖栈实跑全绿·前端 invoke 读族双面 ①②·③④ N/A·im_ensure_channel_loaded 桥命令入泵 im_channel_load_increment_by_channel_id + store ensureChannelLoaded + onEnsureChannelLoaded/CL 区兜底按钮·channel/load/incrementByChannelId {channelId} 全 camelCase·im:read:result {req_id,body} 透传·契约 C004 校正 issue 草拟 emit_channel_increment/channel+cursor → 读族 ①② 因 is_read=true·corr_key=req_id·issue #33）、UC-4.2（2026-06-25 暖栈实跑 ×2 全绿·内核自驱 gap 触发四面 ①②④③·channel/sync/notify 出站 + im:channel:update-by-post 投影 + message 落库 + cursor 跳空洞 + DOM unread badge/增量行·runFourFacetSyncNotify reducer + applyChannelUpdateByPost + im_sync_channels 命令·anchorCh=14jeie5yc78mzbixrhdeocfoyy·四面交集 94 频道·issue #32）、UC-6.4（2026-06-25 暖栈实跑全绿·读族双 endpoint ①②·③④ N/A·im_members_by_ids/im_member_snapshot 桥命令 + store loadMembersByIds/loadMemberSnapshot + onLoadMembers 接线·channels/member/byIds {channelIds} + channel/member/snapshot {channelId,startTime,endTime} 全 camelCase·im:read:result {req_id,body} 透传·复现 ≥2 轮·issue #27）、UC-2.2（2026-06-25 实跑全绿·读族编排 ①②③·④ N/A·im_load_older_context 命令 + store.loadOlder 选最旧行 pivot 锚 + applyOlderLoaded prepend + createOutbound fallback 锚 postContext·实跑 2 轮 moving anchor + prepend 9 行·原「①预期红 round6 缺 acl fix」判断有误·round6@bbbf809 已含 is_query 白名单·storage 草拟 batch_upsert 按 C004 校正 N/A 对齐 projection-schema §1.3·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #22）、UC-2.3（2026-06-25 实跑全绿·读族本地 ②③④·① N/A optional·store.locatePost + debug 桥 debugLocatePost 复用 query_result + rows computed highlighted 高亮 + reducer scanFallback/isOutboundOptional 机件·契约纠偏 getPostsAfterIndex/query_result 互斥→走本地 Scan·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #21）、UC-2.1（2026-06-25 实跑全绿·读族 ②③·①④ N/A·im_query_messages_by_channel 命令 + store applyMessagesQueryResult 渲染 50 行 + onSelectChannel 切群接线·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #20）、UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-1.4（2026-06-25 实跑全绿·onResend→store.resend 复用 tmp upsert + debug 桥注入失败前置·corr_key=ch=15gcgoyf;tmp=pfuneqqp;sid=c58zkjqn;seq=68）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）、UC-1.9（2026-06-25 实跑全绿·im_urgent_post/confirm 命令 + diffOutboundPhases 两阶段 + msg_id→sid 归一 + 关窗前等 post_update in-window·corr_key=sid=tasdeqxtubbrzbigoic5iya77o）、UC-1.10（2026-06-25 实跑全绿·im_create_schedule 命令 + create-outbound fallback 复用·posts/createSchedule + im:channel:schedule-created·storage op 草拟纠正 update→batch_update·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）、UC-3.3（2026-06-25 实跑全绿·im_template_received 命令 camelCase {postId} + 前置发 TEMPLATE 类型消息 + store extractTemplateReceived + storage op 草拟纠正 update→batch_update + dom _note 移出 dataAttrs·post_update 广播含发起连接故单账号即绿·corr_key=sid=1ouh77refibz8j4ujz4aiy1m8a）。
-> - **🟡 partial**：UC-4.4 心跳 / UC-6.1 拉踢 / UC-6.2 管理员 / UC-8.x 投票平均分（注：UC-4.5 陌生 channel 已转 ✅·读族 ①② 全绿·is_read=true 校正③④ N/A·issue #33；UC-5.3 关群主路径已转 ✅·member-leave 广播子项 ⛔ broadcast-dep 不阻塞；UC-5.5 置顶频道路径已转 ✅·消息置顶子项 ⛔ data-dep·见各节标题图例）。
+> - **🟡 partial**：UC-6.1 拉踢 / UC-6.2 管理员 / UC-8.x 投票平均分（注：UC-4.4 心跳 gap 补偿已转 ✅·三面 ①②④ e2e 真跑全绿·③ DOM N/A 已移除该面·anchorCh=181jj6htd7nn3xx51z78bhuhcr·ping∩update-by-post∩message 交集 94 频道·issue #34；UC-4.5 陌生 channel 已转 ✅·读族 ①② 全绿·is_read=true 校正③④ N/A·issue #33；UC-5.3 关群主路径已转 ✅·member-leave 广播子项 ⛔ broadcast-dep 不阻塞；UC-5.5 置顶频道路径已转 ✅·消息置顶子项 ⛔ data-dep·见各节标题图例）。
 > - **🟡 ①③-verified · ②④ L2-facet（read echo 推发送者·须 L2 #47）= 2**：UC-3.1 会话已读 / UC-3.2 单条已读（2026-06-25 实跑·①③ 严格断言绿 + ②④ `post_read`(type6) 推**消息的发送者**·当别人已读发送者消息时·L1 单账号单连接结构性造不出·带 run.jsonl 证据 + 可证伪护栏·须 L2 双账号 #47 转绿）。
 > - **⬜ pending = 8**：1.2 / 1.5 / 1.8 / 5.4 / 6.3 / 9.x / 10.1 / 10.2（注：UC-4.2 已转 ✅·暖栈实跑 ×2 内核自驱 gap 四面 ①②④③ 全绿·issue #32；UC-6.4 已转 ✅·暖栈实跑双 endpoint 四面绿·issue #27；UC-2.2 已转 ✅·原「① blocked on helix wire-bug」判断有误·round6@bbbf809 已含 acl is_query 放行 fix·实跑 ①②③ 全绿；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 / UC-3.3 / UC-1.4 / UC-1.7 / UC-2.4 / UC-2.1 / UC-2.3 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
 > - **⛔ unreachable = 7**（39 分母内）：UC-1.3 文件 / UC-1.6 编辑 / UC-4.3 too_long / UC-5.6 公告 / UC-5.7 在线 / UC-7.x 搜索·另 bot/agent 整域 ⛔（不计入 39 分母）。
