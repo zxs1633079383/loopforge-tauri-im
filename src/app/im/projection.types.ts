@@ -208,6 +208,29 @@ export interface MemberUpdatedData {
   channel: unknown;
 }
 
+/**
+ * UC-10.1 待办列表投影 channel（projection-schema 行 154 todo::emit_todo_updated）。
+ * data 形态 = `{ items: [{ id, channel, post, type, canDel }] }`（外层 `{items}` 包裹·内层
+ * channel/post = 后端 queryTodoList 返回 wire 对象原样透传·inner 不冻结·id/type/canDel 装配）。
+ * 触发路径：**内核自驱**——global increment_channel_end（hello 收尾）攒到 about-me（mention/urgent）
+ * post id → build posts/queryTodoList → HTTP 回报装配 emit（无前端命令·无 WS 回声·无落库·in-memory）。
+ * 壳收到即把 items 渲染进 AX todo-panel（data-todo-id 直映 item.id·data-todo-type=item.type·
+ * data-todo-can-del=item.canDel·壳纯渲染只透传投影 item·不在 JS 合成）。status≠SUCCESS/结构缺失 →
+ * items=[] 仍 emit（前端无害清空·不挂起）。④ 落库 = N/A（projection-only·见 todo.rs port_reply 仅 emit）。
+ */
+export const TODO_UPDATED_CHANNEL = "im:todo:updated";
+
+/** im:todo:updated data 形态（projection-schema 行 154·{items}·item 透传不冻结·id/type/canDel 装配）。 */
+export interface TodoUpdatedData {
+  items: Array<{
+    id: string;
+    channel?: unknown;
+    post?: unknown;
+    type?: string;
+    canDel?: boolean;
+  }>;
+}
+
 /** message-row 类 channel（携 message_item_data fat 完整集） */
 export const MESSAGE_ROW_CHANNELS: ReadonlySet<string> = new Set([
   "im:post:received",

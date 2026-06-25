@@ -122,3 +122,5 @@
   - 非绿（结构性 L2·ready-for-human·不打入 tag 范围）：UC-6.1(#28 拉/踢人·① L1 绿·②③④→#43) · UC-6.2(#29 设/撤管理员·①③ 绿·②④→#45)。两者 issue 留 OPEN·已移 ready-for-agent→ready-for-human（L2-facet 标准 c·C011）。
   - tag：v0.1-phase5-channel-member（message 含覆盖 commit 范围 + UC 列表 + 验证状态）。验证：gate.sh PASS（镜像/harness 索引 12/reducer 125 自测/expect JSON 全 valid/helix 单版本）。未踩 ≥3 同根新坑·不立新卡。
 ✅ DONE UC-9.x 书签四面契约闭环（读族三命令 create/delete/load·①② 全绿·③④ N/A）@2026-06-25 17:58:12 CST | commit fb65a6e | 3/3 endpoint passing(6.1s) | loopforge-tauri-im/feat/uc-rollout | issue #30 closed
+
+✅ DONE UC-10.1 待办列表四面闭环（①②③ 全绿·④ projection-only N/A·issue #31 closed） @2026-06-25 18:34:28 CST | commit 2731796 | 1/1 步 | loopforge-tauri-im/feat/uc-rollout

@@ -67,7 +67,7 @@
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
 |---|---|---|---|---|---|---|---|
 | [x] | 9.x 书签 | `post/bookmark/{create,delete,load}` | `partials/6 集合九` | `query::emit_read_result`(读族透传) | data-bookmark | `message`(书签) | M |
-| [ ] | 10.1 待办列表 | (hello 收尾自驱)`posts/queryTodoList` | `partials/8 http.rs:67` | `todo::emit_todo_updated`{items} | data-todo 列表 | `todo` 表 | M |
+| [x] | 10.1 待办列表 | (hello 收尾自驱)`posts/queryTodoList`{postIds} | `partials/8 http.rs:67` | `todo::emit_todo_updated`{items} | data-todo-id 列表 | N/A(projection-only·无 todo 表) | M |
 | [ ] | 4.2 按需 sync notify | `im_sync_channels`→`channel/sync/notify` | `partials/8 §2.1`{cursors:[{channelId,fromSeq}]} | `emit_post_*`+`emit_channel_update_by_post`(thin) | 增量行+badge | `message`+cursor 跳空洞 | M |
 | [~] | 4.5 陌生 channel 兜底 | `ensure_channel_loaded`→`channel/load/incrementByChannelId` | `partials/8 http.rs:47`{channelId} | `emit_channel_increment` | 单 channel 增量渲染 | `channel`+cursor | M |
 | [~] | 4.4 心跳 gap 补偿(3 面) | (Rust ping/pong piggyback 自驱) | `partials/8 §5.7`{cursors,allHash} | (补偿走 4.2 sync 投影) | **③ N/A（已移除该面）** | `channel_event_cursor` | M(①②④+cursor) |

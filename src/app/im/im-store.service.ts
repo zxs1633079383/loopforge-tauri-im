@@ -37,6 +37,8 @@ import {
   PostSendingData,
   READ_RESULT_CHANNEL,
   ReadResultData,
+  TODO_UPDATED_CHANNEL,
+  TodoUpdatedData,
 } from "./projection.types";
 
 /**
@@ -1084,6 +1086,15 @@ export class ImStoreService {
       return;
     }
 
+    // UC-10.1 待办列表：im:todo:updated（{items:[{id, channel, post, type, canDel}]}·内核自驱·
+    // hello 收尾 global increment-end → queryTodoList HTTP 回报装配）→ 把 items 渲染进 AX todo-panel
+    // （data-todo-id 直映 item.id·壳纯渲染透传投影 item·不解析重组业务·不在 JS 合成）。外层 {items}
+    // 包裹·无顶层 channel_id（projection-only·无落库）→ 须先于 captureActiveChannel/message-row 分支。
+    if (channel === TODO_UPDATED_CHANNEL) {
+      this.applyTodoUpdated(env.payload?.data as TodoUpdatedData | undefined);
+      return;
+    }
+
     // UC-2.1 切群首屏：im:messages:query_result（{channel_id, messages:[DB行]}）→ 把 messages 渲染进
     // ML 区消息行（data-msg-id 直映·壳纯渲染透传 DB 行·不解析重组业务）。读族纯本地 Scan·无 WS/HTTP
     // 回声·invoke im_query_messages_by_channel 后 Scan 回报即 emit 本投影。先于 message-row fat 分支
@@ -1232,6 +1243,26 @@ export class ImStoreService {
     // 读族 body 抽 reply postId 经纯函数 extractReplyIds（read-result-extract.ts·壳体积控制 <800 行）。
     const ids = extractReplyIds(data.body);
     this._replies.set(ids.map((replyId) => ({ replyId })));
+  }
+
+  /**
+   * UC-10.1：im:todo:updated（{items:[{id, channel, post, type, canDel}]}·内核自驱·queryTodoList
+   * HTTP 回报装配）→ 把 items 渲染进 AX todo-panel（data-todo-id/-type/-can-del 直映）。壳纯渲染：
+   * 只从每个 item 抽 id（必填·渲染锚）+ type/canDel（可选·展示属性）·channel/post 透传对象不解析重组。
+   * items=[]（status≠SUCCESS/结构缺失）→ 清空待办列表（前端无害刷新·不残留旧待办·不挂起）。
+   */
+  private applyTodoUpdated(data: TodoUpdatedData | undefined): void {
+    if (!data || typeof data !== "object") return;
+    const items = Array.isArray(data.items) ? data.items : [];
+    this._todos.set(
+      items
+        .filter((it) => it && typeof it === "object" && typeof it.id === "string" && it.id !== "")
+        .map((it) => ({
+          todoId: it.id,
+          todoType: typeof it.type === "string" ? it.type : undefined,
+          canDel: it.canDel === true,
+        })),
+    );
   }
 
   /**

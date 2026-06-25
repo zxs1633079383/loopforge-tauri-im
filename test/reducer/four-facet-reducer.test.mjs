@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path';
 import {
   runFourFacet,
   runFourFacetRead,
+  runFourFacetSelfDriven,
   parseJsonl,
   bundleByCorrKey,
 } from './four-facet-reducer.mjs';
@@ -836,6 +837,74 @@ console.log('· torn-line 容忍（暖栈并发末行）');
   ok(pClean.parseErrors.length === 0 && pClean.tornLastLine == null,
     '边界：全合法（含合法末行）→ parseErrors 空 + 无 torn 误报');
   void tornThenGood;
+}
+
+// ── UC-10.1 待办列表（runFourFacetSelfDriven·内核自驱 projection-only 断面 ①②③·④ N/A）──────
+// hello 收尾 global increment-end 攒 about-me post id → posts/queryTodoList {postIds} → HTTP 回报
+// 装配 emit im:todo:updated {items}。① 出站 body {postIds}（无领域键·窗口内 endpoint 唯一）·
+// ② 投影外层键集 {items} 严格冻结·③ DOM data-todo-id 渲染·④ N/A（port_reply 仅 emit 不落库）。
+// 守可证伪：① 漏发 / ② 漏 emit / ② 外层多键 / ③ 未渲染 → 对应面红。
+console.log('· UC-10.1 待办列表（runFourFacetSelfDriven·projection-only ①②③·④ N/A）');
+{
+  const TODO_ID = 'post-abc_mention';
+  const goodLines = [
+    // ① queryTodoList 出站：body {postIds:[...]}（camelCase·非空·无 snake/Pascal 泄漏）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-10.1', facet: 'outbound', hop: 'http-req', seq: 1,
+      payload: { method: 'POST', url: 'http://x/api/cses/posts/queryTodoList',
+        body: { postIds: ['post-abc', 'post-def'] } } }),
+    // ② im:todo:updated 投影：外层 {items} 单键（冻结集）·item 透传 {id, channel, post, type, canDel}。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-10.1', facet: 'projection', hop: 'projection', seq: 2,
+      payload: { event: 'im:todo:updated', data: { items: [
+        { id: TODO_ID, channel: { id: 'ch1' }, post: { id: 'post-abc' }, type: 'mention', canDel: true },
+      ] } } }),
+  ].join('\n');
+  const expect101 = {
+    ucId: 'UC-10.1',
+    outbound: { method: 'POST', urlEndsWith: 'posts/queryTodoList',
+      bodyFields: { postIds: '*' },
+      bodyForbidden: ['post_ids', 'PostIds', 'postId'] },
+    projection: { event: 'im:todo:updated', dataKeys: ['items'] },
+    dom: { dataAttrs: { 'todo-id': '*' } },
+  };
+  const dom = { 'todo-id': TODO_ID };
+  const rep = runFourFacetSelfDriven({ jsonl: goodLines, expect: expect101, dom });
+  ok(rep.facets.outbound.ok, '① queryTodoList 出站 {postIds} 绿');
+  ok(rep.facets.projection.ok, '② im:todo:updated 外层 {items} 投影绿');
+  ok(rep.facets.dom.ok, '③ data-todo-id 渲染绿');
+  ok(rep.green, `UC-10.1 三面全绿（实 brokenAt=${rep.brokenAt} :: ${rep.summary}）`);
+
+  // 可证伪 a：无 queryTodoList 出站（about-me 空 → 不发）→ ① 红。
+  const noOut = goodLines.split('\n').slice(1).join('\n');
+  const repNoOut = runFourFacetSelfDriven({ jsonl: noOut, expect: expect101, dom });
+  eq(repNoOut.facets.outbound.ok, false, '可证伪：无 queryTodoList 出站 → ① 红');
+
+  // 可证伪 b：body 用 snake post_ids（旧形态泄漏）→ ① 红（bodyForbidden 锚 + 缺 postIds）。
+  const snakeLeak = [
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-10.1', facet: 'outbound', hop: 'http-req', seq: 1,
+      payload: { method: 'POST', url: 'http://x/api/cses/posts/queryTodoList',
+        body: { post_ids: ['post-abc'] } } }),
+    goodLines.split('\n')[1],
+  ].join('\n');
+  const repLeak = runFourFacetSelfDriven({ jsonl: snakeLeak, expect: expect101, dom });
+  eq(repLeak.facets.outbound.ok, false, '可证伪：body snake post_ids 泄漏 → ① 红');
+
+  // 可证伪 c：无 im:todo:updated emit → ② 红。
+  const noProj = goodLines.split('\n')[0];
+  const repNoProj = runFourFacetSelfDriven({ jsonl: noProj, expect: expect101, dom });
+  eq(repNoProj.facets.projection.ok, false, '可证伪：无 im:todo:updated emit → ② 红');
+
+  // 可证伪 d：投影外层多键（非 {items}·如 {items, extra}）→ ② 红（外层键集冻结）。
+  const badKeys = [
+    goodLines.split('\n')[0],
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-10.1', facet: 'projection', hop: 'projection', seq: 2,
+      payload: { event: 'im:todo:updated', data: { items: [], extra: 1 } } }),
+  ].join('\n');
+  const repBadKeys = runFourFacetSelfDriven({ jsonl: badKeys, expect: expect101, dom });
+  eq(repBadKeys.facets.projection.ok, false, '可证伪：im:todo:updated 外层多字段 extra → ② 红');
+
+  // 可证伪 e：壳未渲染 todo 行（DOM data-todo-id 缺值）→ ③ 红。
+  const repNoDom = runFourFacetSelfDriven({ jsonl: goodLines, expect: expect101, dom: { 'todo-id': '' } });
+  eq(repNoDom.facets.dom.ok, false, '可证伪：DOM data-todo-id 缺值 → ③ 红');
 }
 
 // ── 收尾 ─────────────────────────────────────────────────────────────────────

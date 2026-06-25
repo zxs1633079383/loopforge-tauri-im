@@ -733,6 +733,98 @@ export function runFourFacetCommandDom({ jsonl, expect, dom, ucId }) {
   };
 }
 
+// ── 内核自驱·projection-only 族（① 出站 + ② 投影 + ③ DOM·④ N/A）对账（UC-10.1 待办列表）──────
+//
+// 与写族 runFourFacet / 命令-DOM 族 runFourFacetCommandDom 的差异（真源 helix todo.rs +
+// port_reply.rs TodoQuery 分支 + projection-schema 行 154）：
+//   - **内核自驱·无前端命令·无 corr_key 束**：UC-10.1 由 global increment_channel_end（hello 收尾）
+//     攒 about-me（mention/urgent）post id → build `posts/queryTodoList {postIds}` → HTTP 回报装配
+//     emit `im:todo:updated {items}`。① 出站 body 是 `{postIds:[]string}`（纯字符串数组·无 ch/tmp/sid
+//     领域键）→ 抽不到 corr_key 归 unkeyed；② 投影 `{items}` 外层无 channel_id → 同样 unkeyed。
+//     故不走 bundleByCorrKey 锚 ch/tmp/sid，而在 **UC 窗口（uc_id 过滤）** 内按 endpoint + event 直找。
+//   - **④ storage = N/A 不裁定**（projection-only·非放水）：todo 链 port_reply TodoQuery 分支**只
+//     emit 不落库**（真源 port_reply.rs:196-209 仅 out.push(emit_todo_updated)·无任何 storage Effect；
+//     projection-schema 行 154 注「前端 getTodoUpdated$→INIT_TODO_LIST_DATA」= in-memory 待办态·不持久化）。
+//     强求 ④ 反而假阳——与 read 族 ③④ N/A / command-dom 族 ②④ N/A 同理（结构性 N/A·诚实出账）。
+//   - **断面 = ①②③**：① 出站 wire body 逐字检（urlEndsWith=posts/queryTodoList + bodyFields {postIds}
+//     + bodyForbidden 防 snake/Pascal 泄漏）；② 投影 `im:todo:updated` 外层键集 {items} 严格对齐（缺/多即红）；
+//     ③ DOM data-todo（todo-panel 渲染·壳乐观透传 items[].id → data-todo-id·空 items 则清空·守可证伪）。
+//
+// 窗口隔离保证唯一（uc_id 过滤）：hello 收尾窗口内 queryTodoList 出站唯一 + im:todo:updated 投影唯一·
+// 非 tautology（无 about-me → 不发 queryTodoList → ① 红·漏 emit → ② 红·壳未渲染 todo 行 → ③ 红·见可证伪对偶）。
+//
+// 机器件归属（非改冻结 oracle·C009）：本入口同属 reducer 领域件·契约 URL+body-shape 由 expect.outbound
+// （真机curl真源派生·partials/1 §18 {postIds}）冻结·投影外层键集由 expect.projection 冻结·绿由本 reducer 裁定。
+//
+// @param {object} args
+// @param {string} args.jsonl   run.jsonl 全文
+// @param {object} args.expect  期望（expect.outbound flat·expect.projection {event,dataKeys}·expect.dom dataAttrs）
+// @param {object} [args.dom]   e2e 注入的 DOM 面终态（data-* 扁平对象·键去 data- 前缀）
+// @param {string} [args.ucId]  默认取 expect.ucId
+// @returns {object} 报告（facets.outbound / facets.projection / facets.dom·④ N/A 不在 order）
+export function runFourFacetSelfDriven({ jsonl, expect, dom, ucId }) {
+  const uc = ucId ?? expect.ucId;
+  const { events, parseErrors } = parseJsonl(jsonl);
+
+  const exp = expect.outbound ?? {};
+  const urlEnds = exp.urlEndsWith;
+
+  // ① 出站：UC 窗口内按 endpoint（urlEndsWith）找 outbound http-req（窗口隔离保证唯一·多于一个取
+  // 最后一条——同窗口同 endpoint 重发取最新·一般唯一）。
+  const httpHops = events
+    .filter(
+      (e) =>
+        (uc === undefined || e.uc_id === uc) &&
+        e.facet === 'outbound' &&
+        e.hop === 'http-req' &&
+        (!urlEnds || urlEnds === '*' || String(e.payload?.url ?? '').endsWith(urlEnds))
+    )
+    .map((e) => ({ method: e.payload?.method, url: e.payload?.url, body: e.payload?.body ?? {} }));
+  const httpHit = httpHops.length ? httpHops[httpHops.length - 1] : null;
+  const outboundFacet = diffOutbound(exp, httpHit);
+
+  // ② 投影：UC 窗口内找期望 event 的 projection（窗口隔离保证唯一·多于一个取最后一条）。
+  const pexp = expect.projection ?? {};
+  const projHops = events.filter(
+    (e) =>
+      (uc === undefined || e.uc_id === uc) &&
+      e.facet === 'projection' &&
+      e.hop === 'projection' &&
+      (e.payload?.event ?? e.payload?.channel) === pexp.event
+  );
+  const projHit = projHops.length ? projHops[projHops.length - 1] : null;
+  const projActual = projHit
+    ? { event: projHit.payload?.event ?? projHit.payload?.channel, data: projHit.payload?.data ?? {} }
+    : null;
+  const projFacet = diffProjection(pexp, projActual);
+
+  // ③ DOM：data-todo 终态（e2e 注入·壳渲染 todo-panel·守可证伪：壳未渲染 todo 行 → ③ 红·非 tautology）。
+  const domFacet = diffDom(expect.dom ?? {}, dom ?? null);
+
+  // 断面：① 出站 + ② 投影 + ③ DOM（④ N/A·projection-only·见上 doc + todo.rs port_reply）。
+  const facets = {
+    outbound: outboundFacet,
+    projection: projFacet,
+    dom: domFacet,
+  };
+  const order = ['outbound', 'projection', 'dom'];
+  const brokenAt = order.find((f) => !facets[f].ok) ?? null;
+  const green = brokenAt === null && parseErrors.length === 0;
+
+  return {
+    ucId: uc,
+    green,
+    brokenAt,
+    facets,
+    parseErrors,
+    summary: green
+      ? `✅ ${uc} ①②③ 三面全绿（④ projection-only N/A·endpoint=${urlEnds}·event=${pexp.event}）`
+      : `❌ ${uc} 断在 [${brokenAt ?? 'parse'}] 面：${
+          brokenAt ? facets[brokenAt].issues.join('; ') : `JSONL 解析 ${parseErrors.length} 行坏`
+        }`,
+  };
+}
+
 /**
  * 主入口：跑四面对账，出报告。
  *

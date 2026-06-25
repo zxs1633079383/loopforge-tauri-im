@@ -89,6 +89,12 @@ cmd_reload_app() {
     info "UC-4.1：起 app 前重置 cursor 落后态（seed-behind-cursor·C003/C004）"
     bash "$REPO_ROOT/scripts/seed-behind-cursor.sh" || die "cursor 重置失败" 1
     bootstrap_uc="UC-4.1"
+  elif [ "${1:-}" = "--uc" ] && [ -n "${2:-}" ]; then
+    # 通用 bootstrap UC：内核自驱 UC（hello 收尾自驱·无前端命令）须把 hello hop 归本 UC
+    # （否则默认 __quiescence__·reducer 按 uc_id 过滤抽空·见 ctx.rs BOOTSTRAP_UC_ENV 注）。
+    # UC-10.1 待办列表（queryTodoList → im:todo:updated）即此类：hello 攒 about-me → 自驱拉取。
+    bootstrap_uc="$2"
+    info "通用 bootstrap UC=${bootstrap_uc}：hello 自驱 hop 归本 UC（内核自驱·非前端命令·如 UC-10.1 待办）"
   fi
   info "重起 app（cargo run·增量编译·ng 保持不动·Rust/Angular 改后用以确保 WKWebView 加载新产物）"
   pkill -f "cargo run --manifest-path src-tauri" 2>/dev/null || true
@@ -118,7 +124,7 @@ cmd_down() {
 case "${1:-}" in
   up)         cmd_up ;;
   spec)       shift; cmd_spec "${1:-}" ;;
-  reload-app) shift; cmd_reload_app "${1:-}" ;;
+  reload-app) shift; cmd_reload_app "$@" ;;
   status)     cmd_status ;;
   down)       cmd_down ;;
   *)          die "用法：harness.sh {up | spec <uc-id> | reload-app [--uc4.1] | status | down}" ;;

@@ -438,12 +438,23 @@
 - **④ 落库**：N/A（书签落库 post/书签表由 helix 按响应内部兑现·装饰器 facet④ 不暴露读路径 self-heal write·reducer 不裁定）。
 - **验证**：2026-06-25 暖栈实跑三 endpoint 各四面（①②）全绿·先 bridge invoke im_send 取真实 server_id(postId)→ create/load/delete 链·corrAnchor req_id 锚（create=req-qs01jxld4d / load=req-ainti547r9 / delete=req-7f6qpecolw·每轮新 reqId）·暖 spec 6.1s·3 passing。
 
-### UC-10.1 待办列表 — `⬜ pending`（认领 M·hello 收尾自驱）
+### UC-10.1 待办列表 — `✅ done`（issue #31·暖栈实跑 ①②③ 三面全绿·④ projection-only N/A）
 
-- **① 出站 HTTP**：（hello 收尾自驱·非前端命令）`posts/queryTodoList`（待核·partial 8 http.rs:67·global `increment_channel_end` 触发·helix ledger 实证 hello 收尾触发 queryTodoList）。
-- **② 投影**：`todo::emit_todo_updated`（§1.4·`{items:[{id, channel, post, type, canDel}]}`·**禁裸数组**·helix ledger emit bytes=226447·反证空信封仅 47B → 真装配非空 items）。
-- **③ DOM**：`data-todo` 列表。
-- **④ 落库**：`todo` 表。
+> **实跑全绿**（2026-06-25·corr=window endpoint+event·reducer `runFourFacetSelfDriven`）：hello 收尾自驱
+> queryTodoList → im:todo:updated{15 items} → DOM 首行 todo-id=`x8j9135nc3rg3ktptz6qgd3ddh_mention`
+> （type=mention·canDel=1·id 装配 `{postId}_{messageType}` 实证）。bootstrap UC=UC-10.1（hello hop 归本 UC·
+> 见 harness `reload-app --uc UC-10.1`·同 UC-4.1 自驱根机制）。
+>
+> **④ 落库 = N/A（projection-only·结构性·非橡皮章）**：todo 链 helix `port_reply.rs:196-209` TodoQuery 分支
+> **只 emit_todo_updated 不落库**（无 storage Effect·无 todo 表·helix migrations 无 todo schema）；
+> projection-schema 行 154 注「前端 getTodoUpdated$→INIT_TODO_LIST_DATA」= in-memory 待办态·不持久化。
+> issue body / 本表早先「④ todo 表」为草拟锚·**与实现真源不符**（真源 = todo.rs/port_reply.rs）→ 校正为 N/A。
+> reducer `runFourFacetSelfDriven` 断面 = ①②③·④ 不裁定（同 read 族 ③④ N/A / command-dom 族 ②④ N/A 诚实出账）。
+
+- **① 出站 HTTP**：（hello 收尾自驱·非前端命令）`posts/queryTodoList`·body `{postIds:[]string}`（camelCase·非空·真源 `increment_channel_end.rs::trigger_todo_query` + todo.rs:44·global `increment_channel_end` 触发·实跑 16 postIds 出站）。
+- **② 投影**：`todo::emit_todo_updated`（§1.4·外层 `{items}` 冻结·item `{id, channel, post, type, canDel}` 透传不冻结·**禁裸数组**·实跑 items=15 非空·item.id 装配 `{postId}_{messageType}`·canDel 仅 mention）。
+- **③ DOM**：`data-todo-id` 列表（store `applyTodoUpdated` 透传投影 items → `_todos` signal → @for 渲染·实跑首行 data-todo-id 非空）。
+- **④ 落库**：N/A（projection-only·见上注·port_reply 仅 emit 不落库）。
 
 ### UC-7.x 搜索（全局/会话/分类）— `⛔ unreachable`（后端真阻塞·P2-1）
 
