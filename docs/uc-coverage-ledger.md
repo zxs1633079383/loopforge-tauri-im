@@ -354,13 +354,14 @@
 - **admin 权限真实约束**：改群名须本人 owner/admin（非 owner → server `update_cses_channel` app_error）·e2e 先建本人 CREATOR 新群再改名（真实用户流·C003）。
 - **机器件**：装饰器 `extract_corr_key` url-aware（`channel/change/`→body.id→ch）+ reducer `chPerPostTarget`（ch 匹配 + 含期望 channelUpdate 投影·`propsMatch` 子集断言）·均非冻结 oracle（C009）。
 
-### UC-5.5 置顶 — `🟡 partial`（频道置顶可证·消息置顶 ⛔ data-dep）
+### UC-5.5 置顶 — `✅ 频道置顶四面全绿`（消息置顶 ⛔ data-dep·子项不阻塞）
 
-- **① 出站 HTTP**：频道置顶 `channel/change/top`（change_top）·消息置顶 `channel/add/postPinned` / `remove/postPinned` / `load/postPinned`（待核·partial 6 UC-5.5）。
-- **① WS 推送**：频道置顶 → action=`update_channel`（channelIsTop:true·userId·per-member 定向·helix ledger 实证）·消息置顶 → pin 回声依赖 Go 落库后投影（**host-cli/testbed 物理够不到·全 log `*pin*` action=0·⛔ data-dep**）。
-- **② 投影**：`emit_channel_update`（频道置顶）/ `query::emit_read_result`（消息置顶读族）。
-- **③ DOM**：`data-pinned`。
-- **④ 落库**：`channel` / `message.props`。
+- **e2e**：`test/specs/uc-5.5.e2e.mjs` 四面全绿（corr_key=ch=<channelId>·真 go·真 Tauri+WKWebView·建本人 CREATOR 群后置顶）。
+- **① 出站 HTTP**：频道置顶 `channel/change/top`（im_channel_change_top·body {channelId, top}·✅ 真跑覆盖）·消息置顶 `channel/add/postPinned` / `remove/postPinned` / `load/postPinned`（消息置顶子项·⛔ data-dep 不测）。
+- **① WS 推送**：频道置顶 → action=`update_channel`（per-member 定向 PATCH·channelIsTop→is_top 列）·消息置顶 → pin 回声依赖 Go 落库后投影（**host-cli/testbed 物理够不到·全 log `*pin*` action=0·⛔ data-dep**）。
+- **② 投影**：`emit_channel_update`（im:channel:update·thin·{channel_id}·✅ 实证）。helix fix（commit 4cc33c2）：独立 update_channel PATCH 落库后补 emit im:channel:update（此前漏 emit→前端不刷新）。
+- **③ DOM**：`data-channel-top`（is_top 列回读·im:channel:update thin 信号触发 dialogList 重查→applyDialogList normalizeIsTop→data-channel-top='1'·✅ 实证）。loopforge fix：applyChannelUpdate 接 im_query_dialog_list 重查（此前只保证行存在不刷属性）。
+- **④ 落库**：`channel` 表 batch_update（is_top 列·表感知归一 channel.id→ch·✅ 实证）/ 消息置顶 `message.props`（⛔ 子项）。
 
 ### UC-5.6 群公告 — `⛔ unreachable`（data-dep·回声不可观测）
 

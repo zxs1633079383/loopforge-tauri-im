@@ -56,7 +56,7 @@
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
 |---|---|---|---|---|---|---|---|
 | [x] | 5.4 群属性修改（改群名）| `channel/change/displayName` | 真机 wire 实证 | `im:post:received`(channelUpdate 系统 post·非 emit_channel_update thin) | data-channel-display-name 回读 | `message`(系统 NOTICE post) | M |
-| [~] | 5.5 置顶 | `channel/change/top`/`add(remove)/postPinned` | `partials/6 UC-5.5` | `emit_channel_update`/`emit_read_result` | data-pinned | `channel`/`message.props` | M |
+| [x] | 5.5 置顶（频道置顶四面全绿·消息置顶 ⛔ data-dep 子项）| `channel/change/top`{channelId,top}✅ | `partials/6 UC-5.5` | `im:channel:update`(emit_channel_update·thin·helix fix 4cc33c2 补 emit)✅ | data-channel-top 回读✅ | `channel`(is_top batch_update)✅ | M |
 | [~] | 5.3 关闭/退出群 | `im_channel_close`→`channel/close` | `真机curl真源 §6`{channelId}✅ | `emit_channel_closed`{channelId,deleteAt} | channel 行移除 | `channel` 软删 | M |
 | [ ] | 6.3 改群昵称 | `channel/member/change/nickname` | `partials/6 UC-6.3` | `emit_member_nickname`{channelId,userId,nickName} | data-nickname | `channel_member` | M |
 | [ ] | 6.4 成员快照/全量 | `channel/member/snapshot`/`channels/member/byIds` | `partials/6 UC-6.4` | `query::emit_read_result`(读族) | data-member-count | `channel_member` 自愈 | M |

@@ -621,6 +621,38 @@ pub async fn im_channel_change_notice(
         .map_err(|e| format!("im_channel_change_notice: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-5.5 频道置顶（per-member 对话置顶）：前端传 `channelId`（目标频道）+ `top`（bool·置顶/取消）→
+/// 转 snake_case 入泵 `im_channel_change_top`（helix-im `outbound/channel_change.rs`
+/// `ChangeTopCommand` 兑现出站 `POST channel/change/top {channelId, top}`·全 camelCase·真机curl真源
+/// partials/6 UC-5.5）。
+///
+/// WS 回 `update_channel`（path2 PATCH·collect_present 收 channelIsTop→is_top 列）→ ④ channel 表
+/// PATCH（is_top 列）+ ② `im:channel:update`（thin·{channel_id}·increment_channel_end 批次结束触发）
+/// → ③ DOM data-channel-top 回读。薄壳纪律：只翻译入参 + 入泵，body camelCase 化 + endpoint
+/// 全在 helix-im，本壳不臆造。
+#[tauri::command]
+pub async fn im_channel_change_top(
+    state: State<'_, AppState>,
+    channel_id: String,
+    top: bool,
+) -> Result<(), String> {
+    if channel_id.trim().is_empty() {
+        return Err("im_channel_change_top: channelId 为空".into());
+    }
+    let tick = command(
+        "im_channel_change_top",
+        serde_json::json!({
+            "channel_id": channel_id,
+            "top": top,
+        }),
+    );
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_channel_change_top: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-1.8 快捷回复 emoji：前端传 `postId`（被回复消息 server id）+ `emoji`（用户选的表情）→
 /// 本命令补上自身 `userId`（AppState.identity·身份单一真源·壳不臆造 creds）转 snake_case 入泵
 /// `im_quick_reply`（helix-im `outbound/quick_reply.rs` `QuickReplyCommand` 兑现出站

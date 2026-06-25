@@ -361,6 +361,29 @@ export class ImStoreService {
   }
 
   /**
+   * UC-5.5 频道置顶（per-member 对话置顶）：invoke('im_channel_change_top', {channelId, top}）。
+   *
+   * **壳不臆造 body**：endpoint + camelCase body 由 Rust/helix-im 兜底（commands.rs
+   * im_channel_change_top → outbound/channel_change.rs ChangeTopCommand → POST channel/change/top
+   * {channelId, top}）。壳只供 channelId（目标频道）+ top（true=置顶 / false=取消）。
+   * WS 回 update_channel（channelIsTop→is_top 列 PATCH）→ ④ channel 表 PATCH + ② im:channel:update
+   * （thin）触发 dialogList 重查 → CL 区行 data-channel-top 回读（壳纯渲染只透传 channel.is_top 列·
+   * 不在 JS 合成置顶态）。非 Tauri / 命令缺失 → 静默。
+   */
+  async changeChannelTop(channelId: string, top: boolean): Promise<void> {
+    const ch = channelId.trim();
+    if (!ch) return;
+    try {
+      await this.bridge.invoke<void>("im_channel_change_top", {
+        channelId: ch,
+        top,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（置顶态靠投影驱动·无乐观合成）。
+    }
+  }
+
+  /**
    * UC-1.9 加急消息（阶段①）：invoke('im_urgent_post', {channelId, postId, targetIds, message?}）。
    *
    * **壳不臆造 body**：camelCase 化 + targetIds 非空校验由 Rust/helix-im 兜底（commands.rs
@@ -840,12 +863,16 @@ export class ImStoreService {
       // collect_present 白名单）。改群名后 im:channel:update（thin）触发本 dialog 重查 → fat
       // dialogList 携新 display_name → 把 CL 区行 displayName/notice 刷新（data-channel-display-name/
       // -notice 回读·壳纯渲染只透传 channel 列·不在 JS 合成）。notice 列形态透传（JSON/字符串兼容）。
+      // UC-5.5 置顶回读：channel 表 is_top 列（INTEGER·SELECT * 原样透传·1=置顶/0=否）→ data-channel-top。
+      // 改置顶后 im:channel:update（thin·increment_channel_end 触发）→ 本 dialog 重查 → fat dialogList
+      // 携新 is_top → 把 CL 区行 top 刷新（壳纯渲染只透传 channel 列·不在 JS 合成置顶态）。
       this.upsertChannelRowFields(id, {
         displayName:
           typeof row["display_name"] === "string"
             ? (row["display_name"] as string)
             : undefined,
         notice: this.normalizeNotice(row["notice"]),
+        top: this.normalizeIsTop(row["is_top"]),
       });
     }
     if (!this._activeChannel() && ids.length > 0) this._activeChannel.set(ids[0]);
@@ -857,6 +884,17 @@ export class ImStoreService {
   private normalizeNotice(v: unknown): string | undefined {
     if (typeof v !== "string" || v.length === 0) return undefined;
     return v;
+  }
+
+  /** is_top 列透传归一：channel 表 is_top 列是 INTEGER（SELECT * 原样透传·1=置顶/0=否·SQLite
+   *  也可能回 number/string/bool）。壳纯渲染只把它落成布尔 → data-channel-top（true→'1'·false→无属性）。
+   *  非真值/缺 → undefined（行不带置顶态·加法式不覆盖既有值时由 upsert 跳过 undefined）。 */
+  private normalizeIsTop(v: unknown): boolean | undefined {
+    if (v === undefined || v === null) return undefined;
+    if (typeof v === "boolean") return v;
+    if (typeof v === "number") return v !== 0;
+    if (typeof v === "string") return v === "1" || v.toLowerCase() === "true";
+    return undefined;
   }
 
   /** 按 channelId 补/更新行字段（加法式·仅覆盖传入的非 undefined 字段·行不存在则先建）。 */
@@ -946,16 +984,28 @@ export class ImStoreService {
   }
 
   /**
-   * UC-4.1：im:channel:update（{channel_id}·瘦·批次结束）→ 确保该 channel 行存在（badge 回读触发位）。
-   * 当前壳仅保证行存在；unread 等回读由 UC-4.2 接 channel 表回读填。
-   * 注：UC-5.4 改群名的 displayName 回读**不**走此 thin 信号（server 不推 update_channel）——走
-   * channelUpdate 系统 post（applyChannelUpdatePost·见 message-row fat 分支）。
+   * im:channel:update（{channel_id}·瘦·独立 update_channel 推送 / 批次结束触发）→ 确保该 channel 行
+   * 存在（badge 回读触发位）+ **触发 dialogList 重查**把 channel 表最新列（is_top / display_name /
+   * notice / unread 等）回读刷到 CL 区行。
+   *
+   * thin 信号只带 channel_id（无属性载荷·projection-schema 行61 留瘦）——要拿到新 is_top 等必须重查
+   * dialogList（im_query_dialog_list → im:channels:projection → applyDialogList 透传 channel 列）。
+   *   - UC-5.5 频道置顶：change/top → update_channel PATCH(is_top) → im:channel:update → 本重查 →
+   *     dialogList 携新 is_top → applyDialogList normalizeIsTop → data-channel-top 回读刷新。
+   *   - UC-4.1 hello 批次结束同走此信号（确保行存在·dialogList 重查幂等无害）。
+   * 注：UC-5.4 改群名/公告的 displayName/notice 回读走 channelUpdate 系统 post（applyChannelUpdatePost·
+   *   message-row fat 分支·server 改名推系统 post 非 update_channel）——两路径互补不冲突。
    */
   private applyChannelUpdate(data: unknown): void {
     if (!data || typeof data !== "object") return;
     const channelId = (data as Record<string, unknown>)["channel_id"];
     if (typeof channelId === "string" && channelId) {
       this.upsertChannelRow(channelId);
+      // thin 信号触发 dialogList 重查：回报 im:channels:projection → applyDialogList 透传 channel
+      // 表最新列（is_top→data-channel-top·display_name·notice）刷 CL 行（壳纯渲染·不在 JS 臆造）。
+      this.bridge.invoke<void>("im_query_dialog_list").catch(() => {
+        // 非 Tauri / 命令缺失 → 静默
+      });
     }
   }
 

@@ -143,6 +143,15 @@ import { MessageRow } from "./im/message-row.model";
                 <button
                   class="im__mini"
                   type="button"
+                  data-testid="change-channel-top-btn"
+                  (click)="
+                    $event.stopPropagation();
+                    onChangeChannel(c, 'top', c.top ? '0' : '1')
+                  "
+                >{{ c.top ? '取消置顶' : '置顶' }}</button>
+                <button
+                  class="im__mini"
+                  type="button"
                   data-testid="close-channel-btn"
                   (click)="onCloseChannel(c)"
                 >×</button>
@@ -647,6 +656,11 @@ export class AppComponent implements OnInit, OnDestroy {
       void this.store.changeChannelDisplayName(channelId, value);
     } else if (field === "notice") {
       void this.store.changeChannelNotice(channelId, value);
+    } else if (field === "top") {
+      // UC-5.5 频道置顶：value '1'=置顶 / '0'=取消（模板按 c.top 取反传入）→ store.changeChannelTop
+      // （invoke im_channel_change_top → 出站 channel/change/top {channelId, top:bool}）。置顶态回读
+      // 靠 helix im:channel:update（thin）触发 dialogList 重查 → CL 行 data-channel-top 更新（壳纯渲染）。
+      void this.store.changeChannelTop(channelId, value === "1");
     }
   }
 
