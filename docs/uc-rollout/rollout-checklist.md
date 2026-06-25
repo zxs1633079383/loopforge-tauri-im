@@ -72,7 +72,7 @@
 | [x] | 4.5 陌生 channel 兜底 | `im_ensure_channel_loaded`→`channel/load/incrementByChannelId` | `channel_read.rs`{channelId}·is_read=true | `im:read:result`{req_id,body}（读族·C004 校正） | N/A（读路径） | N/A（不落新行·cursor 不推进） | M✅ |
 | [x] | 4.4 心跳 gap 补偿(3 面) | (Rust ping/pong piggyback 自驱) | `partials/8 §5.7`{cursors,allHash} | (补偿走 4.2 sync 投影) | **③ N/A（已移除该面）** | `channel_event_cursor` | ✅三面真绿(①②④·e2e #34) |
 | [x] | 8.x 投票 CRUD | `vote/{createVote,vote,readVote,closeVote,deleteVote}`(:3399) | `partials/6 集合八` | `emit_post_updated`(fat) | data-vote | `message.props` | M |
-| [~] | 8.x 平均分 CRUD | `average/{publish,attend,read,close,delete}`(:3399) | `partials/6 集合八` | `emit_post_updated`(fat) | data-average | `message.props` | M |
+| [x] | 8.x 平均分 CRUD | `average/{publish,attend,read,close,delete}`(:3399) | `partials/6 集合八` | `emit_post_updated`(fat) | data-average | `message.props` | M |
 | [ ] | 10.2 系统通知 | (WS 帧触发·无独立 HTTP) | — | `emit_post_received`/`updated`(系统消息) | data-system-notice | `message`(SYSTEM/SYSTEN 类型) | M |
 
 ## 阶段 7 · teams / 运维（2026-06-24 新增·原端点漏网→用户确认要测）

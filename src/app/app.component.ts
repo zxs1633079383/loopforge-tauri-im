@@ -319,6 +319,36 @@ import { MessageRow } from "./im/message-row.model";
                   data-testid="vote-delete-btn"
                   (click)="onDeleteVote(m)"
                 >删投</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="average-publish-btn"
+                  (click)="onPublishAverage(m)"
+                >评</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="average-attend-btn"
+                  (click)="onAttendAverage(m)"
+                >打分</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="average-read-btn"
+                  (click)="onReadAverage(m)"
+                >看分</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="average-close-btn"
+                  (click)="onCloseAverage(m)"
+                >截分</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="average-delete-btn"
+                  (click)="onDeleteAverage(m)"
+                >删分</button>
                 @if (m.sendStatus === "failed") {
                   <button
                     class="im__mini"
@@ -1048,5 +1078,56 @@ export class AppComponent implements OnInit, OnDestroy {
     const id = (row.vote ?? row.msgId ?? "").trim();
     if (!id) return;
     void this.store.deleteVote(id);
+  }
+
+  // ── UC-8.x 平均分 CRUD 交互件（C007 必配方法 · 便捷 UI 入口 · e2e 走 bridge 直 invoke 覆盖）─────
+  // 平均分卡 id 取自 row.average（emit_post_updated props.average 透传的卡 id）·缺则取 row.msgId（消息 server id）。
+  // 写族（publish/attend/close/delete）fire-and-forget 无乐观合成；读族（read）靠 im:read:result 投影驱动。
+
+  /** UC-8.x 平均分·发布：对当前频道发布平均分卡（fields=最简 wire 字段集·真源 partials/6 §average/publish）。
+   *  此便捷入口用占位字段；e2e 走 bridge 直 invoke 注入真实 fields 覆盖。 */
+  onPublishAverage(row: MessageRow): void {
+    const postId = (row.msgId ?? "").trim();
+    if (!postId) return;
+    void this.store.publishAverage({
+      title: "平均分",
+      content: "",
+      maxScore: 100,
+      minScore: 0,
+      isDelMaxMin: false,
+      isAnonymous: false,
+      cutoff: "",
+      members: [],
+    });
+  }
+
+  /** UC-8.x 平均分·提交评分：对平均分卡（id=row.average||msgId）提交分值（占位 60）。
+   *  e2e 走 bridge 直 invoke 注入真实 id/score 覆盖。 */
+  onAttendAverage(row: MessageRow): void {
+    const id = (row.average ?? row.msgId ?? "").trim();
+    if (!id) return;
+    void this.store.attendAverage(id, 60, (row.msgId ?? "").trim() || undefined);
+  }
+
+  /** UC-8.x 平均分·读详情（读族）：读平均分卡详情（id=row.average||msgId）→ im:read:result 回灌。
+   *  e2e 走 bridge 直 invoke 注入真实 id/reqId 覆盖。 */
+  onReadAverage(row: MessageRow): void {
+    const id = (row.average ?? row.msgId ?? "").trim();
+    if (!id) return;
+    void this.store.readAverage(id);
+  }
+
+  /** UC-8.x 平均分·截止：截止平均分卡（id=row.average||msgId）。e2e 走 bridge 直 invoke 覆盖。 */
+  onCloseAverage(row: MessageRow): void {
+    const id = (row.average ?? row.msgId ?? "").trim();
+    if (!id) return;
+    void this.store.closeAverage(id, (row.msgId ?? "").trim() || undefined);
+  }
+
+  /** UC-8.x 平均分·删除：删除平均分卡（id=row.average||msgId）。e2e 走 bridge 直 invoke 覆盖。 */
+  onDeleteAverage(row: MessageRow): void {
+    const id = (row.average ?? row.msgId ?? "").trim();
+    if (!id) return;
+    void this.store.deleteAverage(id);
   }
 }

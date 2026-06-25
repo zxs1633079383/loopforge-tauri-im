@@ -1068,6 +1068,86 @@ export class ImStoreService {
     }
   }
 
+  // ── UC-8.x 平均分 CRUD（vote/score 第二网关·partials/6 集合八）──────────────
+  // 出站 body / 落库 message.props / WS 回声全在 helix-im（AverageXxxCommand）。同投票族纪律。
+
+  /**
+   * UC-8.x 平均分·发布（写族）：invoke('im_average_publish', {fields})。
+   * fields = camelCase wire 字段集（title/content/maxScore/minScore/isDelMaxMin/isAnonymous/cutoff/
+   * members[]/hasDecimal?/decimalPlaces?/source? 等·真源 partials/6 集合八 §average/publish·
+   * helix AveragePublishCommand 整 args 透传）。fire-and-forget → 不带 reqId（防泄漏进透传 wire body）。
+   */
+  async publishAverage(fields: Record<string, unknown>): Promise<void> {
+    if (!fields || Object.keys(fields).length === 0) return;
+    try {
+      await this.bridge.invoke<void>("im_average_publish", { fields });
+    } catch {
+      // 出站失败 → 静默（平均分卡靠 server WS post_updated 回声驱动·无乐观合成）。
+    }
+  }
+
+  /**
+   * UC-8.x 平均分·提交评分（写族）：invoke('im_average_attend', {id, score, postId?}）。
+   * id=平均分卡 id·score=数值评分·postId 可选（真源 partials/6 §average/attend）。
+   */
+  async attendAverage(id: string, score: number, postId?: string): Promise<void> {
+    const vid = id.trim();
+    if (!vid) return;
+    const args: Record<string, unknown> = { id: vid, score };
+    const p = (postId ?? "").trim();
+    if (p) args["postId"] = p;
+    try {
+      await this.bridge.invoke<void>("im_average_attend", args);
+    } catch {
+      // 出站失败 → 静默（评分态靠 server WS 回声驱动·无乐观合成）。
+    }
+  }
+
+  /**
+   * UC-8.x 平均分·读详情（读族）：invoke('im_average_read', {id, reqId}）。
+   * HTTP 响应体经 helix query::emit_read_result 透传回灌 im:read:result{req_id, body}。返 reqId 供 e2e 关联。
+   */
+  async readAverage(id: string, reqId?: string): Promise<string> {
+    const rid = (reqId ?? this.genReqId()).trim();
+    const vid = id.trim();
+    if (!vid) return rid;
+    try {
+      await this.bridge.invoke<void>("im_average_read", { id: vid, reqId: rid });
+    } catch {
+      // 出站失败 → 静默（平均分详情靠 im:read:result 投影驱动·无乐观合成）。
+    }
+    return rid;
+  }
+
+  /**
+   * UC-8.x 平均分·截止（写族）：invoke('im_average_close', {id, postId?}）。真源 partials/6 §average/close。
+   */
+  async closeAverage(id: string, postId?: string): Promise<void> {
+    const vid = id.trim();
+    if (!vid) return;
+    const args: Record<string, unknown> = { id: vid };
+    const p = (postId ?? "").trim();
+    if (p) args["postId"] = p;
+    try {
+      await this.bridge.invoke<void>("im_average_close", args);
+    } catch {
+      // 出站失败 → 静默（平均分截止态靠 server WS 回声驱动·无乐观合成）。
+    }
+  }
+
+  /**
+   * UC-8.x 平均分·删除（写族）：invoke('im_average_delete', {id}）。真源 partials/6 §average/delete。
+   */
+  async deleteAverage(id: string): Promise<void> {
+    const vid = id.trim();
+    if (!vid) return;
+    try {
+      await this.bridge.invoke<void>("im_average_delete", { id: vid });
+    } catch {
+      // 出站失败 → 静默（平均分删除态靠 server WS 回声驱动·无乐观合成）。
+    }
+  }
+
   /** 读族关联 id（req_id）生成器（非 wire 字段·仅前端 bridge↔回灌关联用·z-base-32 短 id）。 */
   private genReqId(): string {
     return `req-${Math.random().toString(36).slice(2, 12)}`;

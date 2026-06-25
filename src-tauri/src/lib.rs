@@ -158,6 +158,11 @@ pub fn run() {
         commands::im_vote_read,
         commands::im_vote_close,
         commands::im_vote_delete,
+        commands::im_average_publish,
+        commands::im_average_attend,
+        commands::im_average_read,
+        commands::im_average_close,
+        commands::im_average_delete,
         commands::im_sync_channels,
         commands::set_uc
     ]);
@@ -199,6 +204,11 @@ pub fn run() {
         commands::im_vote_read,
         commands::im_vote_close,
         commands::im_vote_delete,
+        commands::im_average_publish,
+        commands::im_average_attend,
+        commands::im_average_read,
+        commands::im_average_close,
+        commands::im_average_delete,
         commands::im_sync_channels
     ]);
 
