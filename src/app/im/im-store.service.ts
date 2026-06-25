@@ -26,6 +26,8 @@ import {
   MESSAGE_ROW_CHANNELS,
   MEMBER_NICKNAME_CHANNEL,
   MemberNicknameData,
+  MEMBER_UPDATED_CHANNEL,
+  MemberUpdatedData,
   MESSAGES_QUERY_RESULT_CHANNEL,
   MessageItemData,
   MessagesQueryResultData,
@@ -415,6 +417,39 @@ export class ImStoreService {
       });
     } catch {
       // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（昵称靠投影驱动·无乐观合成）。
+    }
+  }
+
+  /**
+   * UC-6.1 拉/踢人：invoke('im_channel_member_change', {channelId, joinUserIds?, leaveUserIds?}）。
+   *
+   * **壳不臆造 body 形态**：endpoint + camelCase body（{channelId, joinUsers/leaveUsers:[{id,teamId,role}]}）
+   * 由 Rust（commands.rs im_channel_member_change·teamId 取 identity·真源 §5）→ helix-im
+   * outbound/channel_existing.rs MemberChangeCommand 透传到 POST channel/member/change。壳只供 channelId
+   * （目标频道）+ joinUserIds（拉进群成员 userId）+ leaveUserIds（踢出群成员 userId）。WS 回
+   * channel_member_update（broadcast 到 channelId·channel 全量帧含 memberChange.join/leave）→ ④
+   * channel_member 表 BatchUpsert（join）/ BatchDelete（leave）+ ② im:channel:member-updated →
+   * applyMemberUpdated 把 MB 区成员行刷新（壳纯渲染只透传投影成员集·无乐观合成）。无 channelId → 不发。
+   * 非 Tauri / 命令缺失 → 静默。
+   */
+  async changeMember(
+    channelId: string,
+    joinUserIds: string[],
+    leaveUserIds: string[],
+  ): Promise<void> {
+    const ch = channelId.trim();
+    if (!ch) return;
+    const joins = joinUserIds.filter((u) => !!u.trim());
+    const leaves = leaveUserIds.filter((u) => !!u.trim());
+    if (joins.length === 0 && leaves.length === 0) return;
+    try {
+      await this.bridge.invoke<void>("im_channel_member_change", {
+        channelId: ch,
+        joinUserIds: joins.length ? joins : undefined,
+        leaveUserIds: leaves.length ? leaves : undefined,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（成员靠投影驱动·无乐观合成）。
     }
   }
 
@@ -891,6 +926,14 @@ export class ImStoreService {
       this.applyMemberNickname(env.payload?.data as MemberNicknameData | undefined);
       return;
     }
+    // UC-6.1 拉/踢人：im:channel:member-updated（{channel_id, channel}·WS channel_member_update 透传帧）→
+    // 从 channel 对象成员源（memberChange.join[] + 四源 members[]）upsert MB 区成员行 + memberChange.leave[]
+    // 移除离场行 + 刷 data-members 在册串（壳纯渲染只透传投影成员 id·不在 JS 合成）。先于 message-row 分支
+    // （member-row 信号·非 message_item_data fat 集）。
+    if (channel === MEMBER_UPDATED_CHANNEL) {
+      this.applyMemberUpdated(env.payload?.data as MemberUpdatedData | undefined);
+      return;
+    }
 
     // UC-1.5 撤回：在线 im:post:batch-updated（{channel_id, posts}）/ 离线 im:post:deleted（fat）
     // → 按 server id 标行 data-revoke=1。先于 MESSAGE_ROW_CHANNELS fat 覆写分支处理。
@@ -1149,6 +1192,78 @@ export class ImStoreService {
       // 成员行缺 → upsert（投影驱动成员入列·data-member-id=userId·data-nickname=nickName）。
       return [...next, { memberId: userId, nickname: nickName }];
     });
+  }
+
+  /**
+   * UC-6.1：im:channel:member-updated（{channel_id, channel}·WS channel_member_update 透传帧·broadcast
+   * 到 channelId）→ 从 channel 对象成员源 upsert/移除 MB 区成员行 + 刷 data-members 在册串。
+   *
+   * channel 是后端全量帧（透传不解析重组）·成员源与 helix channel_write::collect_members 同口径：
+   *   - 在册成员 = memberChange.join[] + 四源 members[]/adminUsers[]/boss[]/owner（各取 id/userId）。
+   *   - 离场成员 = memberChange.leave[]（移除对应行）。
+   * 壳纯渲染只透传投影成员 id（不在 JS 臆造成员关系·权威在 DB channel_member 复合 PK upsert/delete）。
+   * data-members = MB 区当前在册成员 id 升序逗号串（回读锚·拉进的 userId 必现·踢出的必消失·守可证伪）。
+   */
+  private applyMemberUpdated(data: MemberUpdatedData | undefined): void {
+    if (!data || typeof data !== "object") return;
+    const channel = data.channel;
+    if (!channel || typeof channel !== "object") return;
+    const ch = channel as Record<string, unknown>;
+
+    // 收集应在册成员 id（memberChange.join + 四源·与 helix collect_members 同口径·只取 id 不重组）。
+    const joinIds = this.extractMemberIds(this.memberChangeField(ch, "join"));
+    const sourceIds = [
+      ...joinIds,
+      ...this.extractMemberIds(ch["members"]),
+      ...this.extractMemberIds(ch["adminUsers"]),
+      ...this.extractMemberIds(ch["boss"]),
+      ...this.extractMemberIds(ch["owner"] ? [ch["owner"]] : undefined),
+    ];
+    const leaveIds = new Set(
+      this.extractMemberIds(this.memberChangeField(ch, "leave")),
+    );
+
+    this._members.update((rows) => {
+      const byId = new Map(rows.map((m) => [m.memberId, m] as const));
+      for (const id of sourceIds) {
+        if (!id || leaveIds.has(id)) continue;
+        if (!byId.has(id)) byId.set(id, { memberId: id });
+      }
+      for (const id of leaveIds) byId.delete(id);
+      return [...byId.values()];
+    });
+
+    // data-members 在册串（升序逗号·壳纯渲染只透传当前成员行 id 集·不在 JS 合成额外态）。
+    const ids = this._members()
+      .map((m) => m.memberId)
+      .sort();
+    this._membersAttr.set(ids.join(","));
+  }
+
+  /** 取 channel.memberChange.{join|leave}（透传帧字段·缺则 undefined·零信任不 panic）。 */
+  private memberChangeField(
+    ch: Record<string, unknown>,
+    field: "join" | "leave",
+  ): unknown {
+    const mc = ch["memberChange"];
+    if (!mc || typeof mc !== "object") return undefined;
+    return (mc as Record<string, unknown>)[field];
+  }
+
+  /** 从成员对象数组抽 id 集（每元素取 id ?? userId·缺/空跳过·与 helix member_row_from_value 同口径）。 */
+  private extractMemberIds(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    const out: string[] = [];
+    for (const item of value) {
+      if (!item || typeof item !== "object") continue;
+      const rec = item as Record<string, unknown>;
+      const id =
+        (typeof rec["id"] === "string" && rec["id"]) ||
+        (typeof rec["userId"] === "string" && rec["userId"]) ||
+        "";
+      if (id) out.push(id);
+    }
+    return out;
   }
 
   /**

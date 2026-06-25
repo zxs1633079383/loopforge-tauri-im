@@ -761,6 +761,74 @@ pub async fn im_update_member_nickname(
         .map_err(|e| format!("im_update_member_nickname: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-6.1 拉/踢人：前端传 `channelId`（目标频道）+ `joinUserIds`（拉进群的成员 userId 列表）+
+/// `leaveUserIds`（踢出群的成员 userId 列表·两者可同时非空）→ 本命令按真机curl真源 §5 拼
+/// `channel/member/change` raw body 入泵 `im_channel_member_change`（helix-im
+/// `outbound/channel_existing.rs` `MemberChangeCommand` 校验 channelId 后**透传 args 到**
+/// `POST /api/cses/channel/member/change`——注意该 command 是 args.clone() 直透，故 body 必须由本壳
+/// 以 camelCase 拼成形态锚真源 §5：`{channelId, joinUsers:[{id,teamId,role}], leaveUsers:[{id,teamId,role}]}`）。
+///
+/// `teamId` 取自 AppState.identity（profile companyId·身份单一真源·不在前端 TS 硬编 creds）。
+/// joinUsers role=MEMBER（拉进群默认普通成员·真源 §5 示例 role:"MEMBER"）；leaveUsers 同结构。
+/// 空集 → 该字段省略（不发 `joinUsers:[]` 空数组·与 joinUsers/leaveUsers 两者可同时非 nil 语义对齐）。
+///
+/// WS 回 `channel_member_update`（broadcast 到 channelId·channel 全量帧含 memberChange.join/leave）→
+/// ④ channel_member 表 BatchUpsert（join 成员·复合 PK channel_id,user_id）+ BatchDelete（leave 成员）+
+/// ② `im:channel:member-updated`（{channel_id, channel}·to_effect_s1::emit_channel_member_updated 透传帧
+/// channel 对象）→ ③ DOM data-members 回读。薄壳纪律：只翻译入参 + 入泵，endpoint 在 helix-im，本壳
+/// 只拼 camelCase body（因 MemberChangeCommand 直透 args·body 形态责任在壳·对齐真源 §5）。
+#[tauri::command]
+pub async fn im_channel_member_change(
+    state: State<'_, AppState>,
+    channel_id: String,
+    join_user_ids: Option<Vec<String>>,
+    leave_user_ids: Option<Vec<String>>,
+) -> Result<(), String> {
+    if channel_id.trim().is_empty() {
+        return Err("im_channel_member_change: channelId 为空".into());
+    }
+    let team_id = state.identity.team_id.clone();
+    let self_id = state.identity.user_id.clone();
+
+    // 拼成员对象数组（真源 §5 三键 id/teamId/role 全 camelCase·role=MEMBER）。空/自身过滤。
+    let build_users = |ids: Vec<String>| -> Vec<serde_json::Value> {
+        ids.into_iter()
+            .filter(|u| !u.trim().is_empty())
+            .map(|uid| {
+                serde_json::json!({
+                    "id": uid,
+                    "teamId": team_id,
+                    "role": "MEMBER",
+                })
+            })
+            .collect()
+    };
+
+    let mut body = serde_json::Map::new();
+    body.insert("channelId".into(), serde_json::Value::String(channel_id));
+    if let Some(joins) = join_user_ids {
+        // 拉成员排除自身（拉别人进群·自身已在群·真源 §5 joinUsers 是新增成员）。
+        let joins: Vec<String> = joins.into_iter().filter(|u| *u != self_id).collect();
+        let users = build_users(joins);
+        if !users.is_empty() {
+            body.insert("joinUsers".into(), serde_json::Value::Array(users));
+        }
+    }
+    if let Some(leaves) = leave_user_ids {
+        let users = build_users(leaves);
+        if !users.is_empty() {
+            body.insert("leaveUsers".into(), serde_json::Value::Array(users));
+        }
+    }
+
+    let tick = command("im_channel_member_change", serde_json::Value::Object(body));
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_channel_member_change: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-5.3 关闭/退出群：前端传 `channelId`（目标频道）→ 转 snake_case 入泵 `im_channel_close`
 /// （helix-im `outbound/channel_existing.rs` `ChannelCloseCommand` 兑现出站 `POST channel/close
 /// {channelId}`·真机curl真源 §6）。

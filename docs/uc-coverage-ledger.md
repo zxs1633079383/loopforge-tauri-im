@@ -396,13 +396,14 @@
 
 > 认领 M。① 出站锚 `真机curl真源 §5`（member change）+ full-map partial 6。
 
-### UC-6.1 拉/踢人 — `🟡 partial`（认领 M·留存成员 RX 需双连接）
+### UC-6.1 拉/踢人 — `🟡 partial`（① L1 真绿·②③④ 结构性 L2→#43·issue #28）
 
-- **① 出站 HTTP**：`POST /api/cses/channel/member/change`，body 锚 `真机curl真源 §5`——`{channelId, joinUsers:[{id,teamId,role}]}` 加人 / `{channelId, leaveUsers:[...]}` 踢人（两者可同时非 nil·**新 endpoint·不是 member/leave**）。
-- **① WS 推送**：留存成员 RX 收 action=`post` props.type=`leave` users:[{id}] operator + event_seq（helix ledger 实证 444 踢 555·留存 678 第二连接收·Go 把成员变更广播为 type=leave 的 post·**留存成员确收 = 需第二连接·单 testbed 子项**）。
-- **② 投影**：`emit_channel_member_updated`（`{channel_id, channel}`·透传帧 channel 对象）。
-- **③ DOM**：`data-members` 回读。
-- **④ 落库**：`channel_member`。
+- **① 出站 HTTP**：`POST /api/cses/channel/member/change`，body 锚 `真机curl真源 §5`——`{channelId, joinUsers:[{id,teamId,role}]}` 加人 / `{channelId, leaveUsers:[...]}` 踢人（两者可同时非 nil·**新 endpoint·不是 member/leave**）。**✅ L1 真绿**（e2e 暖跑·corr_key=ch=qsegsk5coifo3pqoxm391t6u1c·HTTP 200 `channelMemberChange success`·reducer outbound facet OK·body 实证 `{channelId, joinUsers:[{id:445,role:MEMBER,teamId:...}]}`·bodyForbidden snake/顶层 userId/id 无泄漏）。
+- **接通件**：Rust `im_channel_member_change`(commands.rs + lib.rs 双 feature 注册·teamId 取 identity·真源 §5 camelCase body) · 壳 store.changeMember + applyMemberUpdated（projection.types MEMBER_UPDATED_CHANNEL·从 channel 对象 memberChange.join+四源 upsert MB 行 + data-members 在册串） · UI MB 区 change-member-input + 拉/踢 btn + onChangeMember · expect/uc-6.1.expect.json + specs/uc-6.1.e2e.mjs（① 真跑绿·②③④ L2 阻塞红·见下）。
+- **②③④ 结构性 L2（→#43·非 L1 单账号可造）**：go `cses_channel.go:587` `result[member.UserId]=inc`（map 键=被拉成员 userId·members=`LoadChannelMemberByChannelIdAndUserIds(joinIds)` 只含被拉成员）+ `:974` `NewWebSocketEvent(WebsocketEventChannelMemberUpdate, "","", key, nil,"")`（`key` 落在 **userId 参数位**·非 channelId 位）→ `channel_member_update` echo **只推被拉成员（445）的连接**·**不回声操作者（444）**。实证 run.jsonl：member/change 出站后操作者连接 **0 条** `channel_member_update` ws-recv / **0 条** `im:channel:member-updated` 投影（HTTP 200 后只剩 http-resp 帧·无任何 ws action 帧）。故 ②④（im:channel:member-updated 投影 + channel_member 自驱 upsert）+ ③（data-members 实时更新）**结构上只在被拉成员第二连接观测得到**·单账号 L1 无法产出·由 L2 issue #43（拉人后对端实时更新·双账号）接盘。
+- **② 投影**：`emit_channel_member_updated`（`{channel_id, channel}`·透传帧 channel 对象）。— L2（被拉成员侧观测·#43）
+- **③ DOM**：`data-members` 回读。— L2（被拉成员侧观测·#43）
+- **④ 落库**：`channel_member`。— L2（被拉成员侧自驱·#43）
 
 ### UC-6.2 设/撤管理员 — `🟡 partial`（member_role 可证·add_manger 次路径 ⛔ data-dep）
 

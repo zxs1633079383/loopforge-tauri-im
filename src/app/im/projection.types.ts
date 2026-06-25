@@ -191,6 +191,23 @@ export interface MemberNicknameData {
   nickName: string;
 }
 
+/**
+ * UC-6.1 拉/踢人投影 channel（projection-schema 行 70 to_effect_s1::emit_channel_member_updated）。
+ * data 形态 = `{ channel_id, channel }`（channel = WS channel_member_update 透传帧 data 原始对象·不解析
+ * 重组·内含 id/members[]/memberChange.{join,leave}[]）。触发路径 WS channel_member_update action
+ * （broadcast 到 channelId·成员各收）。壳收到即从 channel 对象的成员源（memberChange.join[] + 四源
+ * members[]/adminUsers[]/boss[]/owner）upsert MB 区成员行（data-member-id 直映·壳纯渲染只透传投影成员
+ * id·不在 JS 合成）+ memberChange.leave[] 移除离场行 + 把在册成员 id 集刷进 data-members 回读串。
+ * 与 helix WS handler channel_member_update 落库口径一致（join upsert / leave 物理删 channel_member）。
+ */
+export const MEMBER_UPDATED_CHANNEL = "im:channel:member-updated";
+
+/** im:channel:member-updated data 形态（projection-schema 行 70·{channel_id, channel}·channel 透传不解析）。 */
+export interface MemberUpdatedData {
+  channel_id: string;
+  channel: unknown;
+}
+
 /** message-row 类 channel（携 message_item_data fat 完整集） */
 export const MESSAGE_ROW_CHANNELS: ReadonlySet<string> = new Set([
   "im:post:received",

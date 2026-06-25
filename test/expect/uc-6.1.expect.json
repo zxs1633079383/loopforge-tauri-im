@@ -1,0 +1,54 @@
+{
+  "$schema-note": "四面期望文件 (UC-6.1 拉/踢人) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现 / 本仓渲染壳 / 机器件（reducer target 选择·装饰器抽键·seed）。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-6.1",
+  "title": "拉/踢人：MB 区拉成员进群 → 出站 channel/member/change {channelId, joinUsers:[{id,teamId,role}]}（leave 同结构 leaveUsers）→ WS 推 channel_member_update（broadcast 到 channelId·全量帧含 memberChange.join/leave）→ ② 投影 im:channel:member-updated{channel_id, channel} + ④ channel_member 表 BatchUpsert（join·复合 PK channel_id,user_id）/ BatchDelete（leave）+ ③ DOM data-members 在册串回读",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/src/outbound/channel_existing.rs MemberChangeCommand（im_channel_member_change → POST channel/member/change · 校验 channelId 后透传 args·body 形态责任在壳·真源 真机curl真源 §5 {channelId, joinUsers:[{id,teamId,role}], leaveUsers:[...]}·两者可同时非 nil）",
+    "projection": "projection-schema.md 行 70 to_effect_s1::emit_channel_member_updated（im:channel:member-updated·{channel_id, channel}·channel=透传帧 data 原始对象）；触发 WS channel_member_update（真源 ws/handlers/channel_member_update.rs）",
+    "dom": "docs/uc-coverage-ledger.md §UC-6.1 ③ data-members 回读（im:channel:member-updated channel 对象成员源 → 壳 applyMemberUpdated 把 MB 区在册成员 id 集刷进 data-members 升序逗号串）",
+    "storage": "helix/crates/helix-im/src/ws/handlers/channel_member_update.rs apply_channel_full_and_members（collect_members → upsert_channel_members → BatchUpsert channel_member·复合 PK channel_id,user_id；collect_member_leaves → delete_channel_members → BatchDelete 离场行）"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：拉/踢人作用于已存在 channelId（出站 body.channelId = 该 channelId）。四面全锚 ch=<channelId>：① 出站 body.channelId（顶层 probe pick channelId→ch）·② 投影 data.channel_id（probe pick channel_id→ch）·④ channel_member upsert 行 channel_id（storage corr_cols 抽 channel_id→ch·非 server post id）·③ DOM e2e 注入 MB 区 data-members 串。无 sid/tmp（成员变更 = channel-member 级·非 post 级·无 server post id）。e2e 选锚频道（本人新建·有 admin 权限·拉已知成员 userId 进群）填实 ch + 注入 joinUserId 覆写下列动态字段。",
+    "ch": null
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "channel/member/change",
+    "bodyFields": {
+      "channelId": "*",
+      "joinUsers": "*"
+    },
+    "bodyForbidden": ["channel_id", "join_users", "leave_users", "userId", "id"],
+    "_note": "真机curl真源 §5：body = {channelId, joinUsers:[{id,teamId,role}]}（leave 同结构 leaveUsers·两者可同时非 nil·全 camelCase）。本 UC e2e 走拉人主路径（joinUsers 非空）。bodyForbidden 锚——成员变更 body 携 channelId + joinUsers（数组），不该混入 channel_id（snake 泄漏）/ join_users（snake 泄漏）/ leave_users / 顶层 userId（成员 id 在 joinUsers[].id 内·非顶层）/ 顶层 id（channel/change/* 才用 id 别名·本 endpoint 用 channelId·member id 嵌数组元素）。① 出站经顶层 probe pick channelId → ch 归锚束（窗口内唯一一条 member/change·非 nickname/role/notify 子路由）。注：urlEndsWith 'channel/member/change' 不会误匹配 channel/member/change/nickname 等子路由（reducer endsWith 精确·子路由 url 更长）。"
+  },
+
+  "projection": {
+    "event": "im:channel:member-updated",
+    "dataKeys": [
+      "channel_id",
+      "channel"
+    ],
+    "dataValues": {
+      "channel_id": "*"
+    },
+    "_note": "拉/踢人 server echo = WS channel_member_update（全量帧含 memberChange.join/leave）→ to_effect_s1::emit_channel_member_updated emit im:channel:member-updated{channel_id, channel}（channel=透传帧 data 原始对象·不解析重组）。字段集严格对齐冻结二键（channel_id/channel·缺/多即 fail）。dataValues channel_id 由 e2e 注入锚频道（动态值·守可证伪：echo 回的频道 ≠ 目标即 ② 红）。channel 是透传 blob 不冻结内部字段（不强断 channel.members·避免依赖后端全量帧拼写·成员落地由 ④ channel_member 验证）。"
+  },
+
+  "storage": {
+    "op": "batch_upsert",
+    "table": "channel_member",
+    "minRows": 1,
+    "_note": "WS channel_member_update → apply_channel_full_and_members：collect_members（memberChange.join + 四源）→ upsert_channel_members → BatchUpsert channel_member（复合 PK channel_id,user_id）≥1 行（拉进的成员入册）。装饰器 facet④ payload 暴露 {op:batch_upsert, table:channel_member, rows, channel_id}（corr_cols 抽 channel_id）；channel_id → ch 与 ②③ 同束。注：本 UC 验拉人主路径（join → upsert）·leave 物理删（BatchDelete）是次路径不在本 minRows 锚（踢人 e2e 见 L2 6.1b 留存成员收侧）。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "members": "*"
+    },
+    "_note": "ledger §UC-6.1 ③：MB 区 data-members（在册成员 id 升序逗号串·壳 applyMemberUpdated 从 channel 对象成员源 upsert MB 区成员行后透传当前在册 id 集）。im:channel:member-updated 投影 → 壳 applyMemberUpdated 把拉进的 userId 加入成员行 → data-members 含该 userId。e2e 等 data-members 含 joinUserId 后读注入 reducer（dataValues 动态匹配 contains 由 e2e 在 spec 内断言·dataAttrs.members 由 e2e 覆写为实测在册串·守可证伪：拉进的成员未入 data-members 即 ③ 红）。"
+  }
+}

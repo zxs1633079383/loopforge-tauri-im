@@ -299,12 +299,25 @@ import { MessageRow } from "./im/message-row.model";
               data-testid="load-members-btn"
               (click)="onLoadMembers()"
             >载</button>
+            <input
+              class="im__mini-input"
+              type="text"
+              data-testid="change-member-input"
+              placeholder="成员id"
+              #memChangeInput
+            />
             <button
               class="im__mini"
               type="button"
               data-testid="change-member-btn"
-              (click)="onChangeMember('join')"
+              (click)="onChangeMember('join', memChangeInput.value)"
             >拉</button>
+            <button
+              class="im__mini"
+              type="button"
+              data-testid="kick-member-btn"
+              (click)="onChangeMember('leave', memChangeInput.value)"
+            >踢</button>
           </div>
           @for (mem of store.members(); track mem.memberId) {
             <div
@@ -832,9 +845,21 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.store.loadMembersByIds([channelId]);
   }
 
-  /** UC-6.1 拉/踢人。占位 → 接 add/remove member。 */
-  onChangeMember(_action: string): void {
-    /* UC-6.1 接通 */
+  /**
+   * UC-6.1 拉/踢人：action='join' 拉成员进群 / 'leave' 踢成员出群·memberId=成员 userId（输入框值）→
+   * store.changeMember（invoke im_channel_member_change → 出站 channel/member/change
+   * {channelId, joinUsers/leaveUsers:[{id,teamId,role}]}）。channelId=当前活动频道（MB 区成员属当前会话）。
+   * 成员回读靠 helix `im:channel:member-updated`（{channel_id, channel}）投影驱动 → MB 区成员行 +
+   * data-members 刷新（壳纯渲染）。无 memberId / 无活动频道 → 不发。e2e 走 bridge 直 invoke 注入真实
+   * channelId/joinUserIds 覆盖此 UI 便捷路径。
+   */
+  onChangeMember(action: string, memberId: string): void {
+    const channelId = this.store.activeChannel();
+    const uid = (memberId ?? "").trim();
+    if (!uid || !channelId) return;
+    const joins = action === "join" ? [uid] : [];
+    const leaves = action === "leave" ? [uid] : [];
+    void this.store.changeMember(channelId, joins, leaves);
   }
 
   /**
