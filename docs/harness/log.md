@@ -61,3 +61,6 @@
 
 ✅ DONE UC-1.7 转发/合并转发多频道四面闭环（issue #18·N=2 目标）@2026-06-25T11:53:35+0800 | commit 357b186 | 四面真绿 | loopforge-tauri-im/feat/uc-rollout | 根因=转发 Post 缺 userId 被 postSender PrePostSend Ack-drop·补 userId 后绿
 ✅ DONE UC-2.4 一级/二级回复读族闭环（getReplies/getReplyBranch 四面①②全绿·issue #19 CLOSED）@2026-06-25 12:16:31 CST | commit 5b71a2b | 2 endpoint e2e 2 passing | loopforge-tauri-im/feat/uc-rollout
+
+✅ DONE 阶段 phase3-msgops 对消息操作族收口——**不打 tag**（非全绿·2 合法 yellow） @2026-06-25 12:40 CST | 基线 v0.1-phase2-send c9fd248 → HEAD c0a07d6 | 4 绿 / 2 server-data-gap yellow | feat/uc-rollout
+  阶段3（对已发消息操作）全部 ready-for-agent UC 处置完成：绿=[#16 UC-3.3 模板已收到(a15064a) · #17 UC-1.4 重发失败(5d7822e) · #18 UC-1.7 转发/合并(357b186) · #19 UC-2.4 一级/二级回复(5b71a2b)]，四面真绿(冻结 oracle 零改 C004/C009)。🟡 server-data-gap(唯一允许 yellow·带 run.jsonl 证据)=[#14 UC-3.2 单条已读(88d83f5·已 close) · #15 UC-3.1 会话已读(b4cba55·已 close)]：read echo event_type=6 是**多设备 echo**(server 写 last_read_seq 只广播给该用户其他设备·不回灌发起读的本连接)→ L1 单账号单连接结构性观测不到 ②④·①③ 严格断言绿·spec 留可证伪护栏(echo 现即断 ②④)·留收尾 L2 双账号复跑转绿。**按 C006 非全绿不打阶段 tag**——未立 v0.1-phase3-msgops。验证：gate.sh ✅ 8 项(镜像/harness 索引=12/录放 feature 闸/reducer 82 断言/expect JSON/helix 单版本/行数 warn/clippy 跳)·6 个 phase3 UC spec+expect 三对齐俱在·rollout-checklist 阶段3 标记一致([x]×4 + [~]×2)。无新 harness 坑(复用 C004/C006/C007/C009·未达三铁律新建门槛)。下一阶段：phase4 历史(UC-2.1/2.2/2.3·issues #20-#22)。
