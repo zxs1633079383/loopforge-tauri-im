@@ -57,3 +57,4 @@
 
 ✅ DONE UC-3.1 会话已读闭环(①③ four-facet绿·②④ read-echo 多设备 server-data-gap) @2026-06-25 11:03:06 CST | commit b4cba55 | issue #15 CLOSED | feat/uc-rollout
 ✅ DONE UC-3.3 模板已收到 四面全绿（issue #16 close）@2026-06-25 | im_template_received 命令(camelCase {postId}) + 前置发 TEMPLATE 类型消息 + store extractTemplateReceived + storage op 草拟纠正 update→batch_update + dom _note 移出 dataAttrs · post_update 广播含发起连接故单账号即绿(异于 3.1/3.2 read-echo 黄) · corr_key=sid=daasucn8dfgx8faxdm96npizjc | loopforge-tauri-im/feat/uc-rollout
+✅ DONE UC-1.4 重发失败消息四面闭环（issue #17 closed·四面全绿） @2026-06-25 11:29:16 +0800 | commit 5d7822e | onResend→resend upsert + debug 桥失败前置 | feat/uc-rollout
