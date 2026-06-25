@@ -38,7 +38,7 @@
 | [~] | 3.2 单条已读 | `im_mark_read`→`post/read`{channelId,posts:[postId]}✅ | `partials/6 UC-3.2` | `emit_post_read`(fat)🟡L2 | data-read-bits✅ | `message.read_bits`🟡L2 | S |
 | [~] | 3.1 会话已读 | `im_read_channel`→`im_channels_view`→`channels/view`{channels:[{id}]}✅ | `partials/6 UC-3.1` | `emit_post_read`(fat)🟡L2 | data-read-bits✅ | `message.read_bits`🟡L2 | S/M |
 | [x] | 3.3 模板已收到 | `templateReceived`→`post/templateReceived` | `partials/6 UC-3.3`{postId}(单数 path) | `emit_post_updated`/read:result | data-template-received | `message` | S |
-| [ ] | 1.4 重发失败 | `im_send`(temp_id 复用)→`posts/create` | `真机curl真源 §1` | `emit_post_sending`→`emit_post_received` | data-send-status:failed→sending→sent | `message` upsert 覆盖 | S |
+| [x] | 1.4 重发失败 | `im_send`(temp_id 复用)→`posts/create` | `真机curl真源 §1` | `emit_post_sending`→`emit_post_received` | data-send-status:failed→sending→sent | `message` upsert 覆盖 | S |
 | [ ] | 1.7 转发/合并 | `im_create_posts`→`posts/createPosts` | `真机curl真源 附录A`{posts,channelIds}✅ | 各目标 channel `emit_post_received` | 多 channel 消息行 | `message`×N | M |
 | [ ] | 2.4 一级/二级回复 | `posts/getReplies`/`getReplyBranch` | `partials/6 UC-2.4` | `query::emit_read_result`(读族透传) | data-reply-id | `Scan message`(回复链) | M |
 

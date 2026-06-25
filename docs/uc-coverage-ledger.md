@@ -110,13 +110,23 @@
 - **③ DOM**：同 UC-1.1 + `data-type=DOCUMENT`。
 - **④ 落库**：`message`（type=DOCUMENT）。
 
-### UC-1.4 重发失败消息 — `⬜ pending`（认领 S）
+### UC-1.4 重发失败消息 — `✅ four-facet-verified`（2026-06-25 实跑全绿，认领 S）
 
-- **① 出站 HTTP**：`POST /api/cses/posts/create`，temporaryId 复用（重发 = 重走 posts/create·helix ledger 实证 RAW action=`post` self-echo 命中）。
-- **① WS 推送**：action=`post`。
-- **② 投影**：`im:post:sending` → `im:post:received`（fat）。
-- **③ DOM**：`data-send-status: failed→sending→sent`。
-- **④ 落库**：`message` upsert 覆盖（PK=temporary_id）。
+> 四面全绿实证：`run.sh -- --spec test/specs/uc-1.4.e2e.mjs`（seeded db·live 真 go）→
+> `✅ UC-1.4 四面全绿（corr_key=ch=15gcgoyf;tmp=pfuneqqp…;sid=c58zkjqn…;seq=68）`。
+> 接线：壳 `onResend` → `store.resend(tmp,ch,text)` 复用原 temporaryId 重走 `im_send`（upsert 语义·不生成新 id）。
+> 失败前置（架构现实：`im_send` 入泵即返 Ok 不 await HTTP → 健康 live run 不自然产生 failed 行）：
+> e2e 经 debug 桥 `__lf.debugMarkFailed`（复用 `store.markSendFailed` 生产路径·复现真出站失败态·非合成）
+> 把已上屏的乐观行标 failed，再点 `[data-testid=resend-btn]`。重发四面校正：
+> ① 出站 `posts/create` temporaryId 复用 camelCase 必填集✅（bodyForbidden snake_case 无泄漏）
+> ② 投影 `im:post:received` fat 13 键✅ ③ DOM `failed→sending→sent`（data-msg-id tmp→server 覆写）✅
+> ④ 落库 `batch_upsert message`（PK=temporary_id 覆盖原失败行）✅。
+
+- **① 出站 HTTP**：`POST /api/cses/posts/create`，temporaryId 复用（重发 = 重走 posts/create·✅ 实跑 RAW action=`post` self-echo 命中）。
+- **① WS 推送**：action=`post`（✅ ws-recv echo 命中本束·sid=c58zkjqn…）。
+- **② 投影**：`im:post:sending` → `im:post:received`（fat·✅）。
+- **③ DOM**：`data-send-status: failed→sending→sent`（✅）。
+- **④ 落库**：`message` upsert 覆盖（PK=temporary_id·✅ batch_upsert）。
 
 ### UC-1.5 撤回消息 — `✅ four-facet-verified`（2026-06-24 实跑全绿，认领 S）
 
@@ -434,10 +444,10 @@
 | bot/agent 召唤（整域，不计入 39）| 1 域 | — | — | — | 1 域（⛔）|
 
 > 精确分类（按本台账每节标题图例为准·1+7+24+7=39）：
-> - **✅ four-facet-verified = 9**：UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）、UC-1.9（2026-06-25 实跑全绿·im_urgent_post/confirm 命令 + diffOutboundPhases 两阶段 + msg_id→sid 归一 + 关窗前等 post_update in-window·corr_key=sid=tasdeqxtubbrzbigoic5iya77o）、UC-1.10（2026-06-25 实跑全绿·im_create_schedule 命令 + create-outbound fallback 复用·posts/createSchedule + im:channel:schedule-created·storage op 草拟纠正 update→batch_update·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）、UC-3.3（2026-06-25 实跑全绿·im_template_received 命令 camelCase {postId} + 前置发 TEMPLATE 类型消息 + store extractTemplateReceived + storage op 草拟纠正 update→batch_update + dom _note 移出 dataAttrs·post_update 广播含发起连接故单账号即绿·corr_key=sid=1ouh77refibz8j4ujz4aiy1m8a）。
+> - **✅ four-facet-verified = 10**：UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-1.4（2026-06-25 实跑全绿·onResend→store.resend 复用 tmp upsert + debug 桥注入失败前置·corr_key=ch=15gcgoyf;tmp=pfuneqqp;sid=c58zkjqn;seq=68）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）、UC-1.9（2026-06-25 实跑全绿·im_urgent_post/confirm 命令 + diffOutboundPhases 两阶段 + msg_id→sid 归一 + 关窗前等 post_update in-window·corr_key=sid=tasdeqxtubbrzbigoic5iya77o）、UC-1.10（2026-06-25 实跑全绿·im_create_schedule 命令 + create-outbound fallback 复用·posts/createSchedule + im:channel:schedule-created·storage op 草拟纠正 update→batch_update·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）、UC-3.3（2026-06-25 实跑全绿·im_template_received 命令 camelCase {postId} + 前置发 TEMPLATE 类型消息 + store extractTemplateReceived + storage op 草拟纠正 update→batch_update + dom _note 移出 dataAttrs·post_update 广播含发起连接故单账号即绿·corr_key=sid=1ouh77refibz8j4ujz4aiy1m8a）。
 > - **🟡 partial = 7**：UC-4.4 心跳 / UC-4.5 陌生 channel / UC-5.3 关群 / UC-5.5 置顶 / UC-6.1 拉踢 / UC-6.2 管理员 / UC-8.x 投票平均分。
 > - **🟡 ①③-verified · ②④ server-data-gap（read echo 多设备-only）= 2**：UC-3.1 会话已读 / UC-3.2 单条已读（2026-06-25 实跑·①③ 严格断言绿 + ②④ read echo 是多设备 echo·单连接结构性不可观测·带 run.jsonl 证据 + 可证伪护栏·须 L2 双账号转绿）。
-> - **⬜ pending = 16**：1.2 / 1.4 / 1.5 / 1.7 / 1.8 / 2.1 / 2.2 / 2.3 / 2.4 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 / UC-3.3 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
+> - **⬜ pending = 15**：1.2 / 1.5 / 1.7 / 1.8 / 2.1 / 2.2 / 2.3 / 2.4 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 / UC-3.3 / UC-1.4 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
 > - **⛔ unreachable = 7**（39 分母内）：UC-1.3 文件 / UC-1.6 编辑 / UC-4.3 too_long / UC-5.6 公告 / UC-5.7 在线 / UC-7.x 搜索·另 bot/agent 整域 ⛔（不计入 39 分母）。
 
 > ⚠️ **诚实声明**：全 39 UC 中唯一经真 Tauri+WKWebView 四面 oracle 跑绿的是 **UC-1.1**。`🟡 partial` 表示 helix ledger 已证服务端 wire 但 LoopForge 客户端四面尚未实跑（标 partial 是为标记「有可证主路径 + 部分子项物理够不到」，**不等于 LoopForge 已验**）。rollout 实跑前，唯一 ✅ 的就是 UC-1.1。

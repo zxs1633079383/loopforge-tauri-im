@@ -166,9 +166,22 @@ export class ImStoreService {
       });
     } catch {
       // 出站失败（非 Tauri dev 环境也会走这里）→ 标 failed（若投影已插行）+ 清暂存。
-      this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "failed" }));
-      this.pendingText.delete(temporaryId);
+      this.markSendFailed(temporaryId);
     }
+  }
+
+  /**
+   * 把乐观行标 failed（生产路径：send/sendDocument invoke 抛错时调用）。
+   *
+   * 单一真源——出站失败的 DOM 终态由本方法兑现（patchByTemp 标 failed + 清 pendingText）。
+   * UC-1.4 测试机件经 debug 桥（main.ts `__lf.debugMarkFailed`，仅 Tauri dev/test 注入）
+   * 复用本方法**复现真实失败态**（与真 invoke 抛错产生的 DOM 完全一致·非合成任意态）。
+   * 行内已存 text（applyPostSending 取 pendingText 落进行）→ resend 复用 row.text 重走 posts/create，
+   * 故此处清 pendingText（与原 send catch 行为一致），不影响重发。
+   */
+  markSendFailed(temporaryId: string): void {
+    this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "failed" }));
+    this.pendingText.delete(temporaryId);
   }
 
   /**
@@ -194,6 +207,38 @@ export class ImStoreService {
       this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "failed" }));
       this.pendingText.delete(temporaryId);
       this.pendingType.delete(temporaryId);
+    }
+  }
+
+  /**
+   * UC-1.4 重发失败消息：复用原 temporaryId 重走 posts/create（upsert 语义）。
+   *
+   * 与 send() 的唯一区别——**不生成新 temporaryId**，复用失败行原 tmp：
+   *  - 出站 body temporaryId 重复 → server upsert（同 temporary_id 覆盖原失败行，不产生重复消息）。
+   *  - 乐观把失败行从 failed 拨回 sending（DOM 状态流 failed→sending→sent）。
+   *  - pendingText 复填（瘦投影 im:post:sending 不带 text，sending 行渲染需要）。
+   *  - echo im:post:received 按同 temporaryId 找行覆写 → status=sent + data-msg-id=server_id。
+   *
+   * invoke 失败（含非 Tauri 环境）→ 行重新标 failed（可再次重发）+ 清暂存。
+   */
+  async resend(temporaryId: string, channelId: string, text: string): Promise<void> {
+    const trimmed = text.trim();
+    if (!trimmed || !temporaryId || !channelId) return;
+
+    // 乐观：失败行拨回 sending（DOM failed→sending）。瘦投影不带 text → pendingText 复填。
+    this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "sending" }));
+    this.pendingText.set(temporaryId, trimmed);
+
+    try {
+      await this.bridge.invoke<void>("im_send", {
+        channelId,
+        text: trimmed,
+        temporaryId, // 复用原 tmp → upsert，不生成新 id
+      });
+    } catch {
+      // 出站失败 → 重新标 failed（可再次重发）+ 清暂存。
+      this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "failed" }));
+      this.pendingText.delete(temporaryId);
     }
   }
 

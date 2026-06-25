@@ -437,6 +437,18 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     void this.store.start();
+    // UC-1.4 测试机件：debug/test 桥注入失败态注入器（仅 Tauri 环境·release 无 webdriver 不暴露 set_uc）。
+    // 复用 store.markSendFailed 生产路径——复现真 invoke 抛错的 DOM 失败态（非合成任意态）。
+    // 架构现实：im_send 入泵即返 Ok（不 await HTTP）→ 健康 live run 不会自然产生 failed 行；
+    // 重发前置须注入一个失败态，故 e2e 经此桥把已上屏的乐观行标 failed 再点重发。
+    if (
+      typeof window !== "undefined" &&
+      "__TAURI_INTERNALS__" in window &&
+      window.__lf
+    ) {
+      window.__lf.debugMarkFailed = (temporaryId: string) =>
+        this.store.markSendFailed(temporaryId);
+    }
   }
 
   ngOnDestroy(): void {
@@ -638,9 +650,9 @@ export class AppComponent implements OnInit, OnDestroy {
     /* UC-2.4 接通 */
   }
 
-  /** UC-1.4 重发失败。占位 → 接 im_send 复用 temp_id。 */
-  onResend(_row: MessageRow): void {
-    /* UC-1.4 接通 */
+  /** UC-1.4 重发失败：复用失败行原 temporaryId 重走 posts/create（upsert）。 */
+  onResend(row: MessageRow): void {
+    void this.store.resend(row.temporaryId, row.channelId, row.text);
   }
 
   /** UC-2.2 上拉更早历史。占位 → 接 im_load_older_context。 */

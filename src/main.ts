@@ -8,6 +8,9 @@ declare global {
   interface Window {
     __lf?: {
       invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
+      /** debug/test-only：把乐观行标 failed（复现真实出站失败态·UC-1.4 重发前置）。
+       *  由 AppComponent ngOnInit 在 Tauri 环境注入（复用 store.markSendFailed 生产路径）。 */
+      debugMarkFailed?: (temporaryId: string) => void;
     };
   }
 }
