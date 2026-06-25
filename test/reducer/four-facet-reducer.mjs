@@ -294,6 +294,197 @@ function valEq(a, b) {
   return false;
 }
 
+// ── 多频道四面对账（UC-1.7 转发 forward to N channels）──────────────────────────
+//
+// 与单事件 runFourFacet 的差异：转发 = **单出站 HTTP（createPosts）→ N 目标频道 echo**。
+// 单 outbound 携 channelIds 数组（≥2 目标）；每个目标频道独立 im:post:received 投影 + message
+// 落库行。故四面对账按「单 ① + N ②③④」展开：
+//   ① 窗口内唯一 posts/createPosts 出站（body.channelIds 覆盖目标·camelCase·无 PascalCase 泄漏）
+//   ② 每个目标频道须有一条 im:post:received（fat 字段集严格对齐 perChannelDataKeys）
+//   ④ message 表写 ≥ minRows 行（转发逐目标频道各落一行）
+//   ③ DOM ≥ N 行·各自 channel-id ∈ 目标集·msg-id 非 tmp（server 覆写）·status=sent
+//
+// faithful（每个目标频道都须出现投影 + DOM 行·少一个即红），非 tautology（漏发某频道 → ② 红·
+// 见单测可证伪对偶）。本入口是机器件（非冻结 oracle）·按 expect.json 的 multiChannel 形态消费。
+
+/** ① 找窗口内唯一 createPosts 出站，逐字段断言（覆盖目标频道 + camelCase + 无 PascalCase 泄漏）。 */
+function diffRelayOutbound(expect, httpHops, targetChannels) {
+  const exp = expect.outbound ?? {};
+  const hits = httpHops.filter((h) =>
+    exp.urlEndsWith ? String(h.url ?? '').endsWith(exp.urlEndsWith) : true
+  );
+  if (hits.length === 0) {
+    return facetFail('outbound', `无 createPosts 出站（期望 url 以 ${exp.urlEndsWith} 结尾）`, { expect: exp });
+  }
+  const hit = hits[0];
+  const issues = [];
+  if (exp.method && hit.method !== exp.method)
+    issues.push(`method 期望 ${exp.method} 实得 ${hit.method}`);
+  const body = hit.body ?? {};
+  // bodyFields：posts / channelIds 必须存在（值用 * 占位·非空校验在下）。
+  for (const k of Object.keys(exp.bodyFields ?? {})) {
+    if (!(k in body)) issues.push(`body 缺字段 ${k}`);
+  }
+  // PascalCase 泄漏 / snake 泄漏锚（bodyForbidden）。
+  for (const k of exp.bodyForbidden ?? []) {
+    if (k in body) issues.push(`body 不该有字段 ${k}（旧形态泄漏）`);
+  }
+  // channelIds 须是数组且覆盖全部目标频道（faithful·非任取）。
+  const chIds = body.channelIds;
+  if (!Array.isArray(chIds)) {
+    issues.push('body.channelIds 非数组（转发须 camelCase channelIds 数组）');
+  } else {
+    const missing = (targetChannels ?? []).filter((c) => !chIds.includes(c));
+    if (missing.length) issues.push(`body.channelIds 未覆盖目标频道: ${missing.join(', ')}`);
+    if (chIds.length < 2) issues.push(`body.channelIds 仅 ${chIds.length} 个（转发须 ≥2 目标·多频道特征）`);
+  }
+  // posts 须是非空数组。
+  if (!Array.isArray(body.posts) || body.posts.length === 0) {
+    issues.push('body.posts 非空数组缺失（转发须携待转发 Post 对象数组）');
+  }
+  return facetReport('outbound', issues, { url: hit.url, channelIds: chIds });
+}
+
+/** ② 每个目标频道须有一条 im:post:received（fat），字段集严格对齐 perChannelDataKeys。 */
+function diffRelayProjections(expect, events, uc, targetChannels) {
+  const exp = expect.projection ?? {};
+  const event = exp.perChannelEvent ?? 'im:post:received';
+  const wantKeys = [...(exp.perChannelDataKeys ?? [])].sort();
+  const issues = [];
+  // 窗口内全部 im:post:received 投影，按 channelId 索引。
+  const byCh = new Map();
+  for (const ev of events) {
+    if (uc !== undefined && ev.uc_id !== uc) continue;
+    if (ev.facet !== 'projection' || ev.hop !== 'projection') continue;
+    const p = ev.payload ?? {};
+    if (p.event !== event) continue;
+    const ch = p.data?.channelId ?? p.data?.channel_id;
+    if (ch && (targetChannels ?? []).includes(ch)) {
+      if (!byCh.has(ch)) byCh.set(ch, p.data ?? {});
+    }
+  }
+  for (const ch of targetChannels ?? []) {
+    const data = byCh.get(ch);
+    if (!data) {
+      issues.push(`目标频道 ${ch} 无 ${event} 投影（断在 createPosts→WS post→投影 这跳）`);
+      continue;
+    }
+    const got = Object.keys(data).sort();
+    const missing = wantKeys.filter((k) => !got.includes(k));
+    const extra = got.filter((k) => !wantKeys.includes(k));
+    if (missing.length) issues.push(`频道 ${ch} 投影缺字段: ${missing.join(', ')}`);
+    if (extra.length) issues.push(`频道 ${ch} 投影多字段: ${extra.join(', ')}`);
+  }
+  return facetReport('projection', issues, { channelCount: byCh.size, event });
+}
+
+/** ④ message 表写计数 ≥ minRows（转发逐目标频道各落一行）。 */
+function diffRelayStorage(expect, events, uc) {
+  const exp = expect.storage ?? {};
+  const table = exp.table ?? 'message';
+  let rowCount = 0;
+  let sawOp = null;
+  for (const ev of events) {
+    if (uc !== undefined && ev.uc_id !== uc) continue;
+    if (ev.facet !== 'storage') continue;
+    const p = ev.payload ?? {};
+    if (!p.op || (table && p.table !== table)) continue;
+    sawOp = p.op;
+    rowCount += p.rows ?? p.keys ?? p.count ?? 1;
+  }
+  const issues = [];
+  if (sawOp == null) {
+    return facetFail('storage', `无 ${table} 落库写（断在 reconcile→Storage 这跳）`, { expect: exp });
+  }
+  if (exp.minRows != null && !(rowCount >= exp.minRows))
+    issues.push(`${table} 落库行 期望 ≥${exp.minRows} 实得 ${rowCount}`);
+  return facetReport('storage', issues, { op: sawOp, table, rows: rowCount });
+}
+
+/** ③ DOM ≥ N 行·各自 channel-id ∈ 目标集·msg-id 非 tmp（server 覆写）·status=sent。 */
+function diffRelayDom(expect, domRows, targetChannels) {
+  const exp = expect.dom ?? {};
+  if (!Array.isArray(domRows) || domRows.length === 0) {
+    return facetFail('dom', '无转发 DOM 行（e2e 未注入 / 行未渲染）', { expect: exp });
+  }
+  const issues = [];
+  const seenCh = new Set();
+  const attrs = exp.perRowDataAttrs ?? {};
+  for (const row of domRows) {
+    const ch = row['channel-id'];
+    if (!(targetChannels ?? []).includes(ch)) {
+      issues.push(`DOM 行 channel-id=${ch} 不在目标频道集（非转发行混入）`);
+      continue;
+    }
+    seenCh.add(ch);
+    for (const [k, want] of Object.entries(attrs)) {
+      const got = row[k];
+      if (want === '*') {
+        if (got == null || got === '') issues.push(`频道 ${ch} 行 data-${k} 缺值`);
+      } else if (want === '!tmp') {
+        if (got == null || got === row['temporary-id'])
+          issues.push(`频道 ${ch} 行 data-${k} 应 ≠ temporaryId（server 覆写未发生），实得 ${got}`);
+      } else if (!valEq(got, want)) {
+        issues.push(`频道 ${ch} 行 data-${k} 期望 ${JSON.stringify(want)} 实得 ${JSON.stringify(got)}`);
+      }
+    }
+  }
+  // 每个目标频道都须有一行（faithful·少一个即红）。
+  const missing = (targetChannels ?? []).filter((c) => !seenCh.has(c));
+  if (missing.length) issues.push(`目标频道无转发 DOM 行: ${missing.join(', ')}`);
+  return facetReport('dom', issues, { rowCount: domRows.length, channels: [...seenCh] });
+}
+
+/**
+ * 多频道四面对账入口（UC-1.7 转发）。
+ *
+ * @param {object} args
+ * @param {string} args.jsonl            run.jsonl 全文
+ * @param {object} args.expect          四面期望文件（multiChannel 形态）
+ * @param {Array<object>} args.domRows  e2e 注入的转发 DOM 行（各目标频道·data-* 扁平对象）
+ * @param {Array<string>} args.targetChannels  目标频道 id 集（≥2）
+ * @param {string} [args.ucId]
+ * @returns {object} 报告
+ */
+export function runFourFacetMultiChannel({ jsonl, expect, domRows, targetChannels, ucId }) {
+  const uc = ucId ?? expect.ucId;
+  const { events, parseErrors } = parseJsonl(jsonl);
+
+  const httpHops = events
+    .filter(
+      (e) =>
+        (uc === undefined || e.uc_id === uc) &&
+        e.facet === 'outbound' &&
+        e.hop === 'http-req'
+    )
+    .map((e) => ({ method: e.payload?.method, url: e.payload?.url, body: e.payload?.body ?? {} }));
+
+  const facets = {
+    outbound: diffRelayOutbound(expect, httpHops, targetChannels),
+    projection: diffRelayProjections(expect, events, uc, targetChannels),
+    storage: diffRelayStorage(expect, events, uc),
+    dom: diffRelayDom(expect, domRows, targetChannels),
+  };
+
+  const order = ['outbound', 'projection', 'storage', 'dom'];
+  const brokenAt = order.find((f) => !facets[f].ok) ?? null;
+  const green = brokenAt === null && parseErrors.length === 0;
+
+  return {
+    ucId: uc,
+    green,
+    brokenAt,
+    targetChannels,
+    facets,
+    parseErrors,
+    summary: green
+      ? `✅ ${uc} 多频道四面全绿（targets=${(targetChannels ?? []).join(',')}）`
+      : `❌ ${uc} 断在 [${brokenAt ?? 'parse'}] 面：${
+          brokenAt ? facets[brokenAt].issues.join('; ') : `JSONL 解析 ${parseErrors.length} 行坏`
+        }`,
+  };
+}
+
 /**
  * 主入口：跑四面对账，出报告。
  *

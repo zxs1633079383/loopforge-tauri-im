@@ -627,9 +627,40 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.store.quickReply(postId, emoji);
   }
 
-  /** UC-1.7 转发/合并。占位 → 接 im_create_posts。 */
-  onForward(_row: MessageRow, _targetChannels: string[]): void {
-    /* UC-1.7 接通 */
+  /** UC-1.7 转发/合并：把消息行转发到 N 目标频道。postId=消息 server id（无则不发·未对账乐观
+   *  消息不可转发）·message=行文本 → 构造 Post 对象数组 → store.relayMessages（endpoint
+   *  posts/createPosts + camelCase 化由 Rust/helix 拼·壳不臆造 body）。targetChannels 显式传入则用
+   *  之（e2e 走 bridge 直 invoke 注入真实目标频道）；UI 便捷路径取频道列表中非源频道的前 N 个。
+   *  转发行由 helix `im:post:received`（fat·各目标频道独立）投影驱动追加·壳纯渲染·无乐观合成。 */
+  onForward(row: MessageRow, targetChannels: string[]): void {
+    const postId = row.msgId;
+    if (!postId) return; // 无 server id（未对账乐观消息）→ 不可转发
+    // 目标频道：显式传入优先（e2e bridge），否则取频道列表非源频道前 2 个（UI 便捷路径）。
+    const targets =
+      targetChannels.length > 0
+        ? targetChannels
+        : this.store
+            .channels()
+            .map((c) => c.channelId)
+            .filter((id) => id && id !== row.channelId)
+            .slice(0, 2);
+    if (targets.length === 0) return; // 无可转发目标频道 → 不发
+    // Post 对象：转发源消息正文 + 新 temporaryId + type（前端从本地行构造·透传给后端在各目标频道
+    // 建**新**消息）。**不带源 id**——server PreSave 仅在 id=="" 时生成新 id（entity/post.go:188），
+    // 带源 id 会让各目标频道副本复用同一 id → 落库冲突/去重 → 不产生新消息（实测 createPosts 返
+    // SUCCESS 但目标频道无新行）。转发是「建新消息」非「引用原消息」，故 posts 元素只携内容不携源 id。
+    const posts: Array<Record<string, unknown>> = [
+      { message: row.text, temporaryId: this.genForwardTmp(), type: row.type || "TEXT" },
+    ];
+    void this.store.relayMessages(posts, targets);
+  }
+
+  /** 转发用临时 id（z-base-32 26 位·与 store.genTempId 同字符集·让转发 echo 可对账）。 */
+  private genForwardTmp(): string {
+    const charset = "ybndrfg8ejkmcpqxot1uwisza345h769";
+    let s = "";
+    for (let i = 0; i < 26; i++) s += charset[Math.floor(Math.random() * 32)];
+    return s;
   }
 
   /** UC-5.2 创建话题（消息转话题）：rootId=消息所在群 channelId·postId=消息 server id →

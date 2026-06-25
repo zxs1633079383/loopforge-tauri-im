@@ -466,6 +466,34 @@ export class ImStoreService {
     }
   }
 
+  /**
+   * UC-1.7 转发/合并转发：invoke('im_relay_messages', {posts, channelIds}）。
+   *
+   * **壳不臆造 body**：endpoint（`POST posts/createPosts`·双段复数）+ camelCase 化（posts/channelIds）
+   * + 两数组非空校验全在 helix-im（commands.rs im_relay_messages → outbound/posts_relay.rs
+   * CreatePostsCommand）。壳只供 posts（从本地消息行构造的 Post 对象数组）+ channelIds（目标频道）。
+   *
+   * 转发是「批量建新消息到 N 目标频道」：后端遍历 channelIds × posts 在每个目标 channel 建消息 →
+   * 逐 channel WS `post` echo → helix `im:post:received`（fat·各 channel 独立·channel_id/msg_id/
+   * event_seq 各异）投影驱动 applyMessageItem 追加各目标频道消息行（无乐观合成·壳纯渲染·新消息
+   * 无本地 tmp 锚→走 server-id 追加分支）。非 Tauri / 命令缺失 → 静默（dev 浏览器单独调 UI 不卡）。
+   */
+  async relayMessages(
+    posts: Array<Record<string, unknown>>,
+    channelIds: string[],
+  ): Promise<void> {
+    const targets = channelIds.map((c) => c.trim()).filter(Boolean);
+    if (posts.length === 0 || targets.length === 0) return;
+    try {
+      await this.bridge.invoke<void>("im_relay_messages", {
+        posts,
+        channelIds: targets,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（转发行靠投影驱动·无乐观合成）。
+    }
+  }
+
   // ——— 私有 ———
 
   private onBus(env: BusEnvelope): void {
@@ -721,8 +749,17 @@ export class ImStoreService {
     // UC-1.8 post_update echo 复用既有消息（无 temporaryId 乐观行）→ 按 server id 命中行覆写
     //   reactions（emoji patch）。先试 temporaryId 锚（发送对账），再退 server id 锚（quickReply
     //   等纯 props patch 路径·复用消息无 tmp）。
+    //
+    // UC-1.7 转发：单出站 createPosts 的 posts[0] 携同一 temporaryId 应用到 N 目标频道 →
+    //   N 条 echo 共享同 temporaryId 但 channelId 各异。若仅按 temporaryId 锚，第 2 条 echo 会
+    //   覆写第 1 条（频道 A）的行 → 只剩 1 行（丢频道）。故 temporaryId 锚**须叠加 channelId 同频道**
+    //   约束（消息归属特定频道·跨频道同 tmp 不应互相覆写）。echo 带 channelId 时按 (tmp, ch) 锚；
+    //   不带 channelId（罕见）退回纯 tmp 锚（保持 send 既有行为·乐观行 channelId 已由 sending 投影置）。
+    const echoCh = d.channelId ?? d.channel_id ?? "";
     const idx = temporaryId
-      ? this._rows().findIndex((r) => r.temporaryId === temporaryId)
+      ? this._rows().findIndex(
+          (r) => r.temporaryId === temporaryId && (!echoCh || !r.channelId || r.channelId === echoCh),
+        )
       : serverId
         ? this._rows().findIndex((r) => r.msgId === serverId)
         : -1;

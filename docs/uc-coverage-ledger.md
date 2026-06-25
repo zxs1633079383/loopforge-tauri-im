@@ -151,13 +151,18 @@
 > ③ helix e2e 复用 postId 再发实测**零 post/post_update 回声**。
 > **LoopForge 处置**：标 ⛔ unreachable（目标端点根本不存在，testbed 无可触发的编辑链路）；rollout-plan 原 P4「编辑」条作废，不再列为可铺 UC。
 
-### UC-1.7 转发/合并转发消息 — `⬜ pending`（认领 M）
+### UC-1.7 转发/合并转发消息 — `✅ e2e-green`（live 多频道四面全绿·N=2 目标·2026-06-25）
 
-- **① 出站 HTTP**：`POST /api/cses/posts/createPosts`（**双段复数**·camelCase `{posts:[<Post>], channelIds:[<id>]}`·`真机curl真源 附录A` 三方证据定论·✅ helix 现状一致）。
-- **① WS 推送**：各目标 channel action=`post` 广播（helix ledger：host-cli 物理够不到 = harness-gap·HTTP200 为转发执行硬证）。
-- **② 投影**：各目标 channel `im:post:received`（fat）。
-- **③ DOM**：多 channel 消息行 data-msg-id。
-- **④ 落库**：`message` ×N（每目标 channel 一行）。
+> 多频道四面：单 ① createPosts 出站 → N 目标 channel 各 1 投影 + 1 落库 + 1 DOM 行。
+> reducer 走 `runFourFacetMultiChannel`（机器件·按 targetChannels 聚 N 束·非冻结 oracle）。
+> **实证 run.jsonl**：① channelIds=[14jeie…, 181jj…]；② im:post:received ×2（msg_id=wrjcaq…/s6p3md…·各目标 ch 各一）；④ message storage writes=2。
+
+- **① 出站 HTTP**：`POST /api/cses/posts/createPosts`（**双段复数**·camelCase `{posts:[<Post>], channelIds:[<id>...]}`·`真机curl真源 附录A` 三方证据定论·✅ helix 现状一致）。**实证** posts[0] keys=[message,temporaryId,type,userId]·channelIds=2 目标·无 PascalCase 泄漏。
+- **① WS 推送**：各目标 channel action=`post` 广播 → 各目标 channel 真 echo 回声（**非 harness-gap**·loopforge 内嵌引擎实收 2 条 post echo·驱动 ②③④）。
+- **② 投影**：各目标 channel `im:post:received`（fat 13 键·channel_id/msg_id/event_seq 各异·共享 temporaryId）。reducer `diffRelayProjections` 逐目标频道断字段集。
+- **③ DOM**：N 条转发消息行（各自 `data-channel-id`=目标频道·`data-msg-id`!=tmp server 覆写·`data-send-status=sent`）。**契约实现 fix**：store `applyMessageItem` temporaryId 锚叠加 channelId 同频道约束（单出站 posts[0] 同 tmp 应用到 N 频道·N 条 echo 同 tmp 异 ch·原纯 tmp 锚会让第 2 条覆写第 1 条丢频道）。
+- **④ 落库**：`message` 表 `batch_upsert` ×N（每目标 channel 一行·minRows≥2 实证 2）。
+- **关键根因 fix（loopforge 壳缺陷·非 server gap）**：转发 Post 对象须携 `userId`。后端 `postSender` 消费者 `PrePostSend`（post_core.go）在 `UserId==""` 时直接拒并 **Ack-drop**（user id is nil）→ 转发副本无 userId 被静默丢弃 → createPosts 返 SUCCESS 但目标频道无落库/无投影（实测三轮红）。loopforge `im_relay_messages` 命令补自身 userId（identity 单一真源·与现网 sendRelayMessages 透传完整 Post 对象一致·壳不臆造）后四面真绿。
 
 ### UC-1.8 快捷回复 emoji — `✅ e2e-green`（live 四面全绿·corr_key sid=owd8oao7wbbo9jxye1wfgpts8w·seq=54·2026-06-25）
 
@@ -447,7 +452,7 @@
 > - **✅ four-facet-verified = 10**：UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-1.4（2026-06-25 实跑全绿·onResend→store.resend 复用 tmp upsert + debug 桥注入失败前置·corr_key=ch=15gcgoyf;tmp=pfuneqqp;sid=c58zkjqn;seq=68）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）、UC-1.9（2026-06-25 实跑全绿·im_urgent_post/confirm 命令 + diffOutboundPhases 两阶段 + msg_id→sid 归一 + 关窗前等 post_update in-window·corr_key=sid=tasdeqxtubbrzbigoic5iya77o）、UC-1.10（2026-06-25 实跑全绿·im_create_schedule 命令 + create-outbound fallback 复用·posts/createSchedule + im:channel:schedule-created·storage op 草拟纠正 update→batch_update·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）、UC-3.3（2026-06-25 实跑全绿·im_template_received 命令 camelCase {postId} + 前置发 TEMPLATE 类型消息 + store extractTemplateReceived + storage op 草拟纠正 update→batch_update + dom _note 移出 dataAttrs·post_update 广播含发起连接故单账号即绿·corr_key=sid=1ouh77refibz8j4ujz4aiy1m8a）。
 > - **🟡 partial = 7**：UC-4.4 心跳 / UC-4.5 陌生 channel / UC-5.3 关群 / UC-5.5 置顶 / UC-6.1 拉踢 / UC-6.2 管理员 / UC-8.x 投票平均分。
 > - **🟡 ①③-verified · ②④ server-data-gap（read echo 多设备-only）= 2**：UC-3.1 会话已读 / UC-3.2 单条已读（2026-06-25 实跑·①③ 严格断言绿 + ②④ read echo 是多设备 echo·单连接结构性不可观测·带 run.jsonl 证据 + 可证伪护栏·须 L2 双账号转绿）。
-> - **⬜ pending = 15**：1.2 / 1.5 / 1.7 / 1.8 / 2.1 / 2.2 / 2.3 / 2.4 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 / UC-3.3 / UC-1.4 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
+> - **⬜ pending = 14**：1.2 / 1.5 / 1.8 / 2.1 / 2.2 / 2.3 / 2.4 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 / UC-3.3 / UC-1.4 / UC-1.7 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
 > - **⛔ unreachable = 7**（39 分母内）：UC-1.3 文件 / UC-1.6 编辑 / UC-4.3 too_long / UC-5.6 公告 / UC-5.7 在线 / UC-7.x 搜索·另 bot/agent 整域 ⛔（不计入 39 分母）。
 
 > ⚠️ **诚实声明**：全 39 UC 中唯一经真 Tauri+WKWebView 四面 oracle 跑绿的是 **UC-1.1**。`🟡 partial` 表示 helix ledger 已证服务端 wire 但 LoopForge 客户端四面尚未实跑（标 partial 是为标记「有可证主路径 + 部分子项物理够不到」，**不等于 LoopForge 已验**）。rollout 实跑前，唯一 ✅ 的就是 UC-1.1。

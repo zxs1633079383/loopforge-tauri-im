@@ -237,6 +237,63 @@ pub async fn im_template_received(
         .map_err(|e| format!("im_template_received: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-1.7 转发/合并转发：前端传 `posts`（待转发的 Post 对象数组·已从本地行构造）+ `channelIds`
+/// （目标 channel 字符串数组·N≥1）→ 本命令转 snake_case 入泵 `im_create_posts`（helix-im
+/// `outbound/posts_relay.rs` `CreatePostsCommand` 校验两数组非空后兑现出站
+/// `POST posts/createPosts {posts, channelIds}`·全 camelCase·真机curl真源 附录A）。
+///
+/// 后端 App 层遍历 channelIds × posts 在每个目标 channel 建消息 → 逐 channel WS `post`（new_post）
+/// echo → helix 投影 `im:post:received`（fat·各 channel 独立·channel_id/msg_id/event_seq 各异）→
+/// 各目标 channel message 表落库 ×N。
+///
+/// 薄壳纪律：只翻译入参（posts 数组 + channel_ids 数组）+ 入泵，body camelCase 化（posts/channelIds）
+/// + 两数组非空校验全在 helix-im（CreatePostsCommand `require_nonempty_array`），本壳不臆造 body。
+/// posts 元素 = 前端从本地消息行构造的 Post 对象（透传·不在壳重组）。
+#[tauri::command]
+pub async fn im_relay_messages(
+    state: State<'_, AppState>,
+    posts: Vec<serde_json::Value>,
+    channel_ids: Vec<String>,
+) -> Result<(), String> {
+    if posts.is_empty() {
+        return Err("im_relay_messages: posts 为空（须指定待转发消息·非空数组）".into());
+    }
+    let targets: Vec<String> = channel_ids.into_iter().filter(|c| !c.trim().is_empty()).collect();
+    if targets.is_empty() {
+        return Err("im_relay_messages: channelIds 为空（须指定目标频道·非空数组）".into());
+    }
+    let self_id = state.identity.user_id.clone();
+    if self_id.is_empty() {
+        return Err("im_relay_messages: 自身 userId 为空（profile cookieId 未注入）".into());
+    }
+    // **身份单一真源**：每个待转发 Post 对象补 userId（= 发送者·身份取自 identity·壳不臆造 creds）。
+    // 关键：后端 postSender 消费者 `PrePostSend` 在 UserId=="" 时直接拒并 Ack-drop（user id is nil·
+    // post_core.go），转发副本不带 userId 会被静默丢弃 → 目标频道无新消息（实测 createPosts 返
+    // SUCCESS 但目标频道无落库/无投影）。故 Post 对象必须携 userId·与现网 sendRelayMessages 透传
+    // 完整 Post 对象（含 userId）一致。createBy 缺省由后端 CreateCsesPost 从 userId 兜底。
+    let enriched: Vec<serde_json::Value> = posts
+        .into_iter()
+        .map(|mut p| {
+            if let serde_json::Value::Object(ref mut map) = p {
+                map.entry("userId")
+                    .or_insert_with(|| serde_json::json!(self_id));
+            }
+            p
+        })
+        .collect();
+    // helix CreatePostsCommand 读 snake `posts` / `channel_ids`（require_nonempty_array），
+    // 内部翻成 wire camelCase `{posts, channelIds}`。壳透传 posts 元素（前端已构造的 Post 对象·补 userId）。
+    let tick = command(
+        "im_create_posts",
+        serde_json::json!({ "posts": enriched, "channel_ids": targets }),
+    );
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_relay_messages: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// 会话列表 bootstrap：拉本地 `channel` 表 dialogList（helix emit `im:channels:projection`）。
 ///
 /// 最简壳只靠增量流冒频道，而增量是严格 cursor delta——清/旧 DB 无新活动时拿不到 active
