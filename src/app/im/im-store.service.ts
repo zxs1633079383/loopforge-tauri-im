@@ -847,6 +847,35 @@ export class ImStoreService {
   }
 
   /**
+   * UC-4.5 陌生 channel 兜底（进入未加载过的频道触发单频道增量同步）：invoke('im_ensure_channel_loaded',
+   * {channelId, reqId}）。
+   *
+   * **读族 request-response**：load/incrementByChannelId 是读命令（is_read=true·HTTP 直返单条
+   * *IncrementChannel·不推送）→ helix `read_relay::emit_read_result` 透传回灌 `im:read:result{req_id,
+   * body}`（body=该 channel 增量帧·含 lastEventSeq/mentionList/urgentPostList·透传不冻结）。endpoint
+   * channel/load/incrementByChannelId + wire body `{channelId}` camelCase 化全在 helix-im
+   * （LoadIncrementByChannelIdCommand）。壳只供 channelId（陌生频道 id）+ reqId（前端 bridge 生成·回灌
+   * 关联）。返 reqId 供 caller/e2e 等回灌关联。无 channelId → 不发·仍返 rid（一致返回类型）。
+   */
+  async ensureChannelLoaded(
+    channelId: string,
+    reqId?: string,
+  ): Promise<string> {
+    const rid = (reqId ?? this.genReqId()).trim();
+    const ch = channelId.trim();
+    if (!ch) return rid;
+    try {
+      await this.bridge.invoke<void>("im_ensure_channel_loaded", {
+        channelId: ch,
+        reqId: rid,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（增量靠 im:read:result 投影驱动·无乐观合成）。
+    }
+    return rid;
+  }
+
+  /**
    * UC-6.4 成员快照/全量·分支 B（时间范围成员快照）：invoke('im_member_snapshot',
    * {channelId, startTime, endTime, reqId}）。
    *

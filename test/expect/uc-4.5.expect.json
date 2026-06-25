@@ -1,0 +1,41 @@
+{
+  "$schema-note": "四面期望文件 (UC-4.5 陌生 channel 兜底) — oracle 本体。只读契约 (contract-readonly-autofix.md §1 / harness C004)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现或本仓渲染壳。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-4.5",
+  "title": "陌生 channel 兜底：invoke ensure_channel_loaded → 出站 channel/load/incrementByChannelId {channelId}（读族·HTTP 直返单条 IncrementChannel·不推送）→ 透传回灌 im:read:result {req_id, body}",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/src/outbound/channel_read.rs::LoadIncrementByChannelIdCommand（POST channel/load/incrementByChannelId·body 内联 {channelId}·全 camelCase·is_read=true·channel_read.rs:99-110 + 头注 #2 真源内联 {channelId}）。partial 8 §2 / http.rs:47 锚一致。",
+    "projection": "helix/crates/helix-im/src/read_relay.rs::emit_read_result（im:read:result {req_id, body}·projection-schema.md §1.2）。读族（is_read=true）无 WS 回声·HTTP 200 响应体（*IncrementChannel）经 read_relay 透传回灌·非 21 投影集（body 形态随 endpoint 变·不冻结字段集·projection-schema §1.2）。",
+    "dom": "N/A（读族无 write 驱动 DOM 契约面）。前端 bridge resolve req_id 后由透传 body 渲染单频道增量·属前端渲染非冻结契约面·reducer 不裁定 ③ 面。",
+    "storage": "N/A（读路径·load/incrementByChannelId is_read=true·HTTP 直返单条不推送·无 Effect::Persist·不落新行·cursor 不推进）。"
+  },
+
+  "corrAnchor": {
+    "note": "读族无四维领域键（outbound wire body 仅携 channelId·非 ch/tmp/sid round-trip 别名；projection req_id 由 e2e invoke 时生成·经 bridge 透传·helix module::read_req_id 抠出注册 OutboundReadReply{req_id} 回灌上下文）。reducer runFourFacetRead 在 set_uc 窗口内按 endpoint 找 ① 出站·按 req_id 锚 ② 投影。req_id 由 e2e 注入到 runFourFacetRead({reqId})。〔Phase1 草拟 issue #33 锚曾据『② emit_channel_increment / ④ channel+cursor』填——与冻结真源 channel_read.rs is_read=true + read_relay.rs 读族透传冲突（incrementByChannelId 是读命令·走 im:read:result 透传回灌·非 emit_channel_increment 投影·无 Persist）。按 C004 以冻结源码校正为读族 ①② 两面·③④ = N/A。〕",
+    "req_id": null
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "channel/load/incrementByChannelId",
+    "bodyFields": {
+      "channelId": "*"
+    },
+    "bodyForbidden": ["channel_id", "from_seq", "fromSeq"],
+    "_note": "真源 channel_read.rs:107-109 LoadIncrementByChannelIdCommand：body 内联 {channelId}（单频道·全 camelCase）。值用 * = 仅校验键存在·channelId 覆盖陌生频道 id 由 reducer faithful 命中。禁 snake_case 泄漏（channel_id）·禁 cursor 字段（from_seq/fromSeq·incrementByChannelId 单频道直返·非 batch cursors 形态·区别于 UC-4.1 channels/load/increment）。"
+  },
+
+  "projection": {
+    "event": "im:read:result",
+    "dataKeys": ["req_id", "body"],
+    "_note": "projection-schema §1.2 read_relay::emit_read_result：读族回灌外层恒 {req_id, body}（成功）。body = 后端 incrementByChannelId 响应体（*IncrementChannel·含 lastEventSeq/mentionList/urgentPostList 等）原样透传·inner 不冻结（前端直消费渲染单频道增量）。键集 = 2 键严格对齐（多/缺即红）。req_id 锚本次 invoke。"
+  },
+
+  "storage": {
+    "_note": "N/A（读路径·channel_read.rs is_read=true·HTTP 直返单条 IncrementChannel 不推送·无 Effect::Persist·不落新行·cursor 不推进）。reducer runFourFacetRead 不裁定 ④ 面。"
+  },
+
+  "dom": {
+    "_note": "N/A（读族无 write 驱动 DOM 契约面）。前端 bridge resolve req_id 后由透传 body 渲染单频道增量·属前端渲染非冻结契约面·reducer 不裁定 ③ 面。"
+  }
+}

@@ -509,6 +509,39 @@ pub async fn im_member_snapshot(
         .map_err(|e| format!("im_member_snapshot: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-4.5 陌生 channel 兜底（进入未加载过的频道触发单频道增量同步）：前端传 `channelId` + `reqId`
+/// → 本命令转 snake_case 入泵 `im_channel_load_increment_by_channel_id`（helix-im `outbound/channel_read.rs`
+/// `LoadIncrementByChannelIdCommand` 兑现出站 `POST channel/load/incrementByChannelId {channelId}`·
+/// 真源内联 `{channelId}`·全 camelCase·partial 8 §2 / http.rs:47）。读族注册（`is_read=true`·HTTP
+/// 直返单条 *IncrementChannel·不推送）：HTTP 200 响应体经 helix `read_relay::emit_read_result` 透传
+/// 回灌 `im:read:result{req_id, body}`（projection-schema §1.2）。
+///
+/// 薄壳纪律：只翻译入参 + 入泵（channelId 透传·body camelCase 化在 helix-im build）·本壳不臆造
+/// wire body；`req_id` 经 payload 透传（helix `module::read_req_id` 抠出注册回灌上下文）。
+#[tauri::command]
+pub async fn im_ensure_channel_loaded(
+    state: State<'_, AppState>,
+    channel_id: String,
+    req_id: String,
+) -> Result<(), String> {
+    if channel_id.is_empty() {
+        return Err("im_ensure_channel_loaded: channelId 为空".into());
+    }
+    if req_id.is_empty() {
+        return Err("im_ensure_channel_loaded: reqId 为空（前端 bridge 须生成·回灌关联）".into());
+    }
+    let payload = serde_json::json!({
+        "channel_id": channel_id,
+        "req_id": req_id,
+    });
+    let tick = command("im_channel_load_increment_by_channel_id", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_ensure_channel_loaded: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-9.x 书签·收藏消息：前端传 `channelId` + `postIds`（被收藏消息 server_id 列表）+ `reqId`
 /// → 本命令补 `userId`（取自 AppState.identity·身份单一真源·壳不臆造 creds）→ 转 snake_case
 /// 入泵 helix-im `im_bookmark_create`（`BookmarkCreateCommand` 兑现出站 `POST post/bookmark/create`

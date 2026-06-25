@@ -161,6 +161,12 @@ import { MessageRow } from "./im/message-row.model";
                   data-testid="team-quit-btn"
                   (click)="onTeamQuit(c)"
                 >退</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="ensure-channel-loaded-btn"
+                  (click)="$event.stopPropagation(); onEnsureChannelLoaded(c)"
+                >兜底</button>
               </span>
             </div>
           }
@@ -728,6 +734,18 @@ export class AppComponent implements OnInit, OnDestroy {
   /** UC-11.2 退出公司。占位 → 接 im_team_quit。 */
   onTeamQuit(_channel: unknown): void {
     /* UC-11.2 接通 */
+  }
+
+  /**
+   * UC-4.5 陌生 channel 兜底：进入未加载过的频道触发单频道增量同步 → store.ensureChannelLoaded
+   * （invoke im_ensure_channel_loaded → 出站 channel/load/incrementByChannelId {channelId}）。
+   * 读族无 WS 回声·该 channel 增量靠 helix `im:read:result{req_id, body}` 透传回灌驱动单频道增量
+   * 渲染。无 channelId → 不发。e2e 走 bridge 直 invoke 注入真实 channelId/reqId 覆盖此 UI 便捷路径。
+   */
+  onEnsureChannelLoaded(channel: { channelId: string }): void {
+    const channelId = channel?.channelId;
+    if (!channelId) return;
+    void this.store.ensureChannelLoaded(channelId);
   }
 
   // ═══ ML 消息行交互件（占位骨架）═══
