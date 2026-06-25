@@ -512,6 +512,15 @@
 - **③ DOM**：`data-system-notice`。
 - **④ 落库**：`message`（SYSTEM/SYSTEN 类型）。
 
+### UC-11.1 维护公司大群 — `✅ 四面全绿`（写族 ①②③④·暖栈实跑全绿·issue #39·corr_key=ch=grji34e9q3g9if6zjsi3h7n7dh）
+
+- **e2e 真跑（teams/upsert 单端点全覆盖·建群路径·corr_key=set_uc 窗口锚 server 分配 ch）**：bridge 直 invoke `im_team_upsert {displayName, memberIds:['445']}` → 出站 `POST teams/upsert`（CreateChannelSpecifyOwner·不携 id → server `UpsertTeam` 走 `CreateCsesChannel` 建公司大群分支）→ WS `channel_created` 推回 → 投影 `im:channel:created` → CL 区新行（before=157→after=158）+ DB channel 新行。四面全绿 `✅ UC-11.1 四面全绿（corr_key=ch=grji34e9q3g9if6zjsi3h7n7dh）`。
+- **① 出站 HTTP**：`POST teams/upsert`·body = CreateChannelSpecifyOwner（嵌入 Channel 必填集 `{teamId, displayName, orient:"", type:"P", picturetype:"USER", picture}` + `users[CREATOR+MEMBER]` + `forceCreate:true` + `owner`·全 camelCase·真源 partials/3 §4 + TeamUpsertCommand 原样透传 team 对象）。bodyForbidden 锚 channel_id/channelId/id 泄漏（建群分支不该携已分配 id·避现网 ID!="" 二次 decode io.Reader 耗尽 bug）。① reducer createOutbound fallback（URL endsWith teams/upsert·窗口内唯一一条）归锚 ch 束。✅ 实证 run.jsonl。
+- **② 投影**：`im:channel:created`（`{channel_id, channel}`·to_effect_s1::emit_channel_created·同 UC-5.1·channel 透传帧 data 原始对象·缺/多即 fail）。✅ 实证 run.jsonl。
+- **③ DOM**：`data-channel-id` 新行（store.channels() 由 im:channel:created 投影 upsert→CL 渲染·复用 applyChannelCreated 同 UC-5.1·壳纯渲染）。✅ waitUntil 等新 channel 行出现（不在 before 快照集）。
+- **④ 落库**：`channel` batch_upsert ≥1 行（建群路径落 channel·表感知归一·channel 表 id 抽成 ch→与 ② 同束）。✅ 实证 run.jsonl rows≥1。
+- **Tauri 命令新缝**：commands.rs 新增 `im_team_upsert`（薄壳从 profile 拼 CreateChannelSpecifyOwner·身份单一真源·对 helix TeamUpsertCommand）+ lib.rs 双 invoke_handler 注册；Angular app.component `onTeamUpsert`（C007 配方法·team-upsert-btn 已绑）+ im-store `teamUpsert`。冻结 oracle 零改（C004）·绿由 reducer 裁定（C009）。
+
 ### bot / agent 召唤 — `🚫 已移除`（bot-agent 不在测试范围·2026-06-24 用户裁决）
 
 > **物理够不到 + 后端真阻塞**：message-v3 service 层无独立 bot 端点（客户端无对应 invoke）·`BotAgentWebhookEvent` Pulsar fanout（缺口矩阵 P1-3）未接。客户端侧无用例 → 整域标 ⛔（如需覆盖从服务端 csesapi 侧梳理·超 testbed 范围）。

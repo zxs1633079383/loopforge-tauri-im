@@ -750,9 +750,14 @@ export class AppComponent implements OnInit, OnDestroy {
     this.store.syncChannels();
   }
 
-  /** UC-11.1 维护公司大群。占位 → 接 im_team_upsert。 */
+  /** UC-11.1 维护公司大群：生成唯一大群名 → store.teamUpsert（teamId/自身 owner+CREATOR 由 Rust 拼·
+   *  壳不臆造）。memberIds 取当前成员区（MB）已加载成员 id（无则空·Rust 命令自动补自身 CREATOR）。
+   *  公司大群=建群路径（id 缺省）→ helix im:channel:created 投影驱动 CL 新行（壳纯渲染）。
+   *  e2e 走 bridge 直 invoke 注入真实 memberIds 覆盖此 UI 便捷路径。 */
   onTeamUpsert(): void {
-    /* UC-11.1 接通 */
+    const displayName = `lf-team-${Math.random().toString(36).slice(2, 8)}`;
+    const memberIds = this.store.members().map((m) => m.memberId).filter(Boolean);
+    void this.store.teamUpsert(displayName, memberIds);
   }
 
   // ═══ CL 频道行交互件（占位骨架）═══

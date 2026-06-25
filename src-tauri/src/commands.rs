@@ -837,6 +837,77 @@ pub async fn im_make_topic(
         .map_err(|e| format!("im_make_topic: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-11.1 维护公司大群：前端传 `displayName` + `memberIds`（公司大群成员真实 userId 列表）→ 本命令
+/// 按真机curl真源 partials/3 §4 拼 `CreateChannelSpecifyOwner`（嵌入 Channel 全字段 + users[] +
+/// forceCreate + owner）作 `team` 对象入泵 `im_team_upsert`（helix-im `TeamUpsertCommand` 原样透传
+/// `team` 到 `POST /api/cses/teams/upsert`·非 team 表·只维护公司大群）。
+///
+/// **建群路径**（`id` 缺/空 → server `UpsertTeam` 走 `CreateCsesChannel`）：WS 回 `channel_created`
+/// （WebsocketEventChannelCreated）+ `channel_member_update`（WebsocketEventChannelMemberUpdate）→
+/// helix 投影 `im:channel:created`（{channel_id, channel}·同 UC-5.1 emit_channel_created）→ ③ CL 新行
+/// data-channel-id + ④ channel 表新行。本命令不传 `id` → server 必走建群分支（避开现网 ID!="" 二次
+/// decode io.Reader 已耗尽 bug·真源 §4 已知 bug 注记）。
+///
+/// body 单一真源：`teamId` / 自身 `userId`（owner + users CREATOR）取自 AppState.identity（profile
+/// companyId / cookieId）·**不在前端 TS 硬编 creds**（守 src-tauri 纪律 3·身份单一真源）。其他成员
+/// （role=MEMBER）由前端供 `memberIds`（e2e 读 seeded channel_member 真实 userId）。teams/* 走
+/// `rejectPersonalUser`·dev-local profile 为公司用户·非 personal·不触 403。
+#[tauri::command]
+pub async fn im_team_upsert(
+    state: State<'_, AppState>,
+    display_name: String,
+    member_ids: Vec<String>,
+) -> Result<(), String> {
+    if display_name.trim().is_empty() {
+        return Err("im_team_upsert: displayName 为空".into());
+    }
+    let team_id = state.identity.team_id.clone();
+    let self_id = state.identity.user_id.clone();
+    if self_id.is_empty() {
+        return Err("im_team_upsert: 自身 userId 为空（profile cookieId 未注入）".into());
+    }
+
+    // users[]：自己 CREATOR + 其他成员 MEMBER（三键 id/teamId/role 全 camelCase·同 channel/create）。
+    let mut users: Vec<serde_json::Value> = Vec::with_capacity(member_ids.len() + 1);
+    let mut user_ids: Vec<String> = Vec::with_capacity(member_ids.len() + 1);
+    users.push(serde_json::json!({
+        "id": self_id,
+        "teamId": team_id,
+        "role": "CREATOR",
+    }));
+    user_ids.push(self_id.clone());
+    for mid in member_ids.into_iter().filter(|m| !m.is_empty() && *m != self_id) {
+        users.push(serde_json::json!({
+            "id": mid,
+            "teamId": team_id,
+            "role": "MEMBER",
+        }));
+        user_ids.push(mid);
+    }
+
+    // CreateChannelSpecifyOwner（真源 partials/3 §4）：嵌入 Channel 全字段（teamId/displayName/orient/
+    // type/picturetype/picture·同 channel/create §4 必填集）+ users[] + forceCreate + owner（CREATOR）。
+    // 不携 `id` → server 走建群分支（CreateCsesChannel·触 channel_created）。
+    let team = serde_json::json!({
+        "teamId": team_id,
+        "displayName": display_name,
+        "orient": "",
+        "type": "P",
+        "picturetype": "USER",
+        "picture": { "userIds": user_ids },
+        "users": users,
+        "forceCreate": true,
+        "owner": { "id": self_id, "teamId": team_id, "role": "CREATOR" },
+    });
+
+    let tick = command("im_team_upsert", serde_json::json!({ "team": team }));
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_team_upsert: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-5.4 群属性修改（改群名）：前端传 `channelId`（目标频道）+ `displayName`（新群名）→ 转
 /// snake_case 入泵 `im_channel_change_display_name`（helix-im `outbound/channel_change_dedicated.rs`
 /// `ChangeDisplayNameCommand` 兑现出站 `POST channel/change/displayName {id, displayName}`·全

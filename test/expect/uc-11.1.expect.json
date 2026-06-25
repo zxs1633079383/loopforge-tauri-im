@@ -1,0 +1,58 @@
+{
+  "$schema-note": "四面期望文件 (UC-11.1 维护公司大群) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现或本仓渲染壳。契约真过时 → 出『契约变更提案 + 证据』交人审。teams/upsert 建群路径（CreateChannelSpecifyOwner·id 缺省 → server UpsertTeam 走 CreateCsesChannel）四面：① 出站 POST teams/upsert（team 对象原样透传·嵌入 Channel 必填集 + users + forceCreate + owner）② 投影 im:channel:created（emit_channel_created {channel_id, channel}·WS channel_created）③ DOM data-channel-id 新行 ④ channel 表新行。",
+  "ucId": "UC-11.1",
+  "title": "维护公司大群：UI 触发 → 出站 teams/upsert → WS channel_created → 投影 created + DOM 新行 + DB 新行",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/full-map/partials/3--backend-http-user-misc.md §4 POST /api/cses/teams/upsert（CreateChannelSpecifyOwner：嵌入 *ent.Channel 全字段 + users[] + forceCreate + owner）；helix outbound/user_misc.rs TeamUpsertCommand 实证：team 对象原样透传到 teams/upsert（team.go:63 UpsertTeam(session, r.Body)）。建群路径（createChannelParam.ID==\"\" → CreateCsesChannel）",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md 行68 to_effect_s1::emit_channel_created（im:channel:created · {channel_id, channel} · WS channel_created）。partials/3 §4：建群路径触发 WebsocketEventChannelCreated（channel_created）",
+    "dom": "docs/uc-coverage-ledger.md §UC-11.1 ③ data-channel-id 新行（公司大群=新 channel·复用 applyChannelCreated 同 UC-5.1）",
+    "storage": "docs/uc-coverage-ledger.md §UC-11.1 ④ channel 新行（建群路径落 channel · channel_member · channel_member_history）"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：维护公司大群（建群路径）server 端分配 channelId（出站 team 对象无该 id·不携 channel id → server 走建群分支）。②③④ 锚 server 分配的 ch（emit_channel_created data.channel_id / channel 表新行 id / DOM data-channel-id），由 e2e 在收到 created 投影后填实 ch 覆写本字段。① 出站 teams/upsert 无单 channel corr_key（server 未分配 id）→ reducer 经 createOutbound fallback 按 URL endsWith teams/upsert 归本束（窗口内唯一一条 upsert·非 tautology）。",
+    "ch": null
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "teams/upsert",
+    "bodyFields": {
+      "teamId": "*",
+      "displayName": "*",
+      "orient": "",
+      "type": "P",
+      "users": "*",
+      "picturetype": "USER",
+      "picture": "*",
+      "forceCreate": true,
+      "owner": "*"
+    },
+    "bodyForbidden": ["channel_id", "channelId", "id"],
+    "_note": "真源 partials/3 §4：teams/upsert body = CreateChannelSpecifyOwner（嵌入 *ent.Channel 全字段 + users[] + forceCreate + owner）·team 对象由 helix 原样透传（不拆字段）。values：orient 固定空串 / type 固定 P / picturetype 固定 USER / forceCreate 固定 true / owner 为 CREATOR 成员对象；teamId/displayName/users/picture 值随 run（*）。bodyForbidden 锚——建公司大群不该携已分配的 channelId/id（server 端才分配；不携 id → server UpsertTeam 走 CreateCsesChannel 建群分支·避现网 ID!=\"\" 二次 decode io.Reader 耗尽 bug）。① 出站经 reducer createOutbound fallback（URL endsWith teams/upsert·窗口内唯一一条）归锚 ch 束。"
+  },
+
+  "projection": {
+    "event": "im:channel:created",
+    "dataKeys": [
+      "channel_id",
+      "channel"
+    ],
+    "_note": "projection-schema 行68 emit_channel_created：{channel_id, channel}（channel = 透传帧 data 原始 channel 对象·载荷内字段不逐一冻结·见 schema 行210 透传类）。partials/3 §4 建群路径 WS channel_created 推回 → 同 UC-5.1 投影。缺/多即 fail。"
+  },
+
+  "storage": {
+    "op": "batch_upsert",
+    "table": "channel",
+    "minRows": 1,
+    "_note": "ledger §UC-11.1 ④：公司大群（建群路径）落 channel 新行（batch_upsert channel ≥1 行）。装饰器 facet④ payload 只暴露 {op,table,rows}（不含行内容）；表感知归一（corr-key.mjs）把 channel 表 id 抽成 ch → 与 ② created（ch 锚）同束。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "channel-id": "*"
+    },
+    "_note": "ledger §UC-11.1 ③：data-channel-id 新行（store.channels() 由 im:channel:created 投影 upsert → CL 区渲染·复用 applyChannelCreated 同 UC-5.1）。e2e 读新建大群 ch 行的 data-channel-id 注入 reducer。"
+  }
+}
