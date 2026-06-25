@@ -89,3 +89,5 @@
 
 ✅ DONE UC-5.5 频道置顶四面契约 e2e 全绿（issue #24 CLOSED）@2026-06-25 14:04:23 CST | loopforge commit a310304 + helix commit 4cc33c2 | 8 步(新增 expect/spec + im_channel_change_top 命令+注册 + 前端 changeChannelTop/normalizeIsTop/applyChannelUpdate 重查 + 置顶按钮 + helix update_channel emit fix) | loopforge-tauri-im/feat/uc-rollout · helix/feat/cses-round6-uc-reclaim
 ✅ DONE UC-5.3 关闭/退出群四面全绿(channel/close+im:channel:closed+channel软删+DOM行移除) @2026-06-25 14:19 | commit af9685a | issue #25 closed | loopforge-tauri-im/feat/uc-rollout
+
+✅ DONE UC-6.3 改群昵称四面契约闭环（issue #26 CLOSED） @2026-06-25 14:33:21 | commit 2128686 | 9 files +408 | loopforge/feat-uc-rollout · 四面真绿 corr_key=ch=bamm9... · gate.sh 全绿
