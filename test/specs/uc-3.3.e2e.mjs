@@ -92,40 +92,58 @@ describe('UC-3.3 · 模板已收到 ACK round-trip（四面契约）', () => {
   });
 
   it('①②③④：发模板消息 → 取 server_id → templateReceived 回执 → WS post_update + 投影 im:post:updated + 落库 props.template patch + DOM data-template-received', async () => {
-    // —— 第一步：发送一条模板消息建基础（复用 UC-1.1 发消息流，取得可回执的 server post） ——
+    // —— 第一步：发送一条 **TEMPLATE 类型** 消息建基础（取得可回执的 server template post）——
+    //   关键（go 校验·cses_post.go:1762）：App.TemplateReceived 要求 post.Type==TEMPLATE，否则
+    //   返 'post type is not TEMPLATE' → 不更新 props.template → 无 post_update 广播。故须发 TEMPLATE
+    //   而非 TEXT（send_build.rs 透传 msg_type 真值·UC-1.2 DOCUMENT 同款·TEMPLATE 同理透传）。
+    //   走 bridge 直 invoke im_send（msgType=TEMPLATE）+ 自带 temporaryId 作锚（与 UI composer 等价·
+    //   乐观行由 helix im:post:sending 投影驱动·壳纯渲染）。
     await invokeBridge('set_uc', { uc: 'UC-3.3-send' });
 
+    const CH = await browser.execute(
+      () => document.querySelector('[data-active-channel]')?.getAttribute('data-active-channel')
+    );
+    expect(CH).toBeTruthy();
+    // z-base-32 26 位 temporaryId（同 store.genTempId 字符集·会话内唯一作锚）。
+    const charset = 'ybndrfg8ejkmcpqxot1uwisza345h769';
+    let SEND_TMP = '';
+    for (let i = 0; i < 26; i++) SEND_TMP += charset[Math.floor(Math.random() * 32)];
     const TEXT = `tpl-${Math.random().toString(36).slice(2, 8)}`;
-    const input = await $('[data-role="composer-input"]');
-    await input.setValue(TEXT);
-    const sendBtn = await $('[data-testid="send-btn"]');
-    await sendBtn.click();
 
-    // 等乐观行出现。
+    const sendRes = await invokeBridge('im_send', {
+      channelId: CH,
+      text: TEXT,
+      temporaryId: SEND_TMP,
+      msgType: 'TEMPLATE',
+    });
+    expect(sendRes.ok).toBe(true);
+
+    // 等乐观行出现（按本次 temporaryId 锚·im:post:sending 投影驱动）。
     await browser.waitUntil(
       async () => {
         const tid = await browser.execute(
-          () =>
+          (t) =>
             document
-              .querySelector('[data-send-status="sending"]')
-              ?.getAttribute('data-temporary-id') ?? null
+              .querySelector(`[data-temporary-id="${t}"][data-send-status="sending"]`)
+              ?.getAttribute('data-temporary-id') ?? null,
+          SEND_TMP
         );
-        return !!tid;
+        return tid === SEND_TMP;
       },
-      { timeout: 8000, timeoutMsg: '乐观行未上屏（断在 click→store.send→乐观渲染）' }
+      { timeout: 8000, timeoutMsg: '乐观行未上屏（断在 im_send→im:post:sending→乐观渲染）' }
     );
 
-    // 等 echo 覆写（status=sent）→ 取 server_id。
-    let tmp = null;
+    // 等 echo 覆写（本次 temporaryId 行 status=sent）→ 取 server_id。
     await browser.waitUntil(
       async () => {
-        tmp = await browser.execute(
-          () =>
+        const st = await browser.execute(
+          (t) =>
             document
-              .querySelector('[data-send-status="sent"]')
-              ?.getAttribute('data-temporary-id') ?? null
+              .querySelector(`[data-temporary-id="${t}"]`)
+              ?.getAttribute('data-send-status') ?? null,
+          SEND_TMP
         );
-        return !!tmp;
+        return st === 'sent';
       },
       { timeout: 15000, timeoutMsg: 'echo 未覆写（断在 WS post→reconcile→DOM）' }
     );
@@ -135,10 +153,10 @@ describe('UC-3.3 · 模板已收到 ACK round-trip（四面契约）', () => {
         const el = document.querySelector(`[data-temporary-id="${t}"]`);
         return el?.getAttribute('data-msg-id') ?? null;
       },
-      tmp
+      SEND_TMP
     );
     expect(MSG_ID).toBeTruthy();
-    expect(MSG_ID).not.toBe(tmp); // 确认已覆写为 server_id
+    expect(MSG_ID).not.toBe(SEND_TMP); // 确认已覆写为 server_id
 
     // —— 第二步：模板已收到回执 ——
     await invokeBridge('set_uc', { uc: 'UC-3.3' });

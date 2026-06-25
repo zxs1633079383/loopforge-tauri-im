@@ -88,13 +88,17 @@
 - **③ DOM**：`data-read-bits`。✅ **实跑绿**（壳纯渲染·send echo 投喂 readBits）。
 - **④ 落库**：`message.read_bits`。🟡 **server-data-gap**（同 ②·待 L2 双账号·依赖 post_read echo 落 read_bits）。
 
-### UC-3.3 模板已收到 — `⬜ pending`（认领 S）
+### UC-3.3 模板已收到 — `✅ four-facet-verified`（2026-06-25 实跑全绿·认领 S）
 
-- **① 出站 HTTP**：`POST /api/cses/post/templateReceived`（**`/post` 单数前缀**·camelCase `{postId, channelId}`·helix Round-3 c7a840c 修 casing）。
-- **① WS 推送**：action=`post_update`，data.id 命中·`updateAt` bump·`updateBy=SYS`·**`props.template.userIds` 含 self userId**（Go 把我写进已收回执列表，helix ledger 实证）。
-- **② 投影**：`emit_post_updated`（fat）/ 读族 `im:read:result`（待核 helix 走哪条）。
-- **③ DOM**：`data-template-received`。
-- **④ 落库**：`message`（props.template patch）。
+> 实证：`run.sh -- --spec test/specs/uc-3.3.e2e.mjs` → `✅ UC-3.3 四面全绿`（corr_key `ch=15gcg…;tmp=…;sid=1ouh77refibz8j4ujz4aiy1m8a;seq=65`）。接线：壳 `im_template_received`（postId → camelCase `{postId}` 入泵·helix builder 读 camel·snake 会 Parse 失败）+ 前端 `store.templateReceived` + 消息行 `template-received-btn`（C007 配 `onTemplateReceived`）+ `data-template-received`（store `extractTemplateReceived` 抽 props.template.userIds 非空 → '1'·壳纯渲染）。
+>
+> **关键（与 UC-3.1/3.2 read-echo 黄不同·本 UC 全绿）**：go `App.TemplateReceived`（cses_post.go:1794）`a.Publish(post_update, userId="")` 广播给**整频道含发起本连接**（非 read-echo 的多设备-only）→ 单账号夹具即可观测 ② post_update echo·四面全绿。**前置**：go cses_post.go:1762 校验 `post.Type==TEMPLATE`，故 e2e 须先发 **TEMPLATE 类型**消息（im_send msgType=TEMPLATE·send_build 透传真值·UC-1.2 DOCUMENT 同款）而非 TEXT，否则 TemplateReceived 返 'post type is not TEMPLATE' 不广播。
+
+- **① 出站 HTTP**：`POST /api/cses/post/templateReceived`，body `{postId}`（camelCase·**`/post` 单数前缀**命名陷阱·真源 helix `outbound/template_received.rs` + posts.go:721 匿名 struct·bodyForbidden 锚 snake `post_id` 泄漏）。✅ **实跑绿**（corr_key `sid=<postId>` 经装饰器 pick `postId` 探针归束·契约不变）。
+- **① WS 推送**：action=`post_update`（EventKind::PostEdit）·data.id 命中·`props.template.userIds` 含 self userId（go AppendTemplateUserId 把我写进已收回执列表）。
+- **② 投影**：`im:post:updated`（**fat** 13 键·同 `emit_post_received`）。✅ **实跑绿**（WS post_update → gate EventKind::PostEdit → channel.rs:511 emit_post_updated）。
+- **③ DOM**：`data-template-received=1`。✅ **实跑绿**（壳 applyMessageItem 抽 props.template.userIds 非空置位·壳纯渲染·无前端算）。
+- **④ 落库**：`message`（props.template patch·op=**batch_update**）。✅ **实跑绿**（**契约更正**：原草拟 op=update 误·实测 batch_update·与 UC-1.9 加急同款·两者同走 EventKind::PostEdit → edit_content_op gate·run.jsonl 证据）。
 
 ### UC-1.2 发送 DOCUMENT 消息 — `✅ four-facet-verified`（2026-06-24 实跑全绿，认领 S）
 
@@ -430,10 +434,10 @@
 | bot/agent 召唤（整域，不计入 39）| 1 域 | — | — | — | 1 域（⛔）|
 
 > 精确分类（按本台账每节标题图例为准·1+7+24+7=39）：
-> - **✅ four-facet-verified = 8**：UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）、UC-1.9（2026-06-25 实跑全绿·im_urgent_post/confirm 命令 + diffOutboundPhases 两阶段 + msg_id→sid 归一 + 关窗前等 post_update in-window·corr_key=sid=tasdeqxtubbrzbigoic5iya77o）、UC-1.10（2026-06-25 实跑全绿·im_create_schedule 命令 + create-outbound fallback 复用·posts/createSchedule + im:channel:schedule-created·storage op 草拟纠正 update→batch_update·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）。
+> - **✅ four-facet-verified = 9**：UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）、UC-1.9（2026-06-25 实跑全绿·im_urgent_post/confirm 命令 + diffOutboundPhases 两阶段 + msg_id→sid 归一 + 关窗前等 post_update in-window·corr_key=sid=tasdeqxtubbrzbigoic5iya77o）、UC-1.10（2026-06-25 实跑全绿·im_create_schedule 命令 + create-outbound fallback 复用·posts/createSchedule + im:channel:schedule-created·storage op 草拟纠正 update→batch_update·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）、UC-3.3（2026-06-25 实跑全绿·im_template_received 命令 camelCase {postId} + 前置发 TEMPLATE 类型消息 + store extractTemplateReceived + storage op 草拟纠正 update→batch_update + dom _note 移出 dataAttrs·post_update 广播含发起连接故单账号即绿·corr_key=sid=1ouh77refibz8j4ujz4aiy1m8a）。
 > - **🟡 partial = 7**：UC-4.4 心跳 / UC-4.5 陌生 channel / UC-5.3 关群 / UC-5.5 置顶 / UC-6.1 拉踢 / UC-6.2 管理员 / UC-8.x 投票平均分。
 > - **🟡 ①③-verified · ②④ server-data-gap（read echo 多设备-only）= 2**：UC-3.1 会话已读 / UC-3.2 单条已读（2026-06-25 实跑·①③ 严格断言绿 + ②④ read echo 是多设备 echo·单连接结构性不可观测·带 run.jsonl 证据 + 可证伪护栏·须 L2 双账号转绿）。
-> - **⬜ pending = 17**：3.3 / 1.2 / 1.4 / 1.5 / 1.7 / 1.8 / 2.1 / 2.2 / 2.3 / 2.4 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
+> - **⬜ pending = 16**：1.2 / 1.4 / 1.5 / 1.7 / 1.8 / 2.1 / 2.2 / 2.3 / 2.4 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 / UC-3.3 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
 > - **⛔ unreachable = 7**（39 分母内）：UC-1.3 文件 / UC-1.6 编辑 / UC-4.3 too_long / UC-5.6 公告 / UC-5.7 在线 / UC-7.x 搜索·另 bot/agent 整域 ⛔（不计入 39 分母）。
 
 > ⚠️ **诚实声明**：全 39 UC 中唯一经真 Tauri+WKWebView 四面 oracle 跑绿的是 **UC-1.1**。`🟡 partial` 表示 helix ledger 已证服务端 wire 但 LoopForge 客户端四面尚未实跑（标 partial 是为标记「有可证主路径 + 部分子项物理够不到」，**不等于 LoopForge 已验**）。rollout 实跑前，唯一 ✅ 的就是 UC-1.1。

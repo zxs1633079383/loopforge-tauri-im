@@ -204,6 +204,39 @@ pub async fn im_read_channel(
         .map_err(|e| format!("im_read_channel: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-3.3 模板已收到回执：前端传 `postId`（模板消息 server id）→ 本命令把它打包成
+/// **camelCase** `{postId}` 入泵 `im_template_received`（helix-im `outbound/template_received.rs`
+/// `TemplateReceivedCommand` 兑现出站 `POST post/templateReceived {postId}`·**`/post` 单数前缀**
+/// 命名陷阱·真机curl真源 partials/6 UC-3.3 + posts.go:721 匿名 struct `{postId}`）。
+///
+/// ⚠️ **payload 键必须 camelCase `postId`**（非 snake `post_id`）：helix builder
+/// `require_str(args, "postId")` 读 camel（template_received.rs:27·前端 message.service.ts:528 发
+/// camel·bridge 字节透传不转 snake）。本壳发 snake `post_id` 会 `ImError::Parse` 永久失败——
+/// 故本命令与其它 snake 命令不同·入泵 payload **保留 camelCase**（expect.bodyForbidden 锚 snake 泄漏）。
+///
+/// WS 回 `post_update`（EventKind::PostEdit·props.template.userIds 含 self）→ gate edit_content_op
+/// patch message 行（保留本地 read_bits）→ 投影 `im:post:updated`（fat）→ DOM data-template-received。
+/// 薄壳纪律：只翻译入参 + 入泵，endpoint / body 形态全在 helix-im，本壳不臆造。
+#[tauri::command]
+pub async fn im_template_received(
+    state: State<'_, AppState>,
+    post_id: String,
+) -> Result<(), String> {
+    if post_id.trim().is_empty() {
+        return Err("im_template_received: postId 为空（须指定模板消息 server id）".into());
+    }
+    // payload 保留 camelCase postId（helix TemplateReceivedCommand 读 camel·snake 会 Parse 失败）。
+    let tick = command(
+        "im_template_received",
+        serde_json::json!({ "postId": post_id }),
+    );
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_template_received: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// 会话列表 bootstrap：拉本地 `channel` 表 dialogList（helix emit `im:channels:projection`）。
 ///
 /// 最简壳只靠增量流冒频道，而增量是严格 cursor delta——清/旧 DB 无新活动时拿不到 active

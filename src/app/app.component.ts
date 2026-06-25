@@ -595,9 +595,14 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.store.markRead(postId, channelId);
   }
 
-  /** UC-3.3 模板已收到。占位 → 接 templateReceived。 */
-  onTemplateReceived(_row: MessageRow): void {
-    /* UC-3.3 接通 */
+  /** UC-3.3 模板已收到：postId=模板消息 server id → store.templateReceived（body `{postId}`
+   *  camelCase 由 Rust/helix 拼·壳不臆造）。无 server id（未对账乐观消息）→ 不发。
+   *  data-template-received 由 helix `im:post:updated`（fat·WS post_update·props.template.userIds
+   *  含 self）投影驱动·壳纯渲染·无乐观合成。e2e 走 bridge 直 invoke 注入真实 postId 覆盖此 UI 便捷路径。 */
+  onTemplateReceived(row: MessageRow): void {
+    const postId = row.msgId;
+    if (!postId) return; // 无 server id（未对账消息）→ 不发
+    void this.store.templateReceived(postId);
   }
 
   /** UC-1.8 快捷回复 emoji：postId=消息 server id + emoji（用户选）→ store.quickReply

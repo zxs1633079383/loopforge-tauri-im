@@ -1,5 +1,6 @@
 import { Injectable, computed, inject, signal } from "@angular/core";
 import { TauriBridgeService } from "./tauri-bridge.service";
+import { extractReactions, extractTemplateReceived } from "./props-extract";
 import {
   BookmarkRow,
   ChannelRow,
@@ -399,6 +400,27 @@ export class ImStoreService {
     }
   }
 
+  /**
+   * UC-3.3 模板已收到回执：invoke('im_template_received', {postId}）。
+   *
+   * **壳不臆造 body**：endpoint（`POST post/templateReceived`·`/post` 单数前缀）+ body 形态
+   * `{postId}`（camelCase）全在 helix-im（commands.rs im_template_received → 入泵
+   * outbound/template_received.rs TemplateReceivedCommand）。壳只供 postId（模板消息 server id）。
+   * fire-and-forget（响应 CommonRes 无 data）；data-template-received 由 helix `im:post:updated`
+   * （fat·WS post_update EventKind::PostEdit·props.template.userIds 含 self）投影驱动·壳纯渲染·
+   * 无乐观合成（applyMessageItem 既有路径按 server id 锚命中既有行·extractTemplateReceived 抽
+   * props.template patch）。非 Tauri / 命令缺失 → 静默（dev 浏览器单独调 UI 不卡）。
+   */
+  async templateReceived(postId: string): Promise<void> {
+    const post = postId.trim();
+    if (!post) return;
+    try {
+      await this.bridge.invoke<void>("im_template_received", { postId: post });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（templateReceived 靠投影驱动·无乐观合成）。
+    }
+  }
+
   // ——— 私有 ———
 
   private onBus(env: BusEnvelope): void {
@@ -646,7 +668,10 @@ export class ImStoreService {
     const eventSeq = typeof d.event_seq === "number" ? d.event_seq : null;
     const readBits = this.toReadBits(d.readBits);
     // UC-1.8：从 fat 投影 props 抽快捷回复 emoji 串（命中 → data-reactions·壳纯渲染·无乐观合成）。
-    const reactions = this.extractReactions(d.props);
+    const reactions = extractReactions(d.props);
+    // UC-3.3：从 fat 投影 props 抽模板已收到态（props.template.userIds 非空 → data-template-received=1·
+    //   壳纯渲染·无乐观合成）。post_update echo（EventKind::PostEdit）携 template patch 进 props。
+    const templateReceived = extractTemplateReceived(d.props);
 
     // UC-1.8 post_update echo 复用既有消息（无 temporaryId 乐观行）→ 按 server id 命中行覆写
     //   reactions（emoji patch）。先试 temporaryId 锚（发送对账），再退 server id 锚（quickReply
@@ -672,6 +697,8 @@ export class ImStoreService {
           type: d.type || prev.type,
           // reactions 命中则覆写（patch 只增不清·无 quickReply 的 echo 不抹既有 reactions）。
           reactions: reactions ?? prev.reactions,
+          // templateReceived 命中则置位（patch 只增不清·非模板 echo 不抹既有态·UC-3.3）。
+          templateReceived: templateReceived ? true : prev.templateReceived,
         };
         return next;
       });
@@ -696,40 +723,9 @@ export class ImStoreService {
         text: d.message ?? "",
         type: d.type || "TEXT",
         reactions: reactions ?? undefined,
+        templateReceived: templateReceived || undefined,
       },
     ]);
-  }
-
-  /**
-   * 从 fat 投影 props 抽快捷回复 emoji 串（UC-1.8·data-reactions 渲染源）。
-   *
-   * server post_update echo 把 quickReply 携进 post props（`props.quickReply`）：形态
-   * `[{emoji, userIds:[...]}]`（expect.json §projection 注·Go 组装）。壳纯渲染：把命中的
-   * emoji 聚成串（如 "👍"·多 emoji 逗号连）作 data-reactions。无 quickReply → 返回 null
-   * （不覆写既有 reactions）。props 形态容错（对象/数组/字符串）·解析失败静默回 null。
-   */
-  private extractReactions(props: unknown): string | null {
-    if (props == null) return null;
-    let obj: unknown = props;
-    if (typeof props === "string") {
-      if (!props.trim()) return null;
-      try {
-        obj = JSON.parse(props);
-      } catch {
-        return null;
-      }
-    }
-    if (!obj || typeof obj !== "object") return null;
-    const qr = (obj as Record<string, unknown>)["quickReply"];
-    if (!Array.isArray(qr) || qr.length === 0) return null;
-    const emojis = qr
-      .map((e) =>
-        e && typeof e === "object"
-          ? (e as Record<string, unknown>)["emoji"]
-          : undefined,
-      )
-      .filter((e): e is string => typeof e === "string" && !!e);
-    return emojis.length > 0 ? emojis.join(",") : null;
   }
 
   private patchByTemp(

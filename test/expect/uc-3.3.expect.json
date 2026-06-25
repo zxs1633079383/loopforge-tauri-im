@@ -46,17 +46,16 @@
   },
 
   "storage": {
-    "op": "update",
+    "op": "batch_update",
     "table": "message",
     "minRows": 1,
-    "_note": "post_update.rs 落库注：edit_content_op = UPDATE WHERE id（仅覆盖内容列·保留本地 read_bits/send_status，C2 BLOCKING-1 不擦已读位）→ props.template patch 落 message 行。op=update（单行 UPDATE WHERE PK·O(1) 热路径）。装饰器 facet④ payload 暴露 {op,table,rows}；props.template.userIds 含 self 由 DB 逐行对齐（四面 oracle ④），此处记录期望 op/table/minRows。"
+    "_note": "post_update.rs 落库注：edit_content_op = UPDATE WHERE id（仅覆盖内容列·保留本地 read_bits/send_status，C2 BLOCKING-1 不擦已读位）→ props.template patch 落 message 行。**契约更正（2026-06-25 实跑·run.jsonl 证据）**：原草拟 op=update 误·实测装饰器 facet④ 暴露 op=batch_update（与 UC-1.9 加急同款·两者同走 EventKind::PostEdit → edit_content_op gate·helix channel.rs:484）。证据：本 UC run.jsonl storage 帧 {op:batch_update,table:message}·corr_key sid=<postId>。装饰器 facet④ payload 暴露 {op,table,rows}；props.template.userIds 含 self 由 DB 逐行对齐（四面 oracle ④），此处记录期望 op/table/minRows。"
   },
 
   "dom": {
     "dataAttrs": {
-      "template-received": "*",
-      "_note": "data-template-received 标记模板已收到态（ledger UC-3.3 §3）。Phase2 UI 设计时定夺具体值形态（布尔标记 vs 含 self 的 userIds 计数）；当前 Phase1 契约设计阶段，选择器/属性值待 UI 实装时确认，先断存在（'*'=仅校验有值）。"
+      "template-received": "*"
     },
-    "_note": "spec：模板「已收到」回执后行表现。意图契约：消息行渲染出 data-template-received（self 已确认收到）。e2e 针对意图中的 data-* 契约编写（Phase2 接线后转绿，现跑会红属正常·spec 本身是契约的一部分）。"
+    "_note": "spec：模板「已收到」回执后行表现。意图契约：消息行渲染出 data-template-received（self 已确认收到）。**结构更正（2026-06-25）**：原 dataAttrs 内误嵌 `_note` 键 → reducer 把它当 data-_note 属性断言（diffDom 遍历 dataAttrs 全键·four-facet-reducer.mjs:264）→ 永红。回正：`_note` 移出 dataAttrs 作 dom 节同级（对齐绿 UC-1.9 dom 结构）。dataAttrs 仅留真实断言 `template-received:'*'`（'*'=校验有值）。data-template-received 标记模板已收到态（ledger §3）·壳纯渲染（props.template.userIds 非空 → '1'·无前端算）。e2e 实跑：data-template-received=1 由 helix im:post:updated（WS post_update·EventKind::PostEdit）投影驱动·已绿。"
   }
 }

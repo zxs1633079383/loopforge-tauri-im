@@ -56,3 +56,4 @@
 ⚠️ PARTIAL UC-3.2 单条已读 ①③ 四面绿+②④ server-data-gap @2026-06-25 10:42:38 CST | 卡在 post_read 自读不回执（go publishRead 不向读者本人回推·run.jsonl 证据） | 剩 ②④ 待 L2 双账号复跑 | commit 88d83f5 | feat/uc-rollout | issue #14 留 yellow 不 close
 
 ✅ DONE UC-3.1 会话已读闭环(①③ four-facet绿·②④ read-echo 多设备 server-data-gap) @2026-06-25 11:03:06 CST | commit b4cba55 | issue #15 CLOSED | feat/uc-rollout
+✅ DONE UC-3.3 模板已收到 四面全绿（issue #16 close）@2026-06-25 | im_template_received 命令(camelCase {postId}) + 前置发 TEMPLATE 类型消息 + store extractTemplateReceived + storage op 草拟纠正 update→batch_update + dom _note 移出 dataAttrs · post_update 广播含发起连接故单账号即绿(异于 3.1/3.2 read-echo 黄) · corr_key=sid=daasucn8dfgx8faxdm96npizjc | loopforge-tauri-im/feat/uc-rollout
