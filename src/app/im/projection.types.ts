@@ -99,6 +99,20 @@ export interface ChannelCreatedData {
   channel: unknown;
 }
 
+/**
+ * UC-1.10 定时消息投影 channel（projection-schema 行 72 to_effect_s1::emit_schedule_created）。
+ * data 形态 = `{ channelId, hasSchedulePost }`（全 camelCase·现网 wire 透传）。触发路径 WS
+ * post_schedule_created action。壳收到即把该频道行 hasSchedule 标 true（data-has-schedule-post=true·
+ * 频道级属性·壳纯渲染只透传投影 hasSchedulePost·不在 JS 合成）。
+ */
+export const CHANNEL_SCHEDULE_CREATED_CHANNEL = "im:channel:schedule-created";
+
+/** im:channel:schedule-created data 形态（projection-schema 行 72·{channelId, hasSchedulePost}·全 camel）。 */
+export interface ChannelScheduleCreatedData {
+  channelId: string;
+  hasSchedulePost: boolean;
+}
+
 /** message-row 类 channel（携 message_item_data fat 完整集） */
 export const MESSAGE_ROW_CHANNELS: ReadonlySet<string> = new Set([
   "im:post:received",

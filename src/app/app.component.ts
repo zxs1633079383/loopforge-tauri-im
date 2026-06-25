@@ -91,7 +91,7 @@ import { MessageRow } from "./im/message-row.model";
               [attr.data-channel-notice]="c.notice ?? null"
               [attr.data-channel-top]="c.top ? '1' : null"
               [attr.data-unread]="c.unread ?? null"
-              [attr.data-has-schedule]="c.hasSchedule ? '1' : null"
+              [attr.data-has-schedule-post]="c.hasSchedule ? 'true' : null"
               [attr.data-active-channel]="
                 c.channelId === store.activeChannel() ? '1' : null
               "
@@ -490,9 +490,18 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.store.urgentConfirm(postId, channelId);
   }
 
-  /** UC-1.10 定时消息。占位 → 接 posts/createSchedule。 */
+  /** UC-1.10 定时消息：channelId=当前活动频道·message=草稿（空则给默认定时文本）·
+   *  schedulePostAt=当前 + 1 小时（毫秒）→ store.createSchedule（body 嵌套 post 由 Rust/helix 拼·
+   *  壳不臆造）。hasSchedule 由 helix `im:channel:schedule-created` 投影驱动 data-has-schedule-post·
+   *  壳纯渲染·无乐观合成。e2e 走 bridge 直 invoke 注入真实参数覆盖此 UI 便捷路径。 */
   onSchedule(): void {
-    /* UC-1.10 接通 */
+    const channelId = this.store.activeChannel();
+    if (!channelId) return;
+    const message =
+      this.draft.trim() || `lf-schedule-${Math.random().toString(36).slice(2, 8)}`;
+    this.draft = "";
+    const schedulePostAt = Date.now() + 3600 * 1000;
+    void this.store.createSchedule(channelId, message, schedulePostAt);
   }
 
   /** UC-1.10 取消定时。占位 → 接 posts/cancelSchedule。 */

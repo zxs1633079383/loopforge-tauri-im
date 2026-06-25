@@ -28,7 +28,7 @@
 | [x] | 1.2 发文档 | `im_send`(type=DOCUMENT)→`posts/create` | `真机curl真源 §1`+type 透传 | `emit_post_received`(fat) | 同 1.1 + data-type=DOCUMENT | `message` | S |
 | [x] | 1.9 加急+加急已读 | `posts/urgentPost`/`urgentConfirm` | `partials/6 UC-1.9` | `emit_post_updated`(fat·expediteMap **不吐**·line186) | post-row 重渲(data-urgent **不可投影驱动**·DB 回读 expedite_map) | `message` batch_update(expedite_map 列) | M |
 | [x] | 1.8 快捷回复 emoji | `im_send_quick_reply`→`posts/quickReply`{emoji,postId,userId} | `partials/6 UC-1.8` | `emit_post_updated`(fat·顶层 quickReply 合并进 props.quickReply·parser bbbf809) | data-reactions(👍) | `message` batch_update(quick_reply 列) | S |
-| [ ] | 1.10 定时消息 | `posts/createSchedule`/`cancelSchedule`/`getSchedule` | `partials/6 UC-1.10` | `emit_schedule_created`/`canceled`{channelId,hasSchedulePost} | data-has-schedule | `channel.has_schedule_post` | M |
+| [x] | 1.10 定时消息 | `posts/createSchedule`/`cancelSchedule`/`getSchedule` | `partials/6 UC-1.10` | `emit_schedule_created`/`canceled`{channelId,hasSchedulePost} | data-has-schedule-post | `channel.has_schedule_post` | M |
 | [n] | 1.3 发图片/文件 🌙 | (上传·java 接口·todo)+`im_send`→`posts/create` | `真机curl真源 §1`+props.file | `emit_post_received`(fat) | data-send-status:uploading→sent | `message` | D(真go夜间) |
 
 ## 阶段 3 · 对已发消息操作（依赖阶段 2 server_id）

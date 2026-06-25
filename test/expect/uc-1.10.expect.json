@@ -36,10 +36,10 @@
   },
 
   "storage": {
-    "op": "update",
+    "op": "batch_update",
     "table": "channel",
     "minRows": 1,
-    "_note": "projection-schema.md §4 DB 列：channel 表的 has_schedule_post bool 列被 schedule-created WS 帧 patch 后落库。装饰器 facet④ 暴露 {op,table,rows}（行数 ≥1）；行内容由 harness 直接查库。"
+    "_note": "projection-schema.md §4 DB 列：channel 表的 has_schedule_post bool 列被 schedule-created WS 帧 patch 后落库。装饰器 facet④ 暴露 {op,table,keys}（keys=更新键数·reducer 归一 rows≥1）。op=batch_update：helix storage port 无 plain `update` op（ports/storage.rs:82 注 `update(single_row)` == `batch_update(len=1)`），单行 channel patch 即 batch_update（与 UC-1.5/1.8/1.9 row-patch 同 op·run.jsonl 实证 {op:batch_update,keys:1,table:channel}）。Phase1 草拟误写 `update`·2026-06-25 据 run.jsonl + helix port API 纠正。"
   },
 
   "dom": {

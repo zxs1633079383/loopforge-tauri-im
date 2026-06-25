@@ -110,12 +110,12 @@ describe('UC-1.10 · 定时消息 create（四面契约）', () => {
     // 当前跳过交互（Phase2 实现），直接调 invoke 驱动后端链路验证前三面（①②④）；
     // ③ DOM 由 Phase2 补齐接线后转绿。
     
-    // 方案 A：mock invoke 预期的参数集（现阶段验证 ①②④）
+    // invoke 参数 camelCase（Tauri 自动 camel→snake 到 Rust 命令入参·对齐 UC-1.9 等已绿 UC 形态）。
     const scheduleResult = await invokeBridge('im_create_schedule', {
-      channel_id: CHANNEL_ID,
+      channelId: CHANNEL_ID,
       message: MESSAGE,
-      schedule_post_at: SCHEDULE_POST_AT,
-      temporary_id: `sch-${Math.random().toString(36).slice(2, 8)}`, // 可选
+      schedulePostAt: SCHEDULE_POST_AT,
+      temporaryId: `sch-${Math.random().toString(36).slice(2, 8)}`, // 可选
     });
     expect(scheduleResult.ok).toBe(true);
 

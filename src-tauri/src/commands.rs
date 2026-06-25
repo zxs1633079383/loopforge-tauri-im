@@ -323,6 +323,48 @@ pub async fn im_send_quick_reply(
         .map_err(|e| format!("im_send_quick_reply: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-1.10 定时消息 create：前端传 `channelId` + `message`（定时正文）+ `schedulePostAt`
+/// （int64 毫秒戳·未来发送时刻）+ 可选 `temporaryId` → 本命令转 snake_case 入泵 `im_create_schedule`
+/// （helix-im `outbound/posts_existing.rs` `CreateScheduleCommand` 兑现出站
+/// `POST posts/createSchedule {post:{channelId,message,temporaryId?}, schedulePostAt}`·真机curl真源
+/// partials/6 UC-1.10 CreateSchedulePostReq）。WS 回 `post_schedule_created` → 投影
+/// `im:channel:schedule-created {channelId, hasSchedulePost}` → channel 表 has_schedule_post=true
+/// 落库 + DOM data-has-schedule-post=true。
+///
+/// 薄壳纪律：只翻译入参 + 入泵，body 嵌套 post 对象 + endpoint 全在 helix-im，本壳不臆造 body。
+#[tauri::command]
+pub async fn im_create_schedule(
+    state: State<'_, AppState>,
+    channel_id: String,
+    message: String,
+    schedule_post_at: i64,
+    temporary_id: Option<String>,
+) -> Result<(), String> {
+    if channel_id.is_empty() {
+        return Err("im_create_schedule: channelId 为空".into());
+    }
+    if message.trim().is_empty() {
+        return Err("im_create_schedule: message 为空（定时正文）".into());
+    }
+    if schedule_post_at <= 0 {
+        return Err("im_create_schedule: schedulePostAt 须为正 int64 毫秒戳".into());
+    }
+    let mut payload = serde_json::json!({
+        "channel_id": channel_id,
+        "message": message,
+        "schedule_post_at": schedule_post_at,
+    });
+    if let Some(tmp) = temporary_id.filter(|t| !t.is_empty()) {
+        payload["temporary_id"] = serde_json::json!(tmp);
+    }
+    let tick = command("im_create_schedule", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_create_schedule: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// 就绪 probe：前端轮询此命令直到返回 `true`（increment 流动 + 静默窗口达成）。
 ///
 /// 返回值真精确度的边界见 `state::ReadinessProbe` 注释 + integration_todos（inflight==0

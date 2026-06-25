@@ -15,8 +15,10 @@ import {
   CHANNEL_UPDATE_CHANNEL,
   CHANNELS_LOADED_CHANNEL,
   CHANNELS_PROJECTION_CHANNEL,
+  CHANNEL_SCHEDULE_CREATED_CHANNEL,
   ChannelCreatedData,
   ChannelIncrementData,
+  ChannelScheduleCreatedData,
   MESSAGE_ROW_CHANNELS,
   MessageItemData,
   POST_SENDING_CHANNEL,
@@ -321,6 +323,37 @@ export class ImStoreService {
     }
   }
 
+  /**
+   * UC-1.10 定时消息 create：invoke('im_create_schedule', {channelId, message, schedulePostAt, temporaryId?}）。
+   *
+   * **壳不臆造 body**：body 嵌套 post 对象 + endpoint 全在 helix-im（commands.rs im_create_schedule →
+   * outbound/posts_existing.rs CreateScheduleCommand → POST posts/createSchedule
+   * {post:{channelId,message,temporaryId?}, schedulePostAt}）。壳只供 channelId（当前活动频道）+
+   * message（定时正文）+ schedulePostAt（未来发送毫秒戳）+ 可选 temporaryId。频道行 hasSchedule
+   * 由 helix `im:channel:schedule-created`（{channelId, hasSchedulePost}）投影驱动 data-has-schedule-post
+   * （频道级属性·壳纯渲染·无乐观合成）。非 Tauri / 命令缺失 → 静默（dev 浏览器单独调 UI 不卡）。
+   */
+  async createSchedule(
+    channelId: string,
+    message: string,
+    schedulePostAt: number,
+    temporaryId?: string,
+  ): Promise<void> {
+    const ch = channelId.trim();
+    const msg = message.trim();
+    if (!ch || !msg || !(schedulePostAt > 0)) return;
+    try {
+      await this.bridge.invoke<void>("im_create_schedule", {
+        channelId: ch,
+        message: msg,
+        schedulePostAt,
+        temporaryId,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（hasSchedule 靠投影驱动·无乐观合成）。
+    }
+  }
+
   // ——— 私有 ———
 
   private onBus(env: BusEnvelope): void {
@@ -354,6 +387,15 @@ export class ImStoreService {
     // （data-channel-id 直映·壳纯渲染只持 channelId）。先于 message-row 分支（channel-row 信号）。
     if (channel === CHANNEL_CREATED_CHANNEL) {
       this.applyChannelCreated(env.payload?.data as ChannelCreatedData | undefined);
+      return;
+    }
+    // UC-1.10 定时消息：im:channel:schedule-created（{channelId, hasSchedulePost}·WS post_schedule_created
+    // 透传）→ 把该频道行 hasSchedule 标 true（data-has-schedule-post 频道级属性·壳纯渲染透传投影
+    // hasSchedulePost·不在 JS 合成）。先于 message-row 分支（channel-row 信号·非 message_item_data fat 集）。
+    if (channel === CHANNEL_SCHEDULE_CREATED_CHANNEL) {
+      this.applyScheduleCreated(
+        env.payload?.data as ChannelScheduleCreatedData | undefined,
+      );
       return;
     }
 
@@ -452,6 +494,27 @@ export class ImStoreService {
     if (!channelId) return;
     this.upsertChannelRow(channelId);
     if (!this._activeChannel()) this._activeChannel.set(channelId);
+  }
+
+  /**
+   * UC-1.10：im:channel:schedule-created（{channelId, hasSchedulePost}·WS post_schedule_created
+   * 透传）→ 把该频道行 hasSchedule 标透传值（data-has-schedule-post 频道级属性·壳纯渲染）。
+   * 行不存在则先 upsert（确保 data-channel-id 锚存在）。壳只透传投影 hasSchedulePost·不在 JS 合成。
+   */
+  private applyScheduleCreated(
+    data: ChannelScheduleCreatedData | undefined,
+  ): void {
+    if (!data || typeof data !== "object") return;
+    const channelId =
+      (typeof data.channelId === "string" && data.channelId) || "";
+    if (!channelId) return;
+    this.upsertChannelRow(channelId);
+    const has = data.hasSchedulePost === true;
+    this._channels.update((rows) =>
+      rows.map((c) =>
+        c.channelId === channelId ? { ...c, hasSchedule: has } : c,
+      ),
+    );
   }
 
   /**
