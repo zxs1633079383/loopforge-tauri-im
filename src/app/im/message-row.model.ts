@@ -73,6 +73,10 @@ export interface MessageRow {
   channelId: string;
   /** data-event-seq：乐观时未知（null → 渲染空串），echo 后补 */
   eventSeq: number | null;
+  /** createAt（int64 毫秒·非 DOM 属性）：query_result/older_loaded 带 create_at/createAt。
+   *  UC-2.2 上拉历史以当前最旧行的 (msgId, createAt) 作锚（anchorPostId/anchorCreateAt）。
+   *  乐观发送行未知 → undefined（不参与最旧锚选取）。 */
+  createAt?: number;
   /** data-send-status */
   sendStatus: SendStatus;
   /** data-read-bits */

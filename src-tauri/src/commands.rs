@@ -632,6 +632,52 @@ pub async fn im_create_schedule(
         .map_err(|e| format!("im_create_schedule: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-2.2 上拉加载更早历史（读族 request-response 编排）：前端滚到顶触发 → 传 `channelId` +
+/// `anchorPostId`（当前已加载最旧一条带 server id 的消息·作 pivot）+ `anchorCreateAt`（该锚
+/// createAt int64 毫秒·严格更早过滤基准）+ 可选 `limit`（目标条数·缺省 20·clamp 1..=100）→ 本命令
+/// 转 snake_case 入泵 `im_load_older_context`（helix-im `older_context.rs` `LoadOlderState` 编排：
+/// 每轮兑现出站 `POST posts/postContext {postId, before}`·全 camelCase·真源 http.rs:96·回报推进
+/// anchor·凑够 target / 服务端无更早 / pivot 卡住 / 轮数耗尽 → emit `im:messages:older_loaded`
+/// {channelId, messages[], hasMore}·升序 wire Post 透传供前端 prepend·projection-schema §1.3）。
+///
+/// 读族编排无 WS 回声：多轮 postContext HTTP 200 经 helix port_reply ingest 推进 → 收尾 emit。
+/// 薄壳纪律：只翻译入参（channel_id/anchor_post_id/anchor_create_at/limit）+ 入泵；endpoint /
+/// body camelCase 化（{postId,before}）/ 多轮翻页编排全在 helix-im，本壳不臆造 wire body。
+#[tauri::command]
+pub async fn im_load_older_context(
+    state: State<'_, AppState>,
+    channel_id: String,
+    anchor_post_id: String,
+    anchor_create_at: i64,
+    limit: Option<u32>,
+) -> Result<(), String> {
+    if channel_id.trim().is_empty() {
+        return Err("im_load_older_context: channelId 为空".into());
+    }
+    if anchor_post_id.trim().is_empty() {
+        return Err(
+            "im_load_older_context: anchorPostId 为空（须当前最旧一条带 server id 的消息作 pivot）".into(),
+        );
+    }
+    if anchor_create_at <= 0 {
+        return Err("im_load_older_context: anchorCreateAt 须为正 int64 毫秒戳".into());
+    }
+    let mut payload = serde_json::json!({
+        "channel_id": channel_id,
+        "anchor_post_id": anchor_post_id,
+        "anchor_create_at": anchor_create_at,
+    });
+    if let Some(l) = limit {
+        payload["limit"] = serde_json::json!(l);
+    }
+    let tick = command("im_load_older_context", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_load_older_context: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// 就绪 probe：前端轮询此命令直到返回 `true`（increment 流动 + 静默窗口达成）。
 ///
 /// 返回值真精确度的边界见 `state::ReadinessProbe` 注释 + integration_todos（inflight==0

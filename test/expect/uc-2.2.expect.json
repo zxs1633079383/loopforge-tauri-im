@@ -38,10 +38,7 @@
   },
 
   "storage": {
-    "op": "batch_upsert",
-    "table": "message",
-    "minRows": 1,
-    "_note": "spec §5 facet④：多轮 postContext 查询结果 upsert 落 message 行（PK=temporary_id，id=server_id，前置数据由 sync/send 已落入，本 op 补齐或更新）。总行数≥1（至少一轮返回一条消息）。装饰器仅暴露 {op,table,rows}（不含行内容，避隐私）；行内容由 harness 直接查库二选一。"
+    "_note": "N/A (读族编排·无 write)。冻结真源 projection-schema §1.3 行 137：older_context::emit_older_loaded = 『helix-im 编排，前端 prepend』——older_context.rs 只产 Effect::Http(多轮 postContext) + Effect::Emit(older_loaded)，**无 Effect::Persist**（与 UC-2.4 getReplies 同读族形态·不落新行·cursor 不推进）。reducer runFourFacetRead 不裁定 ④ 面。〔Phase1 草拟 expect 曾据 issue 锚『④ message upsert』填 batch_upsert·与 round6 实现 + projection-schema §1.3 冲突·按 C004 以冻结真源 projection-schema 校正为 N/A。〕"
   },
 
   "dom": {

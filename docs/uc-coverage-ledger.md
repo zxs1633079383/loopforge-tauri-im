@@ -206,16 +206,30 @@
   ①④ optional/read-path）。helix `acl/from_tick.rs::accepts_tick` query 族放行已修（line 28
   `|| is_query`）→ 真命令路径可达（实测 58 行 emit·原 ledger「依赖 UC-2.2 accept 闸修复」注已过时·删）。
 
-### UC-2.2 上拉更早历史 — `⬜ pending`（认领 M）🔴 **helix 侧 wire-bug 待修**
+### UC-2.2 上拉更早历史 — `✅ 四面全绿`（读族编排 ①②③·④ N/A·认领 M·issue #22·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）
 
-> **helix ledger 当前唯一 wire-bug**：`acl/from_tick.rs::accepts_tick` Command 臂漏 `query::is_query()`·
-> `im_load_older_context` 经真命令路径 accept()==false **静默丢弃**·拖累全 4 query 族命令（load_older/query_messages/query_dialog/delete_all_dialogs）不可达。
-> 修 = Command 臂补 `|| crate::query::is_query(name)`。**LoopForge ① 面要等 helix 此修复才能验**。
+> **原 helix wire-bug 注已过时**：`acl/from_tick.rs::accepts_tick` Command 臂漏 `query::is_query()` 的修复
+> **已在 pin 的 round6@bbbf809**（line 28 `|| crate::query::is_query(cmd.name.as_ref())`·Round-5 e2e 揪出·
+> from_tick.rs 注释实证）→ `im_load_older_context` 真命令路径可达·实跑 2 轮 postContext 出站命中（早先「①
+> 预期红·fix 在 round3 不在 round6」判断有误·实测 round6 已含·见 issue #22 close comment）。
 
-- **① 出站 HTTP**：多轮 `posts/postContext`，body `{postId, before}`（待核·partial 8 http.rs:89·moving anchor ≤8 轮）。
-- **② 投影**：`im:messages:older_loaded`（§1.3 透传·`{channelId, messages, hasMore}`·messages=严格更早 wire Post 升序数组）。
-- **③ DOM**：prepend 更早消息行。
-- **④ 落库**：`message` upsert prepend。
+- **① 出站 HTTP**：多轮 `posts/postContext`，body `{before:50, postId}`（camelCase·forbidden snake post_id/before_id）。
+  实跑 2 轮 moving anchor：`postId=by5bgzfz1frk3j9bb7r5z3u9ay` → `postId=oyra3judutfaxcn7n57mxjgwah`
+  （reducer `createOutbound` fallback 锚 urlEndsWith=posts/postContext·取最后一轮逐字段断言）。**GREEN**。
+- **② 投影**：`im:messages:older_loaded`（§1.3 透传·`{channelId, messages, hasMore}` 外层 3 键严格·
+  `older_context::emit_older_loaded`·实跑 messages=9 严格更早 wire Post 升序 + hasMore=false）。**GREEN**。
+- **③ DOM**：prepend 9 更早消息行到 ML 区头部（壳 `applyOlderLoaded` 升序逆插头部·data-msg-id 直映
+  server id·实跑 firstScreen 50 → settled 59·全行 channel-id/msg-id 齐）。**GREEN**。
+- **④ 落库**：N/A（读族编排·`older_context.rs` 只产 `Effect::Http`+`Effect::Emit`·**无 Effect::Persist**·
+  冻结真源 projection-schema §1.3 行 137「helix-im 编排，前端 prepend」·与 UC-2.4 getReplies 同读族无写·
+  按 C004 校正草拟 expect.storage `batch_upsert`→N/A·reducer runFourFacetRead 不裁定 ④）。
+- **链路**：滚到顶点 `[data-testid=load-older-btn]` → `onLoadOlder` → `store.loadOlder`（选当前最旧已加载行
+  server id+createAt 作 pivot 锚·薄壳不合成 before）→ invoke `im_load_older_context`（commands.rs 薄壳翻译
+  入泵 snake `{channel_id, anchor_post_id, anchor_create_at}`·lib.rs 双 handler 注册）→ helix `module_query`
+  发首轮 postContext → `module.rs` PortReply ingest_round 推进 anchor → 凑够/耗尽 emit older_loaded → 壳 prepend。
+- **测试件**：`test/specs/uc-2.2.e2e.mjs`（e2e 先 invoke `im_query_messages_by_channel` 建首屏锚行 → 点上拉
+  按钮 → waitUntil 等行数增长非恒真·HX-C011 → `runFourFacetRead` 裁定 ①② + ③ DOM 行集断言）+
+  `test/expect/uc-2.2.expect.json`（①② 冻结·④ N/A·storage 草拟纠偏 batch_upsert→N/A 对齐 projection-schema §1.3）。
 
 ### UC-2.3 按 postId 定位 — `✅ 四面全绿`（读族本地·②③④·① N/A optional·认领 S·issue #21·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）
 
@@ -482,10 +496,10 @@
 | bot/agent 召唤（整域，不计入 39）| 1 域 | — | — | — | 1 域（⛔）|
 
 > 精确分类（按本台账每节标题图例为准·1+7+24+7=39）：
-> - **✅ four-facet-verified = 12**：UC-2.3（2026-06-25 实跑全绿·读族本地 ②③④·① N/A optional·store.locatePost + debug 桥 debugLocatePost 复用 query_result + rows computed highlighted 高亮 + reducer scanFallback/isOutboundOptional 机件·契约纠偏 getPostsAfterIndex/query_result 互斥→走本地 Scan·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #21）、UC-2.1（2026-06-25 实跑全绿·读族 ②③·①④ N/A·im_query_messages_by_channel 命令 + store applyMessagesQueryResult 渲染 50 行 + onSelectChannel 切群接线·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #20）、UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-1.4（2026-06-25 实跑全绿·onResend→store.resend 复用 tmp upsert + debug 桥注入失败前置·corr_key=ch=15gcgoyf;tmp=pfuneqqp;sid=c58zkjqn;seq=68）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）、UC-1.9（2026-06-25 实跑全绿·im_urgent_post/confirm 命令 + diffOutboundPhases 两阶段 + msg_id→sid 归一 + 关窗前等 post_update in-window·corr_key=sid=tasdeqxtubbrzbigoic5iya77o）、UC-1.10（2026-06-25 实跑全绿·im_create_schedule 命令 + create-outbound fallback 复用·posts/createSchedule + im:channel:schedule-created·storage op 草拟纠正 update→batch_update·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）、UC-3.3（2026-06-25 实跑全绿·im_template_received 命令 camelCase {postId} + 前置发 TEMPLATE 类型消息 + store extractTemplateReceived + storage op 草拟纠正 update→batch_update + dom _note 移出 dataAttrs·post_update 广播含发起连接故单账号即绿·corr_key=sid=1ouh77refibz8j4ujz4aiy1m8a）。
+> - **✅ four-facet-verified = 13**：UC-2.2（2026-06-25 实跑全绿·读族编排 ①②③·④ N/A·im_load_older_context 命令 + store.loadOlder 选最旧行 pivot 锚 + applyOlderLoaded prepend + createOutbound fallback 锚 postContext·实跑 2 轮 moving anchor + prepend 9 行·原「①预期红 round6 缺 acl fix」判断有误·round6@bbbf809 已含 is_query 白名单·storage 草拟 batch_upsert 按 C004 校正 N/A 对齐 projection-schema §1.3·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #22）、UC-2.3（2026-06-25 实跑全绿·读族本地 ②③④·① N/A optional·store.locatePost + debug 桥 debugLocatePost 复用 query_result + rows computed highlighted 高亮 + reducer scanFallback/isOutboundOptional 机件·契约纠偏 getPostsAfterIndex/query_result 互斥→走本地 Scan·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #21）、UC-2.1（2026-06-25 实跑全绿·读族 ②③·①④ N/A·im_query_messages_by_channel 命令 + store applyMessagesQueryResult 渲染 50 行 + onSelectChannel 切群接线·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #20）、UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-1.4（2026-06-25 实跑全绿·onResend→store.resend 复用 tmp upsert + debug 桥注入失败前置·corr_key=ch=15gcgoyf;tmp=pfuneqqp;sid=c58zkjqn;seq=68）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）、UC-1.9（2026-06-25 实跑全绿·im_urgent_post/confirm 命令 + diffOutboundPhases 两阶段 + msg_id→sid 归一 + 关窗前等 post_update in-window·corr_key=sid=tasdeqxtubbrzbigoic5iya77o）、UC-1.10（2026-06-25 实跑全绿·im_create_schedule 命令 + create-outbound fallback 复用·posts/createSchedule + im:channel:schedule-created·storage op 草拟纠正 update→batch_update·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）、UC-3.3（2026-06-25 实跑全绿·im_template_received 命令 camelCase {postId} + 前置发 TEMPLATE 类型消息 + store extractTemplateReceived + storage op 草拟纠正 update→batch_update + dom _note 移出 dataAttrs·post_update 广播含发起连接故单账号即绿·corr_key=sid=1ouh77refibz8j4ujz4aiy1m8a）。
 > - **🟡 partial = 7**：UC-4.4 心跳 / UC-4.5 陌生 channel / UC-5.3 关群 / UC-5.5 置顶 / UC-6.1 拉踢 / UC-6.2 管理员 / UC-8.x 投票平均分。
 > - **🟡 ①③-verified · ②④ server-data-gap（read echo 多设备-only）= 2**：UC-3.1 会话已读 / UC-3.2 单条已读（2026-06-25 实跑·①③ 严格断言绿 + ②④ read echo 是多设备 echo·单连接结构性不可观测·带 run.jsonl 证据 + 可证伪护栏·须 L2 双账号转绿）。
-> - **⬜ pending = 11**：1.2 / 1.5 / 1.8 / 2.2 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 / UC-3.3 / UC-1.4 / UC-1.7 / UC-2.4 / UC-2.1 / UC-2.3 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
+> - **⬜ pending = 10**：1.2 / 1.5 / 1.8 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 已转 ✅·原「① blocked on helix wire-bug」判断有误·round6@bbbf809 已含 acl is_query 放行 fix·实跑 ①②③ 全绿；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 / UC-3.3 / UC-1.4 / UC-1.7 / UC-2.4 / UC-2.1 / UC-2.3 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
 > - **⛔ unreachable = 7**（39 分母内）：UC-1.3 文件 / UC-1.6 编辑 / UC-4.3 too_long / UC-5.6 公告 / UC-5.7 在线 / UC-7.x 搜索·另 bot/agent 整域 ⛔（不计入 39 分母）。
 
 > ⚠️ **诚实声明**：全 39 UC 中唯一经真 Tauri+WKWebView 四面 oracle 跑绿的是 **UC-1.1**。`🟡 partial` 表示 helix ledger 已证服务端 wire 但 LoopForge 客户端四面尚未实跑（标 partial 是为标记「有可证主路径 + 部分子项物理够不到」，**不等于 LoopForge 已验**）。rollout 实跑前，唯一 ✅ 的就是 UC-1.1。

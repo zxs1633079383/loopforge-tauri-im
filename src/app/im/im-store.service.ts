@@ -25,6 +25,8 @@ import {
   MESSAGES_QUERY_RESULT_CHANNEL,
   MessageItemData,
   MessagesQueryResultData,
+  OLDER_LOADED_CHANNEL,
+  OlderLoadedData,
   POST_SENDING_CHANNEL,
   PostSendingData,
   READ_RESULT_CHANNEL,
@@ -490,6 +492,38 @@ export class ImStoreService {
   }
 
   /**
+   * UC-2.2 上拉加载更早历史：以当前已加载行集**最旧**一条（带 server id + createAt）作 pivot
+   * 锚 → invoke im_load_older_context（channelId + anchorPostId + anchorCreateAt）→ helix 多轮
+   * postContext 编排回报后 emit im:messages:older_loaded → applyOlderLoaded prepend 更早行。
+   *
+   * 锚选取：最旧行 = createAt 最小且有 server msgId 的行（乐观未对账行无 server id·不作 pivot·
+   * 后端 postContext 认 server postId）。无可用锚（行集空/全无 createAt）→ 不发（无 anchor 无法翻页）。
+   * 薄壳纪律：只选锚 + 入泵·翻页编排（轮数/before/凑够判定）全在 helix·不在 JS 合成 before。
+   */
+  async loadOlder(): Promise<void> {
+    const ch = this._activeChannel().trim();
+    if (!ch) return;
+    // 选当前频道行集里 createAt 最小且带 server msgId 的一条作 pivot 锚。
+    let oldest: MessageRow | null = null;
+    for (const r of this._rows()) {
+      if (r.channelId !== ch) continue;
+      if (typeof r.createAt !== "number") continue;
+      if (!r.msgId) continue;
+      if (oldest === null || r.createAt < (oldest.createAt as number)) oldest = r;
+    }
+    if (!oldest) return; // 无可翻页锚（无已加载历史 / 无 createAt）→ 不发
+    try {
+      await this.bridge.invoke<void>("im_load_older_context", {
+        channelId: ch,
+        anchorPostId: oldest.msgId,
+        anchorCreateAt: oldest.createAt,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（历史靠 im:messages:older_loaded 投影驱动·无乐观合成）。
+    }
+  }
+
+  /**
    * UC-2.3 按 postId 定位：在当前已加载（query_result）的本地消息行里定位目标 server postId，
    * 给命中行打高亮（rows computed 据 _locateTarget 渲染 [data-highlighted="true"]）。
    *
@@ -688,6 +722,15 @@ export class ImStoreService {
     // （query_result 外层 2 键·非 message_item_data fat 集·messages 元素是 snake DB 行）。
     if (channel === MESSAGES_QUERY_RESULT_CHANNEL) {
       this.applyMessagesQueryResult(env.payload?.data as MessagesQueryResultData | undefined);
+      return;
+    }
+
+    // UC-2.2 上拉更早历史：im:messages:older_loaded（{channelId, messages, hasMore}·camelCase wire
+    // Post 升序数组）→ 把 messages **prepend** 进 ML 区头部（更早历史在上方·data-msg-id 直映
+    // server id·壳纯渲染透传 wire Post·不解析重组）。读族编排无 WS 回声·多轮 postContext 收尾即 emit。
+    // 先于 captureActiveChannel/message-row fat 分支（older_loaded 外层 3 键·非 message_item_data fat 集）。
+    if (channel === OLDER_LOADED_CHANNEL) {
+      this.applyOlderLoaded(env.payload?.data as OlderLoadedData | undefined);
       return;
     }
 
@@ -1004,6 +1047,11 @@ export class ImStoreService {
       const readBits = this.toReadBits(m["read_bits"] as string | number | undefined);
       const ch = (typeof m["channel_id"] === "string" && m["channel_id"]) || channelId;
       const revoked = m["revoke"] === 1 || m["revoke"] === true;
+      // create_at（int64 毫秒·UC-2.2 上拉锚选取用·DB snake 列）；缺/坏 → undefined（不参与最旧锚）。
+      const createAt =
+        typeof m["create_at"] === "number" && Number.isFinite(m["create_at"])
+          ? (m["create_at"] as number)
+          : undefined;
 
       // upsert：按 temporary_id（乐观锚）或 server id 命中既有行 → 覆写关键 data-*（不抹已对账链态）。
       const idx = this._rows().findIndex(
@@ -1023,6 +1071,7 @@ export class ImStoreService {
             type: type || prev.type,
             readBits: readBits || prev.readBits,
             revoked: revoked || prev.revoked,
+            createAt: createAt ?? prev.createAt,
           };
           return next;
         });
@@ -1042,7 +1091,87 @@ export class ImStoreService {
           text,
           type,
           revoked: revoked || undefined,
+          createAt,
         },
+      ]);
+    }
+  }
+
+  /**
+   * UC-2.2 上拉更早历史：im:messages:older_loaded（{channelId, messages, hasMore}·camelCase wire
+   * Post **升序**数组）→ 把更早消息 **prepend** 进 ML 区头部（更早历史在上方·data-msg-id 直映
+   * server id·壳纯渲染透传 wire Post·不解析重组）。
+   *
+   * messages 元素 = wire Post（camelCase·projection-schema §1.3）：`id`（server msg id）·
+   * `temporaryId`·`channelId`·`createAt`（int 毫秒）·`message`·`type`。msgId 优先取 server `id`
+   * （历史消息已对账·必有 server id），缺则退 temporaryId。upsert：按 (temporaryId||id) 命中既有行
+   * 则覆写（去重·防多轮/与首屏重叠重复行），否则 **prepend** 到头部（升序数组逆序插入头部 → 保持
+   * DOM 内升序·更早在上）。读族无 event_seq → eventSeq=null。
+   */
+  private applyOlderLoaded(data: OlderLoadedData | undefined): void {
+    if (!data || typeof data !== "object") return;
+    const channelId =
+      (typeof data.channelId === "string" && data.channelId) || "";
+    const messages = Array.isArray(data.messages) ? data.messages : [];
+    if (!channelId) return;
+    if (!this._activeChannel()) this._activeChannel.set(channelId);
+
+    // 升序数组逆序遍历 + 每条 prepend 到头部 → DOM 头部保持升序（最早在最上·history 方向）。
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const raw = messages[i];
+      if (!raw || typeof raw !== "object") continue;
+      const m = raw as Record<string, unknown>;
+      const temporaryId =
+        (typeof m["temporaryId"] === "string" && m["temporaryId"]) || "";
+      const serverId = (typeof m["id"] === "string" && m["id"]) || "";
+      const msgId = serverId || temporaryId;
+      if (!msgId) continue;
+      const text = (typeof m["message"] === "string" && m["message"]) || "";
+      const type = (typeof m["type"] === "string" && m["type"]) || "TEXT";
+      const ch = (typeof m["channelId"] === "string" && m["channelId"]) || channelId;
+      const createAt =
+        typeof m["createAt"] === "number" && Number.isFinite(m["createAt"])
+          ? (m["createAt"] as number)
+          : undefined;
+      const readBits = this.toReadBits(m["readBits"] as string | number | undefined);
+
+      // 去重 upsert：命中既有行（首屏已加载 / 多轮重叠）→ 覆写关键 data-*（不抹已对账链态）。
+      const idx = this._rows().findIndex(
+        (r) =>
+          (temporaryId && r.temporaryId === temporaryId) ||
+          (serverId && r.msgId === serverId),
+      );
+      if (idx >= 0) {
+        this._rows.update((rows) => {
+          const next = rows.slice();
+          const prev = next[idx];
+          next[idx] = {
+            ...prev,
+            msgId: msgId || prev.msgId,
+            channelId: ch || prev.channelId,
+            text: text || prev.text,
+            type: type || prev.type,
+            createAt: createAt ?? prev.createAt,
+          };
+          return next;
+        });
+        continue;
+      }
+
+      // 新的更早行 → prepend 到头部（history 方向·更早在上方）。
+      this._rows.update((rows) => [
+        {
+          msgId,
+          temporaryId,
+          channelId: ch,
+          eventSeq: null, // wire Post 无 event_seq（读族·渲染空串）
+          sendStatus: "sent" as const,
+          readBits,
+          text,
+          type,
+          createAt,
+        },
+        ...rows,
       ]);
     }
   }

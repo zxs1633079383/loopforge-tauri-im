@@ -144,6 +144,23 @@ export interface MessagesQueryResultData {
   messages: unknown[];
 }
 
+/**
+ * UC-2.2 上拉更早历史投影 channel（projection-schema §1.3 older_context::emit_older_loaded）。
+ * data 形态 = `{ channelId, messages: [...], hasMore }`（外层 3 键·camelCase·冻结集）。
+ * messages 元素 = 严格更早 wire Post **升序**数组（透传 camelCase：id/temporaryId/channelId/
+ * createAt/message/type…·inner 字段后端定不冻结）。hasMore=true 表尚有更早；false 表到顶。
+ * 触发：invoke im_load_older_context（滚到顶上拉）→ helix 多轮 postContext 编排回报后收尾 emit。
+ * 壳收到即把 messages **prepend** 进 ML 区消息行头部（data-msg-id 直映·壳纯渲染不合成）。
+ */
+export const OLDER_LOADED_CHANNEL = "im:messages:older_loaded";
+
+/** im:messages:older_loaded data 形态（projection-schema §1.3·{channelId, messages, hasMore}·messages 透传 wire Post）。 */
+export interface OlderLoadedData {
+  channelId: string;
+  messages: unknown[];
+  hasMore: boolean;
+}
+
 /** message-row 类 channel（携 message_item_data fat 完整集） */
 export const MESSAGE_ROW_CHANNELS: ReadonlySet<string> = new Set([
   "im:post:received",

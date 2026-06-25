@@ -733,9 +733,10 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.store.resend(row.temporaryId, row.channelId, row.text);
   }
 
-  /** UC-2.2 上拉更早历史。占位 → 接 im_load_older_context。 */
+  /** UC-2.2 上拉更早历史：以当前最旧已加载行作锚 → store.loadOlder（invoke im_load_older_context）
+   *  → helix 多轮 postContext 编排回报后 emit im:messages:older_loaded → prepend 更早行。 */
   onLoadOlder(): void {
-    /* UC-2.2 接通 */
+    void this.store.loadOlder();
   }
 
   // ═══ MB 成员区交互件（占位骨架）═══
