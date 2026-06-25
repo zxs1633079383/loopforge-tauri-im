@@ -1,6 +1,6 @@
 import { Injectable, computed, inject, signal } from "@angular/core";
 import { TauriBridgeService } from "./tauri-bridge.service";
-import { extractReactions, extractTemplateReceived } from "./props-extract";
+import { extractReactions, extractTemplateReceived, isSystemNotice } from "./props-extract";
 import { extractReplyIds } from "./read-result-extract";
 import {
   BookmarkRow,
@@ -1344,8 +1344,12 @@ export class ImStoreService {
     const data = env.payload?.data as MessageItemData | undefined;
     if (!data || typeof data !== "object") return;
     // UC-5.4 群属性回读：channelUpdate 系统 post（props.type=channelUpdate）→ 刷 channel 行属性
-    // （data-channel-display-name/-notice）·不进 ML 消息列表（系统帧·非普通消息行）。命中即早退。
-    if (this.applyChannelUpdatePost(data)) return;
+    // （data-channel-display-name/-notice）。注：channelUpdate post 本身 type=NOTICE/userId=SYS =
+    // **系统通知消息**（NOTICE_TYPES·full-map partials/7 §3）→ 现网前端既刷群头属性又在消息列表
+    // 渲染系统提示行（"X 改了群名"）。故**不早退**：先刷频道属性·再落 applyMessageItem 渲染系统
+    // 消息行（UC-10.2 data-system-notice·isSystemNotice 判 NOTICE）。两行为共存·不互斥（UC-5.4
+    // 仍读频道行属性·UC-10.2 读消息行系统标·加法式不回退）。
+    this.applyChannelUpdatePost(data);
     this.applyMessageItem(data);
   }
 
@@ -1797,6 +1801,9 @@ export class ImStoreService {
     // UC-3.3：从 fat 投影 props 抽模板已收到态（props.template.userIds 非空 → data-template-received=1·
     //   壳纯渲染·无乐观合成）。post_update echo（EventKind::PostEdit）携 template patch 进 props。
     const templateReceived = extractTemplateReceived(d.props);
+    // UC-10.2：从 fat 投影 type 判系统通知（SYSTEM/SYSTEN 拼写陷阱保真透传·data-system-notice）。
+    //   壳纯渲染·无乐观合成（系统通知由 WS 帧驱动的 im:post:received 透传 type 投影）。
+    const systemNotice = isSystemNotice(d.type);
 
     // UC-1.8 post_update echo 复用既有消息（无 temporaryId 乐观行）→ 按 server id 命中行覆写
     //   reactions（emoji patch）。先试 temporaryId 锚（发送对账），再退 server id 锚（quickReply
@@ -1833,6 +1840,8 @@ export class ImStoreService {
           reactions: reactions ?? prev.reactions,
           // templateReceived 命中则置位（patch 只增不清·非模板 echo 不抹既有态·UC-3.3）。
           templateReceived: templateReceived ? true : prev.templateReceived,
+          // systemNotice 命中则置位（type=SYSTEM/SYSTEN 透传·非系统 echo 不抹既有态·UC-10.2）。
+          systemNotice: systemNotice ? true : prev.systemNotice,
         };
         return next;
       });
@@ -1858,6 +1867,7 @@ export class ImStoreService {
         type: d.type || "TEXT",
         reactions: reactions ?? undefined,
         templateReceived: templateReceived || undefined,
+        systemNotice: systemNotice || undefined,
       },
     ]);
   }

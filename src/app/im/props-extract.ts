@@ -43,6 +43,47 @@ export function extractTemplateReceived(props: unknown): boolean {
   return Array.isArray(userIds) && userIds.length > 0;
 }
 
+/**
+ * 系统/通知消息类型集（UC-10.2·data-system-notice 渲染源·权威真源冻结）。
+ *
+ * 真源 = helix full-map partials/7--client-ui-rendering.md §3：现网前端 chat-content 模板按
+ * `NOTICE_TYPES.includes(item.type)` 二分发——命中 → `<message-system>`（系统/分隔条·走
+ * generateMessage 文案合成）·否则 → `<message-item>`（气泡）。本壳以 data-system-notice='1'
+ * 等价标注「该行走系统消息渲染」。
+ *
+ * NOTICE_TYPES（enum.ts·verbatim）= [TIME, NOTICE, MEETING_NOTICE, SYSTEM_KR_EDIT,
+ * SYSTEM_KR_STATE_EDIT, SYSTEM_KR_VOTE, SYSTEM_KR_PUBLISH, SYSTEM_MONTH_ORIENT_SHARE]。
+ *
+ * 注（C004 契约纠偏·issue #37）：issue/ledger 草拟锚写「type=SYSTEM/SYSTEN」是 Phase1 简化——
+ * 实际现网系统通知（如改群名 channelUpdate post）wire `type=NOTICE`·`userId=SYS`（UC-5.4 真机
+ * 实证 run.jsonl seq19/514）·走 NOTICE_TYPES 分发。`SYSTEM` 枚举值本身拼写 `SYSTEN`（partial7 §4.2·
+ * 命名陷阱保真透传）·一并纳入兼容（现网 message-system 不直接分发它·但保真容错·两种拼写都判）。
+ */
+const NOTICE_TYPES = new Set([
+  "TIME",
+  "NOTICE",
+  "MEETING_NOTICE",
+  "SYSTEM_KR_EDIT",
+  "SYSTEM_KR_STATE_EDIT",
+  "SYSTEM_KR_VOTE",
+  "SYSTEM_KR_PUBLISH",
+  "SYSTEM_MONTH_ORIENT_SHARE",
+  // SYSTEM 枚举值拼写陷阱保真（partial7 §4.2 `SYSTEM: 'SYSTEN'`）·两种拼写都判系统消息。
+  "SYSTEM",
+  "SYSTEN",
+]);
+
+/**
+ * 判定消息类型是否系统通知行（UC-10.2·data-system-notice 渲染源）。
+ *
+ * 严格匹配 NOTICE_TYPES（大写归一）→ 走系统消息渲染（data-system-notice='1'）。
+ * 普通消息类型（TEXT/DOCUMENT/IMAGE/TEMPLATE/VOTE…）→ 返 false（不渲染该属性·守可证伪）。
+ */
+export function isSystemNotice(type: unknown): boolean {
+  if (typeof type !== "string") return false;
+  return NOTICE_TYPES.has(type.toUpperCase());
+}
+
 /** props 形态容错归一：对象原样·字符串 JSON.parse·非对象/解析失败 → null。 */
 function parseProps(props: unknown): Record<string, unknown> | null {
   if (props == null) return null;
