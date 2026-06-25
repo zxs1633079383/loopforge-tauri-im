@@ -18,7 +18,9 @@ import {
   CHANNELS_LOADED_CHANNEL,
   CHANNELS_PROJECTION_CHANNEL,
   CHANNEL_SCHEDULE_CREATED_CHANNEL,
+  CHANNEL_CLOSED_CHANNEL,
   ChannelCreatedData,
+  ChannelClosedData,
   ChannelIncrementData,
   ChannelScheduleCreatedData,
   MESSAGE_ROW_CHANNELS,
@@ -380,6 +382,26 @@ export class ImStoreService {
       });
     } catch {
       // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（置顶态靠投影驱动·无乐观合成）。
+    }
+  }
+
+  /**
+   * UC-5.3 关闭/退出群：invoke('im_channel_close', {channelId}）。
+   *
+   * **壳不臆造 body**：endpoint + camelCase body 由 Rust/helix-im 兜底（commands.rs
+   * im_channel_close → outbound/channel_existing.rs ChannelCloseCommand → POST channel/close
+   * {channelId}）。壳只供 channelId（目标频道）。WS 回 channel_close（broadcast 到 channelId·
+   * 自己也收）→ ④ channel 表 batch_update（delete_at + is_active=0）+ ② im:channel:closed
+   * （{channelId, deleteAt}）→ applyChannelClosed 把 CL 区行移除（data-channel-id 消失·壳纯渲染
+   * 只消费投影删行·无乐观合成）。非 Tauri / 命令缺失 → 静默。
+   */
+  async closeChannel(channelId: string): Promise<void> {
+    const ch = channelId.trim();
+    if (!ch) return;
+    try {
+      await this.bridge.invoke<void>("im_channel_close", { channelId: ch });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（软删态靠投影驱动·无乐观合成）。
     }
   }
 
@@ -755,6 +777,13 @@ export class ImStoreService {
       this.applyChannelCreated(env.payload?.data as ChannelCreatedData | undefined);
       return;
     }
+    // UC-5.3 关闭/退出群：im:channel:closed（{channelId, deleteAt}·WS channel_close 透传·独立
+    // broadcast 推送·非批次结束 thin）→ 把该频道行从 CL 区移除（data-channel-id 消失·壳纯渲染只
+    // 消费投影删行·不在 JS 臆造软删态）。先于 message-row 分支（channel-row 信号·非 fat 集）。
+    if (channel === CHANNEL_CLOSED_CHANNEL) {
+      this.applyChannelClosed(env.payload?.data as ChannelClosedData | undefined);
+      return;
+    }
     // UC-1.10 定时消息：im:channel:schedule-created（{channelId, hasSchedulePost}·WS post_schedule_created
     // 透传）→ 把该频道行 hasSchedule 标 true（data-has-schedule-post 频道级属性·壳纯渲染透传投影
     // hasSchedulePost·不在 JS 合成）。先于 message-row 分支（channel-row 信号·非 message_item_data fat 集）。
@@ -960,6 +989,21 @@ export class ImStoreService {
     if (!channelId) return;
     this.upsertChannelRow(channelId);
     if (!this._activeChannel()) this._activeChannel.set(channelId);
+  }
+
+  /**
+   * UC-5.3：im:channel:closed（{channelId, deleteAt}·WS channel_close 透传·独立 broadcast）→
+   * 把该频道行从 CL 区移除（data-channel-id 消失·壳纯渲染只消费投影删行·不在 JS 臆造软删态）。
+   * 软删权威在 DB channel 表（delete_at + is_active=0 列）·壳层 CL 区只删行渲染·若该行是当前
+   * activeChannel 则清空 activeChannel（无活动会话·避免悬挂指向已关闭群）。
+   */
+  private applyChannelClosed(data: ChannelClosedData | undefined): void {
+    if (!data || typeof data !== "object") return;
+    const channelId =
+      (typeof data.channelId === "string" && data.channelId) || "";
+    if (!channelId) return;
+    this._channels.update((rows) => rows.filter((c) => c.channelId !== channelId));
+    if (this._activeChannel() === channelId) this._activeChannel.set("");
   }
 
   /**

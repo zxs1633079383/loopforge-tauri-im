@@ -653,6 +653,36 @@ pub async fn im_channel_change_top(
         .map_err(|e| format!("im_channel_change_top: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-5.3 关闭/退出群：前端传 `channelId`（目标频道）→ 转 snake_case 入泵 `im_channel_close`
+/// （helix-im `outbound/channel_existing.rs` `ChannelCloseCommand` 兑现出站 `POST channel/close
+/// {channelId}`·真机curl真源 §6）。
+///
+/// WS 回 `channel_close`（broadcast 到 channelId·自己也收）→ ④ channel 表 batch_update
+/// （delete_at + is_active=0 定点 patch·channel_close.rs handle）+ ② `im:channel:closed`
+/// （{channelId, deleteAt}·独立 broadcast 推送·非批次结束 thin）→ ③ DOM channel 行移除（壳消费
+/// 投影把该频道行从 CL 区删除）。薄壳纪律：只翻译入参 + 入泵，body camelCase 化 + endpoint 全在
+/// helix-im，本壳不臆造。
+#[tauri::command]
+pub async fn im_channel_close(
+    state: State<'_, AppState>,
+    channel_id: String,
+) -> Result<(), String> {
+    if channel_id.trim().is_empty() {
+        return Err("im_channel_close: channelId 为空".into());
+    }
+    let tick = command(
+        "im_channel_close",
+        serde_json::json!({
+            "channel_id": channel_id,
+        }),
+    );
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_channel_close: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-1.8 快捷回复 emoji：前端传 `postId`（被回复消息 server id）+ `emoji`（用户选的表情）→
 /// 本命令补上自身 `userId`（AppState.identity·身份单一真源·壳不臆造 creds）转 snake_case 入泵
 /// `im_quick_reply`（helix-im `outbound/quick_reply.rs` `QuickReplyCommand` 兑现出站

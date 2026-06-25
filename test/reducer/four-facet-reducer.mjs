@@ -301,6 +301,12 @@ function diffDom(expect, actualDom) {
     const got = actualDom[k];
     if (want === '*') {
       if (got == null || got === '') issues.push(`DOM data-${k} 缺值`);
+    } else if (want === '!absent') {
+      // 语义：该 data-* 必须**不存在**（行已移除）。UC-5.3 关闭/退出群 ③：channel 行被
+      // im:channel:closed 投影删除后 data-channel-id 应消失（e2e 注入 null/缺值即满足）。
+      // 守可证伪：行仍在（got 非空）→ ③ 红（删行未发生·非 tautology）。
+      if (got != null && got !== '')
+        issues.push(`DOM data-${k} 应缺失（行已移除）实得 ${JSON.stringify(got)}`);
     } else if (want === '!tmp') {
       // 语义：echo 后 data-msg-id 必须 ≠ temporaryId（tmp→server 覆写发生）。
       if (got == null || got === actualDom._temporaryId)

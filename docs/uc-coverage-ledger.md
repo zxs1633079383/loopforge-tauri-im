@@ -332,13 +332,16 @@
 - **③ DOM**：`data-channel-id`（topic）。
 - **④ 落库**：`channel`（type=T）。
 
-### UC-5.3 关闭/退出群 — `🟡 partial`（认领 M·主动作 self 收·member-leave 广播子项 ⛔）
+### UC-5.3 关闭/退出群 — `✅ 关闭群四面全绿`（member-leave 广播子项 ⛔ broadcast-dep·子项不阻塞）
 
-- **① 出站 HTTP**：`POST /api/cses/channel/close`，body `{channelId}`（✅ helix 现状符合·`真机curl真源 §6`）/ 退群走 `channel/member/change` leaveUsers（待核映射·真源 §5）。
-- **① WS 推送**：action=`channel_close`（self 收·helix ledger 实证）·member-leave 广播给被增减目标（**非 self = broadcast-dep 子项·单账号 ⛔**）。
-- **② 投影**：`emit_channel_closed`（`{channelId, deleteAt}`）。
-- **③ DOM**：channel 行移除。
-- **④ 落库**：`channel` 软删。
+- **e2e**：`test/specs/uc-5.3.e2e.mjs` 四面全绿（corr_key=ch=<channelId>·真 go·真 Tauri+WKWebView·建本人 CREATOR 群后关闭·run.jsonl 实证 ②deleteAt=server 真值）。
+- **① 出站 HTTP**：`POST /api/cses/channel/close`，body `{channelId}`（✅ 真跑覆盖·ChannelCloseCommand·`真机curl真源 §6`·crossmap HTTP #27 covered）·`bodyForbidden` id/channel_id 别名/top/displayName/notice/deleteAt 泄漏。退群子项走 `channel/member/leave`（crossmap #33 partial·broadcast-dep ⛔）。
+- **① WS 推送**：action=`channel_close`（self 收·broadcast 到 channelId·crossmap WS #13·✅ 实证）·member-leave 广播给被增减目标（**非 self = broadcast-dep 子项·单账号 ⛔**）。
+- **② 投影**：`emit_channel_closed`（im:channel:closed·`{channelId, deleteAt}`·全 camelCase·独立 broadcast 推送非批次结束 thin·✅ 实证）。
+- **③ DOM**：channel 行移除（im:channel:closed → 壳 `applyChannelClosed` filter 删行·data-channel-id !absent·✅ 实证·reducer `!absent` 哨兵守可证伪行仍在即红）。
+- **④ 落库**：`channel` 表 batch_update（delete_at + is_active=0 定点 patch·表感知归一 channel.id→ch·✅ 实证·软删权威在 DB 列·壳层删行渲染）。
+- **admin 权限真实约束**：关闭群须本人 owner/admin·e2e 先建本人 CREATOR 新群再关闭（真实用户流·C003）。
+- **机器件**：reducer `diffDom` 加 `!absent` 哨兵（行已移除语义·行仍在即 ③ 红·非 tautology）+ 装饰器标准 body.channelId 探针·均非冻结 oracle（C009）。
 
 ### UC-5.4 群属性修改（改群名 displayName）— `✅ 四面全绿`（round5·corr_key=ch=…;seq=2）
 
@@ -504,7 +507,7 @@
 
 > 精确分类（按本台账每节标题图例为准·1+7+24+7=39）：
 > - **✅ four-facet-verified = 13**：UC-2.2（2026-06-25 实跑全绿·读族编排 ①②③·④ N/A·im_load_older_context 命令 + store.loadOlder 选最旧行 pivot 锚 + applyOlderLoaded prepend + createOutbound fallback 锚 postContext·实跑 2 轮 moving anchor + prepend 9 行·原「①预期红 round6 缺 acl fix」判断有误·round6@bbbf809 已含 is_query 白名单·storage 草拟 batch_upsert 按 C004 校正 N/A 对齐 projection-schema §1.3·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #22）、UC-2.3（2026-06-25 实跑全绿·读族本地 ②③④·① N/A optional·store.locatePost + debug 桥 debugLocatePost 复用 query_result + rows computed highlighted 高亮 + reducer scanFallback/isOutboundOptional 机件·契约纠偏 getPostsAfterIndex/query_result 互斥→走本地 Scan·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #21）、UC-2.1（2026-06-25 实跑全绿·读族 ②③·①④ N/A·im_query_messages_by_channel 命令 + store applyMessagesQueryResult 渲染 50 行 + onSelectChannel 切群接线·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #20）、UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-1.4（2026-06-25 实跑全绿·onResend→store.resend 复用 tmp upsert + debug 桥注入失败前置·corr_key=ch=15gcgoyf;tmp=pfuneqqp;sid=c58zkjqn;seq=68）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）、UC-1.9（2026-06-25 实跑全绿·im_urgent_post/confirm 命令 + diffOutboundPhases 两阶段 + msg_id→sid 归一 + 关窗前等 post_update in-window·corr_key=sid=tasdeqxtubbrzbigoic5iya77o）、UC-1.10（2026-06-25 实跑全绿·im_create_schedule 命令 + create-outbound fallback 复用·posts/createSchedule + im:channel:schedule-created·storage op 草拟纠正 update→batch_update·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）、UC-3.3（2026-06-25 实跑全绿·im_template_received 命令 camelCase {postId} + 前置发 TEMPLATE 类型消息 + store extractTemplateReceived + storage op 草拟纠正 update→batch_update + dom _note 移出 dataAttrs·post_update 广播含发起连接故单账号即绿·corr_key=sid=1ouh77refibz8j4ujz4aiy1m8a）。
-> - **🟡 partial = 7**：UC-4.4 心跳 / UC-4.5 陌生 channel / UC-5.3 关群 / UC-5.5 置顶 / UC-6.1 拉踢 / UC-6.2 管理员 / UC-8.x 投票平均分。
+> - **🟡 partial**：UC-4.4 心跳 / UC-4.5 陌生 channel / UC-6.1 拉踢 / UC-6.2 管理员 / UC-8.x 投票平均分（注：UC-5.3 关群主路径已转 ✅·member-leave 广播子项 ⛔ broadcast-dep 不阻塞；UC-5.5 置顶频道路径已转 ✅·消息置顶子项 ⛔ data-dep·见各节标题图例）。
 > - **🟡 ①③-verified · ②④ server-data-gap（read echo 多设备-only）= 2**：UC-3.1 会话已读 / UC-3.2 单条已读（2026-06-25 实跑·①③ 严格断言绿 + ②④ read echo 是多设备 echo·单连接结构性不可观测·带 run.jsonl 证据 + 可证伪护栏·须 L2 双账号转绿）。
 > - **⬜ pending = 10**：1.2 / 1.5 / 1.8 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 已转 ✅·原「① blocked on helix wire-bug」判断有误·round6@bbbf809 已含 acl is_query 放行 fix·实跑 ①②③ 全绿；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 / UC-3.3 / UC-1.4 / UC-1.7 / UC-2.4 / UC-2.1 / UC-2.3 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
 > - **⛔ unreachable = 7**（39 分母内）：UC-1.3 文件 / UC-1.6 编辑 / UC-4.3 too_long / UC-5.6 公告 / UC-5.7 在线 / UC-7.x 搜索·另 bot/agent 整域 ⛔（不计入 39 分母）。

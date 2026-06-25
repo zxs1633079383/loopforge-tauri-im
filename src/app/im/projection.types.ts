@@ -100,6 +100,20 @@ export interface ChannelCreatedData {
 }
 
 /**
+ * UC-5.3 关闭/退出群投影 channel（to_effect_s1::emit_channel_closed·真源 channel.rs:593
+ * `{channelId, deleteAt}`）。data 形态 = `{ channelId, deleteAt }`（全 camelCase·现网 wire 透传）。
+ * 触发路径 WS channel_close action（broadcast 到 channelId·自己也收）。壳收到即把该频道行从 CL
+ * 区移除（data-channel-id 消失·壳纯渲染只消费投影删行·不在 JS 臆造软删态）。
+ */
+export const CHANNEL_CLOSED_CHANNEL = "im:channel:closed";
+
+/** im:channel:closed data 形态（{channelId, deleteAt}·全 camel·channel_close 透传）。 */
+export interface ChannelClosedData {
+  channelId: string;
+  deleteAt: number;
+}
+
+/**
  * UC-1.10 定时消息投影 channel（projection-schema 行 72 to_effect_s1::emit_schedule_created）。
  * data 形态 = `{ channelId, hasSchedulePost }`（全 camelCase·现网 wire 透传）。触发路径 WS
  * post_schedule_created action。壳收到即把该频道行 hasSchedule 标 true（data-has-schedule-post=true·

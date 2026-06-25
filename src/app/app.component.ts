@@ -664,9 +664,15 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** UC-5.3 关闭/退出群。占位 → 接 im_channel_close。 */
-  onCloseChannel(_channel: unknown): void {
-    /* UC-5.3 接通 */
+  /**
+   * UC-5.3 关闭/退出群：点频道行「关闭/退出群」→ store.closeChannel（invoke im_channel_close →
+   * 出站 channel/close {channelId}）。CL 区该行的移除靠 helix `im:channel:closed`（{channelId,
+   * deleteAt}·WS channel_close 透传）投影驱动 applyChannelClosed 删行（壳纯渲染·无乐观合成）。
+   */
+  onCloseChannel(channel: { channelId: string }): void {
+    const channelId = channel?.channelId;
+    if (!channelId) return;
+    void this.store.closeChannel(channelId);
   }
 
   /** UC-11.2 退出公司。占位 → 接 im_team_quit。 */

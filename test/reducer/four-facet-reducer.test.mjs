@@ -738,6 +738,61 @@ console.log('· UC-5.4 群属性修改（改群名·channelUpdate post 锚·prop
   eq(repNoOut.facets.outbound.ok, false, '可证伪：无 channel/change/displayName 出站 → ① 红');
 }
 
+// ── UC-5.3 关闭/退出群 — channel/close 出站 + im:channel:closed 投影 + batch_update channel + DOM 行移除（!absent）──
+// 关闭群出站 channel/close {channelId} → WS channel_close（broadcast）→ ④ channel 表 batch_update
+// （delete_at + is_active=0 定点 patch）+ ② im:channel:closed {channelId, deleteAt}（独立 broadcast 推送·
+// 非批次结束 thin）→ ③ DOM channel 行移除（data-channel-id !absent）。锚 ch（① body.channelId·② data.channelId·
+// ④ channel.id 表感知归一）。守可证伪：投影字段集偏 / 无出站 / DOM 行仍在 → 红。
+console.log('· UC-5.3 关闭/退出群（channel/close 出站·im:channel:closed 投影·batch_update channel·DOM 行移除 !absent）');
+{
+  const CH = 'ch53close';
+  const lines = [
+    // ① 关闭出站：body {channelId}·url 含 channel/close → 抽 ch。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-5.3', facet: 'outbound', hop: 'http-req', seq: 1,
+      payload: { method: 'POST', url: 'http://x/api/cses/channel/close',
+        body: { channelId: CH } } }),
+    // ② im:channel:closed {channelId, deleteAt}（独立 broadcast·ch 锚）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-5.3', facet: 'projection', hop: 'projection', seq: 2,
+      corr_key: `ch=${CH}`,
+      payload: { event: 'im:channel:closed', data: { channelId: CH, deleteAt: 1735000000000 } } }),
+    // ④ channel 表 batch_update（delete_at + is_active=0·key_col=id→表感知归一 channel.id→ch）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-5.3', facet: 'storage', hop: 'storage', seq: 3,
+      payload: { id: CH, op: 'batch_update', table: 'channel', keys: 1 } }),
+  ].join('\n');
+  const expect53 = {
+    ucId: 'UC-5.3',
+    corrAnchor: { ch: CH },
+    outbound: { method: 'POST', urlEndsWith: 'channel/close',
+      bodyFields: { channelId: '*' },
+      bodyForbidden: ['id', 'channel_id', 'top', 'displayName', 'notice'] },
+    projection: { event: 'im:channel:closed', dataKeys: ['channelId', 'deleteAt'] },
+    storage: { op: 'batch_update', table: 'channel', minRows: 1 },
+    dom: { dataAttrs: { 'channel-id': '!absent' } },
+  };
+  // ③ DOM：行已移除 → e2e 注入 channel-id 缺值（null）。
+  const dom = { 'channel-id': null };
+  const rep = runFourFacet({ jsonl: lines, expect: expect53, dom });
+  ok(rep.facets.outbound.ok, '① channel/close 出站（body channelId·bodyForbidden 别名）绿');
+  ok(rep.facets.projection.ok, '② im:channel:closed 投影 {channelId, deleteAt} 绿');
+  ok(rep.facets.storage.ok, '④ batch_update channel（delete_at+is_active）绿');
+  ok(rep.facets.dom.ok, '③ data-channel-id 已移除（!absent）绿');
+  ok(rep.green, `UC-5.3 四面全绿（实 brokenAt=${rep.brokenAt} :: ${rep.summary}）`);
+
+  // 可证伪 a：投影字段集多/少（漏 deleteAt）→ ② 红。
+  const badProj = lines.replace('"deleteAt":1735000000000', '"foo":1');
+  const repBadProj = runFourFacet({ jsonl: badProj, expect: expect53, dom });
+  eq(repBadProj.facets.projection.ok, false, '可证伪：投影漏 deleteAt（多 foo）→ ② 红');
+
+  // 可证伪 b：DOM 行仍在（channel-id 非空）→ ③ 红（删行未发生·非 tautology）。
+  const repRowStill = runFourFacet({ jsonl: lines, expect: expect53, dom: { 'channel-id': CH } });
+  eq(repRowStill.facets.dom.ok, false, '可证伪：DOM 行仍在（!absent 失败）→ ③ 红');
+
+  // 可证伪 c：无关闭出站（删 ① 行）→ ① 红。
+  const noOut = lines.split('\n').slice(1).join('\n');
+  const repNoOut = runFourFacet({ jsonl: noOut, expect: expect53, dom });
+  eq(repNoOut.facets.outbound.ok, false, '可证伪：无 channel/close 出站 → ① 红');
+}
+
 // ── 收尾 ─────────────────────────────────────────────────────────────────────
 
 console.log('');

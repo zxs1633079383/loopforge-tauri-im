@@ -88,3 +88,4 @@
   验证：cargo check PASS · cargo test -p helix-driver-instrument extract 10/0 · node reducer 自测 108/0（+9 UC-5.4 可证伪对偶：join-only→②红/content 失配→②红/无出站→①红）· run.sh uc-5.4 四面全绿（corr_key seq=2 锚 channelUpdate post 非 join seq=1）· gate.sh ✅ 全部通过。ledger §UC-5.4 翻 ✅ + checklist [x]。⚠️ im-store.service.ts 1320 行(>800 warn·非阻塞)。
 
 ✅ DONE UC-5.5 频道置顶四面契约 e2e 全绿（issue #24 CLOSED）@2026-06-25 14:04:23 CST | loopforge commit a310304 + helix commit 4cc33c2 | 8 步(新增 expect/spec + im_channel_change_top 命令+注册 + 前端 changeChannelTop/normalizeIsTop/applyChannelUpdate 重查 + 置顶按钮 + helix update_channel emit fix) | loopforge-tauri-im/feat/uc-rollout · helix/feat/cses-round6-uc-reclaim
+✅ DONE UC-5.3 关闭/退出群四面全绿(channel/close+im:channel:closed+channel软删+DOM行移除) @2026-06-25 14:19 | commit af9685a | issue #25 closed | loopforge-tauri-im/feat/uc-rollout
