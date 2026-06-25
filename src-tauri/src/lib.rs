@@ -147,6 +147,7 @@ pub fn run() {
         commands::im_channel_change_top,
         commands::im_update_member_nickname,
         commands::im_channel_member_change,
+        commands::im_channel_set_manger,
         commands::im_channel_close,
         commands::set_uc
     ]);
@@ -177,6 +178,7 @@ pub fn run() {
         commands::im_channel_change_top,
         commands::im_update_member_nickname,
         commands::im_channel_member_change,
+        commands::im_channel_set_manger,
         commands::im_channel_close
     ]);
 

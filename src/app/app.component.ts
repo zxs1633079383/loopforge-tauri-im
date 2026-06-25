@@ -349,7 +349,7 @@ import { MessageRow } from "./im/message-row.model";
                   class="im__mini"
                   type="button"
                   data-testid="change-manger-btn"
-                  (click)="onChangeManger(mem.memberId, 'ADMIN')"
+                  (click)="onChangeManger(mem.memberId, !mem.admin)"
                 >管</button>
               </span>
             </div>
@@ -534,6 +534,13 @@ export class AppComponent implements OnInit, OnDestroy {
       // （拉首屏 query_result ②④ + 给命中行打高亮 ③）。
       window.__lf.debugLocatePost = (postId: string, channelId?: string) =>
         this.store.locatePost(postId, channelId);
+      // UC-6.2 设/撤管理员测试机件：复用 store.setManger 生产路径（① 出站 channel/add|remove/manger +
+      // ③ DOM data-admin 乐观刷）。e2e 经此桥走与 UI『管』按钮同款 store 路径（非绕过·一次覆 ①③）。
+      window.__lf.debugSetManger = (
+        channelId: string,
+        userId: string,
+        set: boolean,
+      ) => this.store.setManger(channelId, userId, set);
     }
   }
 
@@ -876,9 +883,18 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.store.changeMemberNickname(channelId, memberId, nick);
   }
 
-  /** UC-6.2 设/撤管理员。占位 → 接 add/remove manger。 */
-  onChangeManger(_memberId: string, _role: string): void {
-    /* UC-6.2 接通 */
+  /**
+   * UC-6.2 设/撤管理员：memberId=被设/撤管理员的成员 userId·set（true=设·false=撤）→
+   * store.setManger（invoke im_channel_set_manger → 出站 channel/add/manger | channel/remove/manger
+   * {channelId, users:[{id,name,role,teamId}]}）。channelId=当前活动频道（MB 区成员属当前会话）。
+   * DOM data-admin 乐观本地刷（add/remove manger 后端 WS 已注释·② 投影 L1 不到达·权威态由 L2 #45
+   * 广播帧对账·见 store.setManger doc）。无 memberId / 无活动频道 → 不发。e2e 走 bridge 直 invoke
+   * 注入真实 channelId/userId 覆盖此 UI 便捷路径。
+   */
+  onChangeManger(memberId: string, set: boolean): void {
+    const channelId = this.store.activeChannel();
+    if (!memberId || !channelId) return;
+    void this.store.setManger(channelId, memberId, set);
   }
 
   // ═══ AX 辅助区交互件（占位骨架）═══

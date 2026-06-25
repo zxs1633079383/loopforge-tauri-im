@@ -1,0 +1,37 @@
+{
+  "$schema-note": "四面期望文件 (UC-6.2 设/撤管理员) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现 / 本仓渲染壳 / 机器件（reducer 入口选择·装饰器抽键·seed）。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-6.2",
+  "title": "设/撤管理员：MB 区成员行点『管』→ 出站 channel/add/manger | channel/remove/manger {channelId, users:[{id,name,role,teamId}]}（全 camelCase·真源 channel_change_dedicated.rs §19/§20 AddMangerCommand/RemoveMangerCommand + Go command.AddChannelMangerCommand/DeleteChannelMangerCommand）→ ③ DOM data-admin 乐观回读。②④（emit_channel_member_updated / channel_member 落库）结构性 L2（add/remove manger 后端 WS 已注释·操作者收 channel_member_role_updated graceful no-op·角色全量态须 channel_member_update 广播帧·第二账号触发·见 L2 issue #45）→ L1 单账号断面退化为 ①③（reducer runFourFacetCommandDom 裁定）。",
+  "contractReadonly": true,
+  "facetMode": "command-dom",
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/src/outbound/channel_change_dedicated.rs §19 AddMangerCommand（im_channel_add_manger → POST channel/add/manger·body {channelId, users:[{id,name,role,teamId}]}）+ §20 RemoveMangerCommand（im_channel_remove_manger → POST channel/remove/manger·同 body 结构）·真源 partials/2 §19/§20 + Go command.AddChannelMangerCommand/DeleteChannelMangerCommand。loopforge 桥 im_channel_set_manger（commands.rs·set bool 切 add/remove·users 单成员 {id,name:'',role:ADMIN|MEMBER,teamId}·teamId 取 identity·壳不臆造 creds）。",
+    "projection": "N/A（L1 单账号结构性 L2·见 L2 issue #45）：add/remove manger 后端 WS 已注释（仅 GrpcInvoke·真源 channel_change_dedicated.rs §19/§20 注），操作者实际收 channel_member_role_updated（helix ws/handlers/channel_member_role_updated.rs graceful no-op·真源 cses-client router.rs 落 vec![]·无业务 Effect），emit_channel_member_updated 须 channel_member_update 全量广播帧（角色态由其覆盖·结构性须第二账号触发）。reducer runFourFacetCommandDom 不裁定 ②（不在 order）。",
+    "dom": "docs/uc-coverage-ledger.md §UC-6.2 ③ data-admin：MB 区成员行 data-admin（mem.admin ? '1' : null）。L1 无 ② 投影源 → 壳 setManger 出站成功后乐观把该成员行 admin 标置目标态（结构性例外·权威态由 L2 #45 广播帧对账·壳 doc 已声明）。e2e 等该成员行 data-admin==1 后读注入 reducer。",
+    "storage": "N/A（L1 单账号结构性 L2·见 L2 issue #45）：channel_member 全量落库（含 role 列）须 channel_member_update 广播帧的 BatchUpsert·结构性须第二账号触发。reducer runFourFacetCommandDom 不裁定 ④（不在 order）。"
+  },
+
+  "corrAnchor": {
+    "note": "命令-DOM 族无 corr_key 束（add/remove manger wire body 携 channelId + users[].id·窗口隔离 uc_id 过滤即定位唯一出站）。① 出站经 UC 窗口内 endpoint(urlEndsWith)过滤找唯一 http-req·③ DOM e2e 注入目标成员行 data-admin。无 sid/tmp/req_id 锚。e2e 选锚频道（本人新建·有 admin 权限·拉成员 445 进群后对 445 设管理员）填实 channelId + 注入目标 userId。",
+    "ch": null
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "channel/add/manger",
+    "bodyFields": {
+      "channelId": "*",
+      "users": "*"
+    },
+    "bodyForbidden": ["channel_id", "userId", "id", "role"],
+    "_note": "AddMangerCommand 真源：body = {channelId, users:[{id,name,role,teamId}]}（全 camelCase·成员四键嵌 users[]）。bodyForbidden 锚——manger body 只该携 channelId + users 数组，不该混入 channel_id（snake 泄漏）/ 顶层 userId（成员 id 嵌 users[].id·非顶层）/ 顶层 id（channel/change/* 才用 id 别名·本 endpoint 用 channelId）/ 顶层 role（role 嵌 users[].role·非顶层）。① 出站经 UC 窗口内 endpoint 过滤找唯一 http-req（窗口隔离保证唯一·少发即 ① 红）。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "member-id": "*",
+      "admin": "1"
+    },
+    "_note": "ledger §UC-6.2 ③：MB 区成员行 data-member-id（=userId）+ data-admin（=1·set ADMIN 态）。L1 无 ② 投影源 → 壳 setManger 乐观刷成员行 admin 标（结构性例外·壳 doc 声明·权威态 L2 #45 广播帧对账）。e2e 等该成员行 data-admin==1 后读注入 reducer（dataAttrs.member-id 动态由 e2e 覆写目标成员）。守可证伪：壳未刷 admin 标 / 刷错成员 → ③ 红（非 tautology）。"
+  }
+}

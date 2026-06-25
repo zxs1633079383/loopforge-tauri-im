@@ -659,6 +659,80 @@ export function runFourFacetRead({ jsonl, expect, reqId, ucId }) {
   };
 }
 
+// ── 命令-DOM 族（① 出站 + ③ DOM 可证·②④ 结构性 L2 N/A）对账（UC-6.2 设/撤管理员）──────
+//
+// 与写族 runFourFacet / 读族 runFourFacetRead 的差异（真源 channel_change_dedicated.rs §19/§20 +
+// ws/handlers/channel_member_role_updated.rs）：
+//   - **add/remove manger 后端 WS 已注释**（仅 GrpcInvoke 对端）→ 操作者实际收
+//     `channel_member_role_updated`（helix graceful no-op·真源 cses-client router.rs 落 vec![]·
+//     角色态由后续全量 `channel_member_update` 广播帧覆盖）。故 L1 单账号链路上 **② emit_channel_member_updated
+//     / ④ channel_member 全量落库结构上不到达**（须第二账号触发广播帧·见 L2 issue #45）。
+//   - **四面退化为 ①③**：① 出站 wire body 逐字检（urlEndsWith + bodyFields + bodyForbidden·真源
+//     {channelId, users:[{id,name,role,teamId}]}）；③ DOM data-admin 乐观本地刷（壳 setManger 出站后置
+//     成员行 admin 标·L1 唯一可观测的用户操作反馈面·权威态由 L2 #45 广播帧对账）。
+//   - **②④ = N/A 不裁定**（结构性 L2·非放水）：与 read 族 ③④ N/A 同理——本 UC 在 L1 单账号下
+//     ②④ **本就不产生**（WS 注释 + role_updated no-op），强求反而假阳。诚实出账：issue 留 OPEN
+//     标 ready-for-human·链 L2 #45（C011 不留「关了没测」的账）。
+//
+// 窗口隔离保证唯一（uc_id 过滤）：e2e 在独立 set_uc 窗口里 invoke 一次 set_manger → 窗口内 outbound
+// http-req（按 endpoint 过滤）唯一·非 tautology（少发即 ① 红·DOM 未刷即 ③ 红·见可证伪对偶）。
+//
+// 机器件归属（非改冻结 oracle·C009）：本入口同属 reducer 领域件·契约 URL+body-shape 由 expect.outbound
+// （真机curl真源派生）冻结·DOM data-admin 由 expect.dom 冻结·绿由本 reducer 裁定。
+//
+// @param {object} args
+// @param {string} args.jsonl   run.jsonl 全文
+// @param {object} args.expect  期望（expect.outbound flat·expect.dom dataAttrs）
+// @param {object} args.dom     e2e 注入的 DOM 面终态（data-* 扁平对象·键去 data- 前缀）
+// @param {string} [args.ucId]  默认取 expect.ucId
+// @returns {object} 报告（facets.outbound / facets.dom·②④ N/A 不在 order）
+export function runFourFacetCommandDom({ jsonl, expect, dom, ucId }) {
+  const uc = ucId ?? expect.ucId;
+  const { events, parseErrors } = parseJsonl(jsonl);
+
+  const exp = expect.outbound ?? {};
+  const urlEnds = exp.urlEndsWith;
+
+  // ① 出站：UC 窗口内按 endpoint（urlEndsWith）找 outbound http-req（窗口隔离保证唯一·多于一个取
+  // 最后一条——同窗口同 endpoint 重发取最新·一般唯一）。
+  const httpHops = events
+    .filter(
+      (e) =>
+        (uc === undefined || e.uc_id === uc) &&
+        e.facet === 'outbound' &&
+        e.hop === 'http-req' &&
+        (!urlEnds || urlEnds === '*' || String(e.payload?.url ?? '').endsWith(urlEnds))
+    )
+    .map((e) => ({ method: e.payload?.method, url: e.payload?.url, body: e.payload?.body ?? {} }));
+  const httpHit = httpHops.length ? httpHops[httpHops.length - 1] : null;
+  const outboundFacet = diffOutbound(exp, httpHit);
+
+  // ③ DOM：data-admin 终态（e2e 注入·乐观刷·守可证伪：壳未刷 admin 标 → ③ 红·非 tautology）。
+  const domFacet = diffDom(expect.dom ?? {}, dom ?? null);
+
+  // 断面：① 出站 + ③ DOM（②④ N/A·结构性 L2·见上 doc + issue #45）。
+  const facets = {
+    outbound: outboundFacet,
+    dom: domFacet,
+  };
+  const order = ['outbound', 'dom'];
+  const brokenAt = order.find((f) => !facets[f].ok) ?? null;
+  const green = brokenAt === null && parseErrors.length === 0;
+
+  return {
+    ucId: uc,
+    green,
+    brokenAt,
+    facets,
+    parseErrors,
+    summary: green
+      ? `✅ ${uc} ①③ 双面全绿（②④ 结构性 L2 N/A·endpoint=${urlEnds}·L2 #45）`
+      : `❌ ${uc} 断在 [${brokenAt ?? 'parse'}] 面：${
+          brokenAt ? facets[brokenAt].issues.join('; ') : `JSONL 解析 ${parseErrors.length} 行坏`
+        }`,
+  };
+}
+
 /**
  * 主入口：跑四面对账，出报告。
  *

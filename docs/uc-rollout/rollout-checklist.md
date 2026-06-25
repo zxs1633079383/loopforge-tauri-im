@@ -61,7 +61,7 @@
 | [x] | 6.3 改群昵称 | `channel/member/change/nickname` | `partials/6 UC-6.3` | `emit_member_nickname`{channelId,userId,nickName} | data-nickname | `channel_member` | M |
 | [x] | 6.4 成员快照/全量 | `channel/member/snapshot`/`channels/member/byIds` | `partials/6 UC-6.4` | `query::emit_read_result`(读族) | data-member-count | `channel_member` 自愈 | M |
 | [~] | 6.1 拉/踢人 | `channel/member/change`(join/leave) | `真机curl真源 §5`{channelId,joinUsers/leaveUsers} | `emit_channel_member_updated`{channel_id,channel} | data-members 回读 | `channel_member` | M |
-| [~] | 6.2 设/撤管理员 | `channel/add/manger`/`remove/manger` | `partials/6 UC-6.2` | `emit_channel_member_updated`/`emit_channel_update` | data-admin | `channel_member` | M |
+| [~] | 6.2 设/撤管理员（①③ 实跑全绿·②④ 结构性 L2 #45·issue #29） | `channel/add/manger`{channelId,users[]}✅/`remove/manger` | `partials/6 UC-6.2`·§19/§20 | `emit_channel_member_updated`/`emit_channel_update`（②④ L2#45·WS 注释+role_updated no-op·须 channel_member_update 广播帧） | data-admin✅（乐观刷） | `channel_member`（L2#45） | M |
 
 ## 阶段 6 · 杂项（书签/待办/同步/互动卡片/系统）
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |

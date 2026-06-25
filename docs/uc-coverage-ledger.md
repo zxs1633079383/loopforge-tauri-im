@@ -405,13 +405,13 @@
 - **③ DOM**：`data-members` 回读。— L2（被拉成员侧观测·#43）
 - **④ 落库**：`channel_member`。— L2（被拉成员侧自驱·#43）
 
-### UC-6.2 设/撤管理员 — `🟡 partial`（member_role 可证·add_manger 次路径 ⛔ data-dep）
+### UC-6.2 设/撤管理员 — `🟡 ①③ four-facet-verified · ②④ L2-facet（add/remove manger 后端 WS 已注释·角色全量态须 channel_member_update 广播帧·须 L2 #45）`（2026-06-25 暖栈实跑①③全绿·复现≥2 轮·认领 C·issue #29）
 
-- **① 出站 HTTP**：`channel/add/manger` / `remove/manger`（待核·partial 6 UC-6.2）。
-- **① WS 推送**：action=`channel_member_role_updated`，data `{role:ADMIN, userIds:[...]}` 逐字（broadcast 到 channelId·操作者收·helix ledger 实证 678→ADMIN）·add_manger 次路径（窗内仅 increment 洪泛无独立 echo·**⛔ data-dep**）。
-- **② 投影**：`emit_channel_member_updated` / `emit_channel_update`。
-- **③ DOM**：`data-admin`。
-- **④ 落库**：`channel_member`。
+- **① 出站 HTTP**：`POST channel/add/manger`（set=true·撤=`channel/remove/manger`）·body `{channelId, users:[{id,name,role,teamId}]}`（全 camelCase·bodyForbidden channel_id snake / 顶层 userId/id/role 泄漏·成员四键嵌 users[]·真源 channel_change_dedicated.rs §19/§20 AddMangerCommand/RemoveMangerCommand + Go command.AddChannelMangerCommand/DeleteChannelMangerCommand）。✅ 实证 run.jsonl：`{channelId, users:[{id:445,name:'',role:ADMIN,teamId}]}`·uc_id=UC-6.2。
+- **③ DOM**：`data-admin`（=1·set ADMIN 态）+ `data-member-id`(=userId)。L1 无 ② 投影源 → 壳 setManger 出站成功后乐观刷成员行 admin 标（成员行缺则 upsert·结构性例外·权威态由 L2 #45 广播帧对账·壳 doc 声明）。✅ waitUntil 等 data-admin==1（debug 桥 debugSetManger 复用 store.setManger 生产路径·与 UI『管』按钮同链路）。
+- **② 投影**：`emit_channel_member_updated` / `emit_channel_update`。🟡 **L2-facet（结构性·非 data-dep）**：add/remove manger 后端 WS 已注释（仅 GrpcInvoke·真源 §19/§20 注），操作者实际收 `channel_member_role_updated`（helix `ws/handlers/channel_member_role_updated.rs` **graceful no-op**·真源 cses-client router.rs 落 vec![]·无业务 Effect）；emit_channel_member_updated 须 `channel_member_update` 全量广播帧（角色态由其覆盖·结构性须第二账号触发）。L1 单账号造不出 → **L2 #45 接盘**。run.jsonl 证据：add/manger 返出站·但窗内无 channel_member_update echo / 无 im:channel:member-updated 投影。
+- **④ 落库**：`channel_member`。🟡 **L2-facet（同 ②·须 channel_member_update 广播帧的 BatchUpsert·结构性须第二账号触发·L2 #45）**。
+- **接通件**：Rust `im_channel_set_manger`(commands.rs + lib.rs 双 feature 注册·set bool 切 add/remove·users 单成员 {id,name:'',role:ADMIN|MEMBER,teamId}·teamId 取 identity) · 壳 store.setManger（出站 + 乐观刷 data-admin·成员行缺则 upsert）+ onChangeManger（UI『管』按钮 toggle !mem.admin）+ debug 桥 debugSetManger · reducer runFourFacetCommandDom（①③ 断面·②④ N/A 不裁定·structural L2）· expect/uc-6.2.expect.json（facetMode=command-dom）+ specs/uc-6.2.e2e.mjs。
 
 ### UC-6.3 改群昵称 — `✅ 四面全绿`（e2e 真跑·corr_key=ch=<channelId>·issue #26）
 

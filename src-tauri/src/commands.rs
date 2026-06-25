@@ -829,6 +829,67 @@ pub async fn im_channel_member_change(
         .map_err(|e| format!("im_channel_member_change: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-6.2 设/撤管理员：前端传 `channelId`（目标频道）+ `userId`（被设/撤管理员的成员）+
+/// `set`（true=设管理员·走 `im_channel_add_manger`；false=撤管理员·走 `im_channel_remove_manger`）→
+/// 本命令按真机curl真源 partials/6 UC-6.2 + Go `command.AddChannelMangerCommand` /
+/// `DeleteChannelMangerCommand` 拼 `users:[{id,name,role,teamId}]` 入泵（helix-im
+/// `outbound/channel_change_dedicated.rs` `AddMangerCommand` / `RemoveMangerCommand` 校验 channelId +
+/// require_member_array 后兑现出站 `POST channel/add/manger` / `channel/remove/manger`·body
+/// `{channelId, users:[{id,name,role,teamId}]}`·全 camelCase）。
+///
+/// `teamId` 取自 AppState.identity（profile companyId·身份单一真源·不在前端 TS 硬编 creds）。
+/// `name` 留空串（Go 侧 manger 仅按 id 鉴定·name 仅展示·真源示例非空但 id 才是定点键）；`role`=
+/// 目标角色（设=ADMIN·撤=MEMBER·与 WS `channel_member_role_updated` echo 的 data.role 对齐）。
+///
+/// **WS 现实（迁移注意点·真源 channel_change_dedicated.rs §19/§20）**：add/remove manger 后端 WS
+/// 已注释（仅 GrpcInvoke 对端），操作者实际收 `channel_member_role_updated`（{channelId, userIds, role}·
+/// helix `ws/handlers/channel_member_role_updated.rs` graceful no-op·真源 cses-client router.rs
+/// 落 vec![]·角色态由后续全量 `channel_member_update` 帧覆盖）。故本 UC L1 单账号**仅 ① 出站可观测**；
+/// ② emit_channel_member_updated / ④ channel_member 全量落库须 `channel_member_update` 广播帧（结构性
+/// 须第二账号触发·见 L2 issue #45）。薄壳纪律：只翻译入参 + 入泵，endpoint + camelCase body 在 helix-im。
+#[tauri::command]
+pub async fn im_channel_set_manger(
+    state: State<'_, AppState>,
+    channel_id: String,
+    user_id: String,
+    set: bool,
+) -> Result<(), String> {
+    if channel_id.trim().is_empty() {
+        return Err("im_channel_set_manger: channelId 为空".into());
+    }
+    if user_id.trim().is_empty() {
+        return Err("im_channel_set_manger: userId 为空".into());
+    }
+    let team_id = state.identity.team_id.clone();
+    // role 随设/撤切换（设=ADMIN·撤=MEMBER·与 WS channel_member_role_updated echo data.role 对齐）。
+    let role = if set { "ADMIN" } else { "MEMBER" };
+    // users 数组：单成员定点（id 为定点键·name 仅展示留空·teamId/role 真源 §19/§20 四键全 camelCase）。
+    let users = serde_json::json!([{
+        "id": user_id,
+        "name": "",
+        "role": role,
+        "teamId": team_id,
+    }]);
+    // 设=add_manger·撤=remove_manger（两 helix command 同 body 结构·仅 endpoint 异）。
+    let cmd_name = if set {
+        "im_channel_add_manger"
+    } else {
+        "im_channel_remove_manger"
+    };
+    let tick = command(
+        cmd_name,
+        serde_json::json!({
+            "channel_id": channel_id,
+            "users": users,
+        }),
+    );
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_channel_set_manger: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-5.3 关闭/退出群：前端传 `channelId`（目标频道）→ 转 snake_case 入泵 `im_channel_close`
 /// （helix-im `outbound/channel_existing.rs` `ChannelCloseCommand` 兑现出站 `POST channel/close
 /// {channelId}`·真机curl真源 §6）。
