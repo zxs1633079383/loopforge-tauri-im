@@ -137,3 +137,4 @@
 
 ✅ DONE 阶段 phase6-misc 收口（7 ready-for-agent UC 全绿→tag v0.1-phase6-misc） @2026-06-25T22:00+08:00 | commit fb65a6e..adc897d | 7/7 green: #30(UC-9.x 书签) #31(UC-10.1 待办) #32(UC-4.2 sync notify) #33(UC-4.5 陌生 channel) #34(UC-4.4 心跳 gap) #35(UC-8.x 投票) #36(UC-8.x 平均分)；非绿 #37(UC-10.2 系统通知·ready-for-human·阻于 cses-java 7091/3399/3391 全 000·代码就绪 218a67c·issue 留 open) | gate.sh ✅ 全通过(cards=12/reducer 167/expect JSON/helix 单版本)·8 spec+8 expect 齐备真跑过 | loopforge-tauri-im/feat/uc-rollout
 ✅ DONE UC-5.8 条件查频道四面契约闭环（读族 ①②·③④ N/A 读路径） @2026-06-25T22:01:57+0800 | commit 6a26d16 | 1/1 步 | loopforge-tauri-im/feat/uc-rollout | e2e 暖栈真跑 1 passing 192ms·gate.sh 全绿·issue #38 closed
+✅ DONE UC-11.1 维护公司大群四面契约闭环（写族建群路径 ①②③④） @2026-06-25T22:30:00+0800 | commit d9398f5 | 1/1 步 | loopforge-tauri-im/feat/uc-rollout | e2e 暖栈真跑 1 passing 441ms·四面全绿 corr_key=ch=grji34e9q3g9if6zjsi3h7n7dh（新建 channel 157→158）·teams/upsert 单端点全覆盖·gate.sh 全绿·issue #39 closed
