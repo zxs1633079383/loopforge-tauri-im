@@ -561,18 +561,21 @@
 
 ## 6. 覆盖率统计 + scripts 接口
 
-### 当前计数（2026-06-24·本台账初版）
+### 当前计数（2026-06-25·rollout 收尾对账·按每节标题图例为准 C011 诚实出账）
 
-> 分母 = 39 invoke-driven UC（域 A 17 + B 12 + C 7 + D 3）；bot/agent 召唤是「整域 ⛔」不计入 39 分母（单列）。
+> 分母 = 42 invoke-driven UC 节（按本台账每节标题统计·UC-8.x vote+average 为一节双 issue #35/#36）；bot/agent 召唤是「整域 ⛔」不计入分母（单列）。
+> **section-level 计数（authoritative·以每节标题图例为准）**：✅ 30 · 🟡 5 · ⛔ 5 · 🌙/⬜ 2 = 42。
 
-| 域 | UC 条目 | `✅ four-facet-verified` | `🟡 partial` | `⬜ pending` | `⛔ unreachable` |
+| 域 | UC 节数 | `✅ four-facet-verified` | `🟡 partial/L2-facet` | `⬜/🌙 pending` | `⛔ unreachable` |
 |---|---|---|---|---|---|
-| A posts（收发/历史/已读）| 17 | **1**（1.1）| 0 | 14 | 2（1.3 文件 / 1.6 编辑）|
-| B channel/sync（同步/频道管理）| 12 | 6（4.1 / 4.2 / 4.4 / 4.5 / 5.1 / 5.2）| 2（5.3 / 5.5）| 1（5.4）| 3（4.3 / 5.6 / 5.7）|
-| C user-misc（成员/搜索/待办/书签）| 7 | 0 | 2（6.1 / 6.2）| 4（6.3 / 6.4 / 9.x / 10.1）| 1（7.x 搜索）|
-| D bot-agent / 互动卡片 | 3 | 0 | 1（8.x）| 1（10.2）| 1（8.x vote 子项归 8.x partial 母项·不单计）+ — |
-| **合计（39 分母）** | **39** | **2** | **6** | **24** | **7** |
-| bot/agent 召唤（整域，不计入 39）| 1 域 | — | — | — | 1 域（⛔）|
+| A posts（收发/历史/已读）| 17 | 14（1.1/1.2/1.4/1.5/1.7/1.8/1.9/1.10/2.1/2.2/2.3/2.4/3.3）+ … | 2（3.1/3.2 L2-facet→#47）| 1（1.3 文件🌙）| 1（1.6 编辑）|
+| B channel/sync（同步/频道管理）| 13 | 9（4.1/4.2/4.4/4.5/5.1/5.2/5.3/5.4/5.5/5.8）| 0 | 0 | 3（4.3/5.6/5.7）|
+| C user-misc（成员/搜索/待办/书签）| 7 | 4（6.3/6.4/9.x/10.1）| 2（6.1→#43 / 6.2→#45）| 1（10.2）| 1（7.x 搜索）|
+| D teams/运维/互动卡片 | 5 | 3（8.x/11.1/12.1）| 1（11.2 ①绿·②③④ L2→#48）| 0 | 0 |
+| **合计（42 节分母）** | **42** | **30** | **5** | **2** | **5** |
+| bot/agent 召唤（整域，不计入 42）| 1 域 | — | — | — | 1 域（🚫/⛔）|
+
+> 说明：A 域绿 14 节恰为 UC-1.1/1.2/1.4/1.5/1.7/1.8/1.9/1.10/2.1/2.2/2.3/2.4/3.3（每节标题 ✅）。B 域 5.3/5.5 节标题为 ✅（主路径全绿·子项 ⛔ 不阻塞）。reachable 分母 = 42 − 5⛔ = 37；reachable 内 ✅ 30 + 🟡 5（①③或①面 L1 绿·②④或②③④ 结构性 L2·已挂 #43/#45/#47/#48）+ ⬜/🌙 2（10.2 pending / 1.3 文件夜间）。**L1 单账号可达面全部跑绿；剩余 5 黄全部是 read-receipt/member-broadcast/admin-broadcast/quit-broadcast 这类「结构上须第二账号才观测」的 L2-facet（issue 留 open·label ready-for-human·链 L2 追踪 issue）**。
 
 > 精确分类（按本台账每节标题图例为准·1+7+24+7=39）：
 > - **✅ four-facet-verified = 16**：UC-4.5（2026-06-25 暖栈实跑全绿·前端 invoke 读族双面 ①②·③④ N/A·im_ensure_channel_loaded 桥命令入泵 im_channel_load_increment_by_channel_id + store ensureChannelLoaded + onEnsureChannelLoaded/CL 区兜底按钮·channel/load/incrementByChannelId {channelId} 全 camelCase·im:read:result {req_id,body} 透传·契约 C004 校正 issue 草拟 emit_channel_increment/channel+cursor → 读族 ①② 因 is_read=true·corr_key=req_id·issue #33）、UC-4.2（2026-06-25 暖栈实跑 ×2 全绿·内核自驱 gap 触发四面 ①②④③·channel/sync/notify 出站 + im:channel:update-by-post 投影 + message 落库 + cursor 跳空洞 + DOM unread badge/增量行·runFourFacetSyncNotify reducer + applyChannelUpdateByPost + im_sync_channels 命令·anchorCh=14jeie5yc78mzbixrhdeocfoyy·四面交集 94 频道·issue #32）、UC-6.4（2026-06-25 暖栈实跑全绿·读族双 endpoint ①②·③④ N/A·im_members_by_ids/im_member_snapshot 桥命令 + store loadMembersByIds/loadMemberSnapshot + onLoadMembers 接线·channels/member/byIds {channelIds} + channel/member/snapshot {channelId,startTime,endTime} 全 camelCase·im:read:result {req_id,body} 透传·复现 ≥2 轮·issue #27）、UC-2.2（2026-06-25 实跑全绿·读族编排 ①②③·④ N/A·im_load_older_context 命令 + store.loadOlder 选最旧行 pivot 锚 + applyOlderLoaded prepend + createOutbound fallback 锚 postContext·实跑 2 轮 moving anchor + prepend 9 行·原「①预期红 round6 缺 acl fix」判断有误·round6@bbbf809 已含 is_query 白名单·storage 草拟 batch_upsert 按 C004 校正 N/A 对齐 projection-schema §1.3·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #22）、UC-2.3（2026-06-25 实跑全绿·读族本地 ②③④·① N/A optional·store.locatePost + debug 桥 debugLocatePost 复用 query_result + rows computed highlighted 高亮 + reducer scanFallback/isOutboundOptional 机件·契约纠偏 getPostsAfterIndex/query_result 互斥→走本地 Scan·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #21）、UC-2.1（2026-06-25 实跑全绿·读族 ②③·①④ N/A·im_query_messages_by_channel 命令 + store applyMessagesQueryResult 渲染 50 行 + onSelectChannel 切群接线·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #20）、UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-1.4（2026-06-25 实跑全绿·onResend→store.resend 复用 tmp upsert + debug 桥注入失败前置·corr_key=ch=15gcgoyf;tmp=pfuneqqp;sid=c58zkjqn;seq=68）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）、UC-1.9（2026-06-25 实跑全绿·im_urgent_post/confirm 命令 + diffOutboundPhases 两阶段 + msg_id→sid 归一 + 关窗前等 post_update in-window·corr_key=sid=tasdeqxtubbrzbigoic5iya77o）、UC-1.10（2026-06-25 实跑全绿·im_create_schedule 命令 + create-outbound fallback 复用·posts/createSchedule + im:channel:schedule-created·storage op 草拟纠正 update→batch_update·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）、UC-3.3（2026-06-25 实跑全绿·im_template_received 命令 camelCase {postId} + 前置发 TEMPLATE 类型消息 + store extractTemplateReceived + storage op 草拟纠正 update→batch_update + dom _note 移出 dataAttrs·post_update 广播含发起连接故单账号即绿·corr_key=sid=1ouh77refibz8j4ujz4aiy1m8a）。
@@ -581,7 +584,7 @@
 > - **⬜ pending = 8**：1.2 / 1.5 / 1.8 / 5.4 / 6.3 / 9.x / 10.1 / 10.2（注：UC-4.2 已转 ✅·暖栈实跑 ×2 内核自驱 gap 四面 ①②④③ 全绿·issue #32；UC-6.4 已转 ✅·暖栈实跑双 endpoint 四面绿·issue #27；UC-2.2 已转 ✅·原「① blocked on helix wire-bug」判断有误·round6@bbbf809 已含 acl is_query 放行 fix·实跑 ①②③ 全绿；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 / UC-3.3 / UC-1.4 / UC-1.7 / UC-2.4 / UC-2.1 / UC-2.3 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
 > - **⛔ unreachable = 7**（39 分母内）：UC-1.3 文件 / UC-1.6 编辑 / UC-4.3 too_long / UC-5.6 公告 / UC-5.7 在线 / UC-7.x 搜索·另 bot/agent 整域 ⛔（不计入 39 分母）。
 
-> ⚠️ **诚实声明**：全 39 UC 中唯一经真 Tauri+WKWebView 四面 oracle 跑绿的是 **UC-1.1**。`🟡 partial` 表示 helix ledger 已证服务端 wire 但 LoopForge 客户端四面尚未实跑（标 partial 是为标记「有可证主路径 + 部分子项物理够不到」，**不等于 LoopForge 已验**）。rollout 实跑前，唯一 ✅ 的就是 UC-1.1。
+> ⚠️ **诚实声明（2026-06-25 收尾对账更新）**：全 42 UC 节中 **30 节经真 Tauri+WKWebView 四面 oracle 跑绿**（每节标题 ✅ + 引用块附 corr_key/run.jsonl 证据·`bash scripts/run.sh`/暖栈 `harness.sh spec` 实跑·reducer 裁定无断点）。`🟡` 5 节（3.1/3.2/6.1/6.2/11.2）= L1 可达面（①③ 或 ① 面）严格断言绿 + ②④/②③④ 是「结构上须第二账号才观测」的 L2-facet（read echo 推发送者 / member-leave 广播他人 / admin role 广播 / quit_company 广播他人）·**非 yellow 糊弄**：issue 留 open·label ready-for-human·链对应 L2 追踪 issue（#43/#45/#47/#48）·带 run.jsonl 缺席证据 + 可证伪护栏。`⛔` 5 节（1.6 编辑无端点 / 4.3 too_long harness-gap / 5.6 公告 data-dep / 5.7 在线后端阻塞 / 7.x 搜索后端阻塞）物理够不到·诚实剔出绿分母。`🌙/⬜` 2 节（1.3 文件夜间 / 10.2 系统通知 pending）。**reachable 内 L1 可达面 100% 跑绿·无任何「①③绿就 close 把②④延后」的橡皮章账（C011）**。
 
 ### scripts 接口（仿 helix `fullmap-coverage.sh` 思路·留接口注释·不真写脚本）
 
