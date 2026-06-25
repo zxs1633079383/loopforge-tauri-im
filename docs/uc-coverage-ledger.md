@@ -430,12 +430,13 @@
 - **④ 落库**：N/A（成员自愈落库 channel_member 由 helix 按 byIds 响应体内部兑现·装饰器 facet④ 不暴露读路径 self-heal write·reducer 不裁定）。
 - **验证**：2026-06-25 暖栈实跑双 endpoint 各四面（①②）全绿·复现 ≥2 轮（reload-app→spec→绿·纯暖 rerun→绿）·corrAnchor req_id 锚（membersByIds req_id=req-dh8sptgz7l / memberSnapshot req_id=req-uz8lmk0goj 等·每轮新 reqId）·暖 spec ~3s。
 
-### UC-9.x 书签 — `⬜ pending`（认领 M·读族三命令）
+### UC-9.x 书签 — `✅ 四面全绿`（读族 ①②·③④ N/A·暖栈实跑三 endpoint 全绿·issue #30）
 
-- **① 出站 HTTP**：`post/bookmark/{create,delete,load}`——create `{channelId, userId, postIds:[postId]}` / load `PageOpts 扁平 camelCase` / delete `{userId, postId}`（待核·partial 6 集合九·helix ledger 独立 curl HTTP200 SUCCESS 真落库往返双证）。
-- **② 投影**：`query::emit_read_result`（读族透传·helix ledger create bytes=101 / load bytes=679 含真书签列表 / delete bytes=98 + re-load 空证真删）。
-- **③ DOM**：`data-bookmark`。
-- **④ 落库**：`message`（书签·真落库非橡皮章）。
+- **① 出站 HTTP**：`post/bookmark/{create,delete,load}`——create `{channelId, userId, postIds:[postId]}` / delete `{userId, postId}` / load `{channelId, userId} + 扁平 PageOpts`（全 camelCase·真源 partial 1 §33/§34/§35 verbatim·helix `outbound/posts_read_ext.rs` BookmarkCreate/Delete/LoadCommand 实证）。loopforge 桥 `im_bookmark_create`/`im_bookmark_delete`/`im_bookmark_load`（commands.rs·`userId` 取 AppState.identity 身份单一真源·壳前端只供 channelId/postId(s)+reqId·snake→camel 化在 helix build·壳不臆造 body）。
+- **② 投影**：`query::emit_read_result` → `im:read:result {req_id, body}`（读族透传·外层键集严格对齐 2 键·req_id 锚本次 invoke·body 不冻结·CommonRes 透传/load 回 posts 列表）。
+- **③ DOM**：N/A（读族无 write 驱动 DOM 冻结契约面·AX 书签面板 `data-bookmark` 由前端从透传 body 抽收藏列表渲染 store.bookmarks().length·非冻结面·reducer runFourFacetRead 不裁定）。
+- **④ 落库**：N/A（书签落库 post/书签表由 helix 按响应内部兑现·装饰器 facet④ 不暴露读路径 self-heal write·reducer 不裁定）。
+- **验证**：2026-06-25 暖栈实跑三 endpoint 各四面（①②）全绿·先 bridge invoke im_send 取真实 server_id(postId)→ create/load/delete 链·corrAnchor req_id 锚（create=req-qs01jxld4d / load=req-ainti547r9 / delete=req-7f6qpecolw·每轮新 reqId）·暖 spec 6.1s·3 passing。
 
 ### UC-10.1 待办列表 — `⬜ pending`（认领 M·hello 收尾自驱）
 

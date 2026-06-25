@@ -271,6 +271,18 @@ import { MessageRow } from "./im/message-row.model";
                   data-role="open-reply-branch"
                   (click)="onLoadReplyBranch(m)"
                 >支</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="bookmark-create-btn"
+                  (click)="onCreateBookmark(m)"
+                >藏</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="bookmark-delete-btn"
+                  (click)="onDeleteBookmark(m)"
+                >弃藏</button>
                 @if (m.sendStatus === "failed") {
                   <button
                     class="im__mini"
@@ -359,7 +371,11 @@ import { MessageRow } from "./im/message-row.model";
 
       <!-- ═══ AX 辅助区（抽屉显隐·按 UC 填）═══ -->
       <section class="im__aux" data-testid="aux-area">
-        <div class="im__panel" data-testid="bookmark-panel">
+        <div
+          class="im__panel"
+          data-testid="bookmark-panel"
+          [attr.data-bookmark]="store.bookmarks().length"
+        >
           <button
             class="im__mini"
             type="button"
@@ -899,8 +915,39 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // ═══ AX 辅助区交互件（占位骨架）═══
 
-  /** UC-9.x 书签。占位 → 接读族书签 load。 */
+  /**
+   * UC-9.x 书签·加载收藏列表（读族）：channelId=当前活动频道 → store.loadBookmarks（invoke
+   * im_bookmark_load → 出站 post/bookmark/load {channelId, userId} + 扁平 PageOpts）。读族无 WS 回声·
+   * 收藏列表靠 helix `im:read:result{req_id, body}` 透传回灌驱动 AX 书签面板（data-bookmark-id）。
+   * 无活动频道 → 不发。e2e 走 bridge 直 invoke 注入真实 channelId/reqId 覆盖此 UI 便捷路径。
+   */
   onBookmark(): void {
-    /* UC-9.x 接通 */
+    const channelId = this.store.activeChannel();
+    if (!channelId) return;
+    void this.store.loadBookmarks(channelId);
+  }
+
+  /**
+   * UC-9.x 书签·收藏消息：channelId=当前活动频道·postId=被收藏消息 server id（msgId）→
+   * store.createBookmark（invoke im_bookmark_create → 出站 post/bookmark/create
+   * {channelId, userId, postIds:[postId]}）。读族透传回灌 im:read:result。无 server id（仅本地乐观行·
+   * 未对账）/ 无活动频道 → 不发。e2e 走 bridge 直 invoke 注入真实 channelId/postIds 覆盖此便捷路径。
+   */
+  onCreateBookmark(row: MessageRow): void {
+    const channelId = this.store.activeChannel();
+    const postId = (row.msgId ?? "").trim();
+    if (!channelId || !postId) return;
+    void this.store.createBookmark(channelId, [postId]);
+  }
+
+  /**
+   * UC-9.x 书签·取消收藏：postId=被取消收藏的消息 server id（msgId）→ store.deleteBookmark（invoke
+   * im_bookmark_delete → 出站 post/bookmark/delete {userId, postId}）。读族透传回灌 im:read:result。
+   * 无 server id → 不发。e2e 走 bridge 直 invoke 注入真实 postId 覆盖此便捷路径。
+   */
+  onDeleteBookmark(row: MessageRow): void {
+    const postId = (row.msgId ?? "").trim();
+    if (!postId) return;
+    void this.store.deleteBookmark(postId);
   }
 }

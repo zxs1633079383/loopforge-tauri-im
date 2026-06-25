@@ -66,7 +66,7 @@
 ## 阶段 6 · 杂项（书签/待办/同步/互动卡片/系统）
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
 |---|---|---|---|---|---|---|---|
-| [ ] | 9.x 书签 | `post/bookmark/{create,delete,load}` | `partials/6 集合九` | `query::emit_read_result`(读族透传) | data-bookmark | `message`(书签) | M |
+| [x] | 9.x 书签 | `post/bookmark/{create,delete,load}` | `partials/6 集合九` | `query::emit_read_result`(读族透传) | data-bookmark | `message`(书签) | M |
 | [ ] | 10.1 待办列表 | (hello 收尾自驱)`posts/queryTodoList` | `partials/8 http.rs:67` | `todo::emit_todo_updated`{items} | data-todo 列表 | `todo` 表 | M |
 | [ ] | 4.2 按需 sync notify | `im_sync_channels`→`channel/sync/notify` | `partials/8 §2.1`{cursors:[{channelId,fromSeq}]} | `emit_post_*`+`emit_channel_update_by_post`(thin) | 增量行+badge | `message`+cursor 跳空洞 | M |
 | [~] | 4.5 陌生 channel 兜底 | `ensure_channel_loaded`→`channel/load/incrementByChannelId` | `partials/8 http.rs:47`{channelId} | `emit_channel_increment` | 单 channel 增量渲染 | `channel`+cursor | M |

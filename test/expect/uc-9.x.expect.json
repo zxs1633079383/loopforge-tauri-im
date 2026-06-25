@@ -1,0 +1,80 @@
+{
+  "$schema-note": "四面期望文件 (UC-9.x 书签) — 读族 oracle（只读契约·contract-readonly-autofix.md §1）。书签三命令（create/delete/load）helix 注册 is_read=true（无 WS 回声·HTTP 200 响应体即数据·query::emit_read_result 透传回灌 im:read:result{req_id, body}）→ 断面退化为 ①②：① outbound HTTP wire body（post/bookmark/{create,delete,load}）逐字检（urlEndsWith + bodyFields camelCase + bodyForbidden 禁 snake/单数泄漏）；② projection envelope（im:read:result {req_id, body} 外层键集 + req_id 锚本次 invoke）。③ DOM / ④ storage = N/A：DOM data-bookmark 由前端从透传 body 抽收藏列表渲染（非冻结契约面·reducer runFourFacetRead 不裁定）；④ 书签落库（post/书签表）由 helix 按响应内部兑现·装饰器 facet④ 不暴露读路径。三 endpoint 各一份 flat 子期望（e2e 每个 it 块在独立 set_uc 窗口跑一个·reducer runFourFacetRead 裁定）。",
+  "ucId": "UC-9.x",
+  "title": "书签（读族 request-response·断面 ①②·create/delete/load 三命令）",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/full-map/partials/1--backend-http-posts.md §33 post/bookmark/create (createPostBookmark L55-59 {channelId, userId, postIds:[]string}) · §34 post/bookmark/delete (deletePostBookmark L37-40 {userId, postId}) · §35 post/bookmark/load (loadPostBookmark L18-22 {channelId, userId, entity.PageOpts 扁平})；helix outbound/posts_read_ext.rs BookmarkCreateCommand/BookmarkDeleteCommand/BookmarkLoadCommand 实证 wire body 全 camelCase",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1.2 query::emit_read_result (im:read:result {req_id, body})",
+    "dom": "N/A (读族无 write 驱动 DOM 冻结契约面·data-bookmark 由前端从透传 body 抽收藏列表渲染·非冻结契约面)",
+    "storage": "N/A (书签落库 post/书签表由 helix 按响应内部兑现·装饰器 facet④ 不暴露读路径 self-heal·reducer 不裁定 ④)"
+  },
+
+  "corrAnchor": {
+    "note": "读族无四维领域键（bookmark outbound wire body 携 channelId/userId/postIds 等·非 ch/tmp/sid 别名抽键；projection req_id 由 e2e invoke 时生成·经 bridge 透传·helix module::read_req_id 抠出注册回灌上下文）。reducer runFourFacetRead 在 set_uc 窗口内按 endpoint 找 ① 出站·按 req_id 锚 ② 投影。req_id 由 e2e 注入到 runFourFacetRead({reqId})。",
+    "req_id": null
+  },
+
+  "bookmarkCreate": {
+    "_note": "① post/bookmark/create endpoint 子期望（flat·reducer diffOutbound 直消费）。wire body 真源 partial 1 §33 createPostBookmark L55-59：{channelId, userId, postIds:[]string}。helix outbound/posts_read_ext.rs BookmarkCreateCommand 实证 json!({\"channelId\":.., \"userId\":.., \"postIds\":[..]})·全 camelCase。userId 取自壳后端 AppState.identity（身份单一真源·壳前端不臆造）。bodyForbidden 锚 snake 泄漏（channel_id/user_id/post_ids）+ 复数误写（postId）。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "post/bookmark/create",
+      "bodyFields": {
+        "channelId": "*",
+        "userId": "*",
+        "postIds": "*"
+      },
+      "bodyForbidden": ["channel_id", "user_id", "post_ids", "postId"]
+    },
+    "projection": {
+      "event": "im:read:result",
+      "dataKeys": ["req_id", "body"],
+      "_note": "projection-schema §1.2：读族回灌外层恒 {req_id, body}（成功）。body = 后端 createPostBookmark 响应体（CommonRes 无 data）透传·inner 不冻结。键集 = 2 键严格对齐（多/缺即红）。"
+    }
+  },
+
+  "bookmarkDelete": {
+    "_note": "① post/bookmark/delete endpoint 子期望。wire body 真源 partial 1 §34 deletePostBookmark L37-40：{userId, postId}。helix BookmarkDeleteCommand 实证 json!({\"userId\":.., \"postId\":..})·全 camelCase。userId 取自壳后端 AppState.identity。bodyForbidden 锚 snake 泄漏（user_id/post_id）+ 复数误写（postIds）。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "post/bookmark/delete",
+      "bodyFields": {
+        "userId": "*",
+        "postId": "*"
+      },
+      "bodyForbidden": ["user_id", "post_id", "postIds", "channelId"]
+    },
+    "projection": {
+      "event": "im:read:result",
+      "dataKeys": ["req_id", "body"],
+      "_note": "同 create·读族回灌外层恒 {req_id, body}。body = deletePostBookmark 响应体（CommonRes 无 data）透传·inner 不冻结。"
+    }
+  },
+
+  "bookmarkLoad": {
+    "_note": "① post/bookmark/load endpoint 子期望。wire body 真源 partial 1 §35 loadPostBookmark L18-22：{channelId, userId, entity.PageOpts（扁平内嵌·pageSize/pageNumber/offset 可选）}。helix BookmarkLoadCommand 实证 json!({\"channelId\":.., \"userId\":.., 扁平 PageOpts})·全 camelCase。userId 取自壳后端 AppState.identity。bodyForbidden 锚 snake 泄漏（channel_id/user_id/page_size/page_number）。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "post/bookmark/load",
+      "bodyFields": {
+        "channelId": "*",
+        "userId": "*"
+      },
+      "bodyForbidden": ["channel_id", "user_id", "page_size", "page_number"]
+    },
+    "projection": {
+      "event": "im:read:result",
+      "dataKeys": ["req_id", "body"],
+      "_note": "同上·读族回灌外层恒 {req_id, body}。body = loadPostBookmark 响应体（CommonRes data=posts 收藏消息列表）透传·inner 不冻结（前端直消费驱动 AX 书签面板渲染）。"
+    }
+  },
+
+  "storage": {
+    "_note": "N/A (读路径)。书签落库 post/书签表由 helix 按响应内部兑现·装饰器 facet④ 不暴露读路径 self-heal write。reducer runFourFacetRead 不裁定 ④ 面。"
+  },
+
+  "dom": {
+    "_note": "N/A (读族无 write 驱动 DOM 冻结契约面)。AX 书签面板 data-bookmark 由前端从透传 body 抽收藏列表后渲染（store.bookmarks().length）·属前端渲染非冻结契约面·reducer 不裁定 ③ 面。"
+  }
+}

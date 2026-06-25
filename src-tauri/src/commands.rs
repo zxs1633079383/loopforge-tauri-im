@@ -489,6 +489,125 @@ pub async fn im_member_snapshot(
         .map_err(|e| format!("im_member_snapshot: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-9.x 书签·收藏消息：前端传 `channelId` + `postIds`（被收藏消息 server_id 列表）+ `reqId`
+/// → 本命令补 `userId`（取自 AppState.identity·身份单一真源·壳不臆造 creds）→ 转 snake_case
+/// 入泵 helix-im `im_bookmark_create`（`BookmarkCreateCommand` 兑现出站 `POST post/bookmark/create`
+/// body `{channelId, userId, postIds:[]}`·全 camelCase·真源 partial 1 §33 `createPostBookmark`
+/// L55-59）。读族注册（`is_read=true`）：HTTP 200 响应体经 helix `query::emit_read_result` 透传回灌
+/// `im:read:result{req_id, body}`（projection-schema §1.2）。`req_id` 经 payload 透传（helix
+/// `module::read_req_id` 抠出注册回灌上下文）。
+#[tauri::command]
+pub async fn im_bookmark_create(
+    state: State<'_, AppState>,
+    channel_id: String,
+    post_ids: Vec<String>,
+    req_id: String,
+) -> Result<(), String> {
+    if channel_id.is_empty() {
+        return Err("im_bookmark_create: channelId 为空".into());
+    }
+    if post_ids.iter().all(|p| p.is_empty()) {
+        return Err("im_bookmark_create: postIds 为空（非空字符串数组）".into());
+    }
+    if req_id.is_empty() {
+        return Err("im_bookmark_create: reqId 为空（前端 bridge 须生成·回灌关联）".into());
+    }
+    let user_id = state.identity.user_id.clone();
+    if user_id.is_empty() {
+        return Err("im_bookmark_create: 自身 userId 为空（profile cookieId 未注入）".into());
+    }
+    let payload = serde_json::json!({
+        "channel_id": channel_id,
+        "user_id": user_id,
+        "post_ids": post_ids,
+        "req_id": req_id,
+    });
+    let tick = command("im_bookmark_create", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_bookmark_create: 入泵失败（泵已退出？）：{e}"))
+}
+
+/// UC-9.x 书签·取消收藏：前端传 `postId`（被取消的消息 server_id）+ `reqId` → 本命令补 `userId`
+/// （AppState.identity）→ 入泵 helix-im `im_bookmark_delete`（`BookmarkDeleteCommand` 兑现出站
+/// `POST post/bookmark/delete` body `{userId, postId}`·真源 partial 1 §34 `deletePostBookmark`
+/// L37-40）。同 create 走 `im:read:result{req_id, body}` 透传回灌。
+#[tauri::command]
+pub async fn im_bookmark_delete(
+    state: State<'_, AppState>,
+    post_id: String,
+    req_id: String,
+) -> Result<(), String> {
+    if post_id.is_empty() {
+        return Err("im_bookmark_delete: postId 为空".into());
+    }
+    if req_id.is_empty() {
+        return Err("im_bookmark_delete: reqId 为空（前端 bridge 须生成·回灌关联）".into());
+    }
+    let user_id = state.identity.user_id.clone();
+    if user_id.is_empty() {
+        return Err("im_bookmark_delete: 自身 userId 为空（profile cookieId 未注入）".into());
+    }
+    let payload = serde_json::json!({
+        "user_id": user_id,
+        "post_id": post_id,
+        "req_id": req_id,
+    });
+    let tick = command("im_bookmark_delete", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_bookmark_delete: 入泵失败（泵已退出？）：{e}"))
+}
+
+/// UC-9.x 书签·加载收藏列表：前端传 `channelId` + 可选 `pageSize`/`pageNumber`/`offset`（分页）+
+/// `reqId` → 本命令补 `userId`（AppState.identity）→ 入泵 helix-im `im_bookmark_load`
+/// （`BookmarkLoadCommand` 兑现出站 `POST post/bookmark/load` body `{channelId, userId} + 扁平
+/// PageOpts`·真源 partial 1 §35 `loadPostBookmark` L18-22 内嵌 `entity.PageOpts`）。响应体（收藏
+/// 消息列表）经 `query::emit_read_result` 透传回灌 `im:read:result{req_id, body}`。
+#[tauri::command]
+pub async fn im_bookmark_load(
+    state: State<'_, AppState>,
+    channel_id: String,
+    page_size: Option<i64>,
+    page_number: Option<i64>,
+    offset: Option<i64>,
+    req_id: String,
+) -> Result<(), String> {
+    if channel_id.is_empty() {
+        return Err("im_bookmark_load: channelId 为空".into());
+    }
+    if req_id.is_empty() {
+        return Err("im_bookmark_load: reqId 为空（前端 bridge 须生成·回灌关联）".into());
+    }
+    let user_id = state.identity.user_id.clone();
+    if user_id.is_empty() {
+        return Err("im_bookmark_load: 自身 userId 为空（profile cookieId 未注入）".into());
+    }
+    let mut payload = serde_json::Map::new();
+    payload.insert("channel_id".into(), serde_json::json!(channel_id));
+    payload.insert("user_id".into(), serde_json::json!(user_id));
+    payload.insert("req_id".into(), serde_json::json!(req_id));
+    if let Some(v) = page_size {
+        payload.insert("page_size".into(), serde_json::json!(v));
+    }
+    if let Some(v) = page_number {
+        payload.insert("page_number".into(), serde_json::json!(v));
+    }
+    if let Some(v) = offset {
+        payload.insert("offset".into(), serde_json::json!(v));
+    }
+    let tick = command("im_bookmark_load", serde_json::Value::Object(payload));
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_bookmark_load: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-5.1 创建群聊：前端传 `displayName` + `memberIds`（其他成员真实 userId 列表）→ 本命令按
 /// 真机curl真源 §4 拼 `channel/create` raw body 入泵 `im_create_channel`（helix-im
 /// `CreateChannelCommand` 透传 args 到 `POST /api/cses/channel/create`）。

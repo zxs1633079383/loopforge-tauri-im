@@ -859,6 +859,90 @@ export class ImStoreService {
     return rid;
   }
 
+  /**
+   * UC-9.x 书签·收藏消息：invoke('im_bookmark_create', {channelId, postIds, reqId}）。
+   *
+   * **读族 request-response**（helix 注册 is_read=true·无 WS 回声）：HTTP 200 响应体（CommonRes 无
+   * data）经 helix `query::emit_read_result` 透传回灌 `im:read:result{req_id, body}`。endpoint
+   * post/bookmark/create + wire body camelCase 化（channelId/userId/postIds）+ userId（身份单一真源·
+   * AppState.identity）全在 helix-im / 壳后端（commands.rs im_bookmark_create → outbound
+   * posts_read_ext.rs BookmarkCreateCommand）。壳前端只供 channelId + postIds（被收藏消息 server id 列表）
+   * + reqId。返 reqId 供 e2e 等回灌关联。
+   */
+  async createBookmark(
+    channelId: string,
+    postIds: string[],
+    reqId?: string,
+  ): Promise<string> {
+    const rid = (reqId ?? this.genReqId()).trim();
+    const ch = channelId.trim();
+    const ids = postIds.filter((p) => !!p && p.trim());
+    if (!ch || ids.length === 0) return rid;
+    try {
+      await this.bridge.invoke<void>("im_bookmark_create", {
+        channelId: ch,
+        postIds: ids,
+        reqId: rid,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（书签靠 im:read:result 投影驱动·无乐观合成）。
+    }
+    return rid;
+  }
+
+  /**
+   * UC-9.x 书签·取消收藏：invoke('im_bookmark_delete', {postId, reqId}）。
+   *
+   * 同 createBookmark 走 `im:read:result{req_id, body}` 透传回灌。endpoint post/bookmark/delete +
+   * wire body camelCase 化（userId/postId）+ userId（AppState.identity）全在 helix-im / 壳后端
+   * （BookmarkDeleteCommand）。壳前端只供 postId（被取消收藏的消息 server id）+ reqId。
+   */
+  async deleteBookmark(postId: string, reqId?: string): Promise<string> {
+    const rid = (reqId ?? this.genReqId()).trim();
+    const post = postId.trim();
+    if (!post) return rid;
+    try {
+      await this.bridge.invoke<void>("im_bookmark_delete", {
+        postId: post,
+        reqId: rid,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（书签靠 im:read:result 投影驱动·无乐观合成）。
+    }
+    return rid;
+  }
+
+  /**
+   * UC-9.x 书签·加载收藏列表（读族·分页）：invoke('im_bookmark_load', {channelId, pageSize?,
+   * pageNumber?, offset?, reqId}）。
+   *
+   * 同上走 `im:read:result{req_id, body}` 透传回灌（body=posts 收藏消息列表）。endpoint
+   * post/bookmark/load + wire body camelCase 化（channelId/userId + 扁平 PageOpts）+ userId
+   * （AppState.identity）全在 helix-im / 壳后端（BookmarkLoadCommand）。壳前端只供 channelId + 可选
+   * 分页 + reqId。返 reqId 供 e2e 等回灌关联。
+   */
+  async loadBookmarks(
+    channelId: string,
+    pageSize?: number,
+    pageNumber?: number,
+    offset?: number,
+    reqId?: string,
+  ): Promise<string> {
+    const rid = (reqId ?? this.genReqId()).trim();
+    const ch = channelId.trim();
+    if (!ch) return rid;
+    const args: Record<string, unknown> = { channelId: ch, reqId: rid };
+    if (pageSize != null) args["pageSize"] = pageSize;
+    if (pageNumber != null) args["pageNumber"] = pageNumber;
+    if (offset != null) args["offset"] = offset;
+    try {
+      await this.bridge.invoke<void>("im_bookmark_load", args);
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（书签列表靠 im:read:result 投影驱动·无乐观合成）。
+    }
+    return rid;
+  }
+
   /** 读族关联 id（req_id）生成器（非 wire 字段·仅前端 bridge↔回灌关联用·z-base-32 短 id）。 */
   private genReqId(): string {
     return `req-${Math.random().toString(36).slice(2, 12)}`;
