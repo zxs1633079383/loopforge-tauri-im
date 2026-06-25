@@ -167,6 +167,7 @@ pub fn run() {
         commands::im_average_close,
         commands::im_average_delete,
         commands::im_sync_channels,
+        commands::im_health,
         commands::set_uc
     ]);
     #[cfg(not(feature = "webdriver"))]
@@ -215,7 +216,8 @@ pub fn run() {
         commands::im_average_read,
         commands::im_average_close,
         commands::im_average_delete,
-        commands::im_sync_channels
+        commands::im_sync_channels,
+        commands::im_health
     ]);
 
     // Record 模式退出落盘：app 退出（RunEvent::Exit）时把录好的 tape 存到 tape_path。

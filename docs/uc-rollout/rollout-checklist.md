@@ -81,7 +81,7 @@
 | [x] | 5.8 条件查频道 | `im_channel_query`→`channel/query` | `partials/2 channel/query`(条件分页) | `read_relay::emit_read_result`(读族透传·im:read:result) | data-channel-id 列表(③ N/A 读族) | N/A(读族只读) | S |
 | [x] | 11.1 维护公司大群 | `im_team_upsert`→`teams/upsert` | `partials/3 teams/upsert` | `emit_channel_created`/`emit_channel_update`(公司大群) | data-channel-id(team 大群) | `channel` | M |
 | [🟡] | 11.2 退出公司（① L1✅·②③④ L2 #48） | `im_team_quit`→`teams/member/quit`(DELETE) + WS `quit_company` | `partials/3 teams/member/quit`✅ | (member/channel 移除投影·L2) | channel/member 行移除·L2 | `channel_member` 删·L2 | M |
-| [ ] | 12.1 健康探针(1 面①) | `im_health`→`GET /health` | `partials/3 health` | (无投影) | data-health(可选) | (无落库) | S·连通性(①+200) |
+| [x] | 12.1 健康探针(1 面①) | `im_health`→`GET /health` | `partials/3 health` | (无投影) | data-health(可选) | (无落库) | ✅ ① 全绿·issue #41·corr_key=req_id |
 
 ## 阶段 L2 · 双账号广播（需第二真实连接·feasible·L1 稳后专批）
 | 勾 | UC | 触发 → 观测 | ② 投影工厂 | ③ DOM data-* | 说明 |

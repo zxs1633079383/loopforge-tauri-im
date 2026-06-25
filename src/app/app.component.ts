@@ -713,9 +713,11 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.store.readChannel(channelId);
   }
 
-  /** UC-12.1 健康探针。占位 → 接 im_health → GET /health。 */
+  /** UC-12.1 健康探针：store.checkHealth（invoke im_health → 出站 GET /api/cses/health·无请求体·
+   *  连通性 ① 面）。读族无 WS 回声·HTTP 200 裸 `{status:"OK"}` 经 helix `im:read:result{req_id, body}`
+   *  透传回灌 → store 设 _health → data-health 指示件。e2e 走 bridge 直 invoke 注入确定性 reqId。 */
   onHealth(): void {
-    /* UC-12.1 接通 */
+    void this.store.checkHealth();
   }
 
   /** UC-5.1 创建群聊：生成唯一群名 → store.createChannel（teamId/自身 CREATOR 由 Rust 拼·壳不臆造）。

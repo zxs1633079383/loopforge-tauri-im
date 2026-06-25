@@ -978,6 +978,26 @@ export class ImStoreService {
   }
 
   /**
+   * UC-12.1 健康探针（连通性·读族 request-response）：invoke('im_health', {reqId}）。
+   *
+   * **读族 request-response**（helix 注册 is_read=true·无 WS 回声）：出站 `GET /api/cses/health`·
+   * **无请求体**·不走业务信封（健康端点裸 `{"status":"OK"}`）。HTTP 200 响应体经 helix
+   * `read_relay::emit_read_result` 透传回灌 `im:read:result{req_id, body:{status:"OK"}}`→onBus
+   * applyReadResult 抽 body.status 进 _health 信号（data-health 直映·H 区指示件）。endpoint/method
+   * （GET health·空 body）在 helix-im（HealthCommand）兑现·壳只供 reqId（前端 bridge 生成·回灌关联）。
+   * 返 reqId 供 caller/e2e 等回灌关联。本 UC 验收仅 ① 面（出站 GET health + 200 连通性）。
+   */
+  async checkHealth(reqId?: string): Promise<string> {
+    const rid = (reqId ?? this.genReqId()).trim();
+    try {
+      await this.bridge.invoke<void>("im_health", { reqId: rid });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（连通性靠 im:read:result 投影驱动·无乐观合成）。
+    }
+    return rid;
+  }
+
+  /**
    * UC-9.x 书签·收藏消息：invoke('im_bookmark_create', {channelId, postIds, reqId}）。
    *
    * **读族 request-response**（helix 注册 is_read=true·无 WS 回声）：HTTP 200 响应体（CommonRes 无
@@ -1529,6 +1549,12 @@ export class ImStoreService {
     if (data.error !== undefined) {
       this._replies.set([]); // 失败回灌 → 清抽屉（前端 reject 语义·不残留旧链）
       return;
+    }
+    // UC-12.1 健康探针回灌：body=裸 `{status:"OK"}`（健康端点不走业务信封）→ 设 _health（data-health
+    // 直映 H 区指示件）。纯渲染透传 body.status·不解析重组。health body 无 reply 形态·下方抽 reply 自然空。
+    const body = data.body;
+    if (body && typeof body === "object" && typeof (body as { status?: unknown }).status === "string") {
+      this._health.set((body as { status: string }).status);
     }
     // 读族 body 抽 reply postId 经纯函数 extractReplyIds（read-result-extract.ts·壳体积控制 <800 行）。
     const ids = extractReplyIds(data.body);

@@ -529,6 +529,15 @@
 - **helix 修复（C004 缺陷确认即修·不改 oracle）**：实测 ① 出站 `POST teams/member/quit`→go **404**（DELETE-only 路由）。根因=pinned helix `4cc33c2` registry 写死 POST。在 helix worktree(feat/cses-round6-uc-reclaim) 加 surgical commit `bb00d4d`（registry `outbound_method` 按命令名产 method·im_team_quit→DELETE·http_post→http_request 加 method 参数·回填上游 e005638 的 im_team_quit 部分）→ loopforge `cargo update` 四 crate 同步到 bb00d4d（C001 单版本）。
 - **Tauri 命令新缝**：commands.rs 新增 `im_team_quit`（薄壳从 profile 拼 userId/teamId·身份单一真源·对 helix TeamQuitCommand）+ lib.rs 双 invoke_handler 注册；Angular app.component `onTeamQuit`（C007 配方法·team-quit-btn 已绑）+ im-store `teamQuit`。冻结 oracle 零改（C004）·绿由 reducer/spec 裁定（C009）。
 
+### UC-12.1 健康探针 — `✅ ① 面全绿`（连通性·GET health + 200·暖栈实跑·issue #41·corr_key=req_id·② N/A optional）
+
+- **e2e 真跑（health 单端点全覆盖·连通性 ①·corr_key=req_id 窗口锚·helix dep bumped bb00d4d→721a5b5 含 im_health 注册）**：bridge 直 invoke `im_health {reqId}` → 出站 `GET http://localhost:8065/api/cses/health`·**空 body `{}`** → server `healthCheck` 裸 `{"status":"OK"}`（不走业务信封·partials/3 §15）→ is_read=true → read_relay 回灌 `im:read:result{req_id, body:{status:"OK"}}`（证 200 真连通）。实证 run.jsonl `method=GET url=.../api/cses/health body={}` + `im:read:result body={"status":"OK"}`。
+- **① 出站 HTTP（连通性严格可验绿）**：`GET /api/cses/health`·空 body（health 无请求体·真源 partials/3 §15 healthCheck·health.go:9）。窗口内按 URL endsWith `/api/cses/health` 直接定位（唯一一条·窗口隔离·非 tautology·少 invoke→① 红）→ 严格断 `method=GET`（regress 回 POST→红）+ 空 body + bodyForbidden channelId/id/status（健康探针无业务字段）。reducer 报告 `✅ UC-12.1 写族 ① 出站绿（② 投影 N/A·fire-and-forget·endpoint=/api/cses/health）`。
+- **② 投影 N/A（本 UC 仅 ① 面·issue #41 连通性+200）**：is_read=true 的 `im:read:result{req_id, body}` 是读族回灌**副产**（非冻结业务投影面）→ expect 缺 projection 节 → reducer `isProjectionOptional` → ② 不裁定（守可证伪——少 ① 出站仍红）。③ DOM data-health（H 区指示件·store._health 由 im:read:result body.status 设·可选·本 UC 不裁定）·④ 健康端点无 DB 表（partials/3 §15 DB 表:无）→ N/A。
+- **helix 新缝（C001 单版本·非改 oracle）**：helix worktree(feat/cses-round6-uc-reclaim) 加 commit `721a5b5`（user_misc.rs HealthCommand distributed_slice 注册·("health",{}) GET·is_read=true + registry outbound_method 加 im_health→GET + 单测 health_get_no_body）→ loopforge `cargo update` 四 crate 同步到 721a5b5。**踩坑（C001 实证）**：首次误在 helix `main` 拉分支改·loopforge 实际吃的是 git branch dep `feat/cses-round6-uc-reclaim` 的 pinned commit·改 main 不生效（live `is_outbound("im_health")=false`）→ 须改对应分支 worktree + cargo update bump pinned commit。
+- **Tauri 命令新缝**：commands.rs 新增 `im_health`（薄壳翻 reqId 入泵·对 helix HealthCommand）+ lib.rs 双 invoke_handler 注册；Angular app.component `onHealth`（C007 配方法·health-btn 已绑）+ im-store `checkHealth` + applyReadResult 抽 body.status 设 _health。冻结 oracle 零改（C004）·绿由 reducer/spec 裁定（C009）。
+- **artifacts**：`test/expect/uc-12.1.expect.json` + `test/specs/uc-12.1.e2e.mjs`（暖栈真跑·1 passing·reducer 报告「✅ UC-12.1 写族 ① 出站绿·endpoint=/api/cses/health」）。
+
 ### bot / agent 召唤 — `🚫 已移除`（bot-agent 不在测试范围·2026-06-24 用户裁决）
 
 > **物理够不到 + 后端真阻塞**：message-v3 service 层无独立 bot 端点（客户端无对应 invoke）·`BotAgentWebhookEvent` Pulsar fanout（缺口矩阵 P1-3）未接。客户端侧无用例 → 整域标 ⛔（如需覆盖从服务端 csesapi 侧梳理·超 testbed 范围）。

@@ -1610,6 +1610,28 @@ pub async fn im_average_delete(state: State<'_, AppState>, id: String) -> Result
         .map_err(|e| format!("im_average_delete: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-12.1 健康探针（读族 request-response·连通性 ① 面）：前端传 `reqId` → 本命令转 snake_case
+/// 入泵 `im_health`（helix-im `outbound/user_misc.rs` `HealthCommand` 兑现出站 `GET /api/cses/health`·
+/// **无请求体**·不走业务信封·真源 partials/3 §15 healthCheck → 裸 `{"status":"OK"}`）。读族无 WS
+/// 回声：HTTP 200 响应体经 helix `read_relay::emit_read_result` 透传回灌 `im:read:result{req_id, body}`
+/// （body=`{status:"OK"}`·projection-schema §1.2）。
+///
+/// 薄壳纪律：只翻译入参 + 入泵，endpoint/method（GET health·空 body）在 helix-im 注册表兑现，
+/// 本壳不臆造 wire；`req_id` 经 payload 透传（helix `module::read_req_id` 抠出注册回灌上下文）。
+/// 本 UC 验收仅 ① 面（出站 GET health + 200 连通性）；②投影为读族回灌副产（非冻结业务面）。
+#[tauri::command]
+pub async fn im_health(state: State<'_, AppState>, req_id: String) -> Result<(), String> {
+    if req_id.is_empty() {
+        return Err("im_health: reqId 为空（前端 bridge 须生成·回灌关联）".into());
+    }
+    let tick = command("im_health", serde_json::json!({ "req_id": req_id }));
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_health: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// 就绪 probe：前端轮询此命令直到返回 `true`（increment 流动 + 静默窗口达成）。
 ///
 /// 返回值真精确度的边界见 `state::ReadinessProbe` 注释 + integration_todos（inflight==0
