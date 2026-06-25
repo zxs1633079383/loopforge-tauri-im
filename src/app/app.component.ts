@@ -289,6 +289,36 @@ import { MessageRow } from "./im/message-row.model";
                   data-testid="bookmark-delete-btn"
                   (click)="onDeleteBookmark(m)"
                 >弃藏</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="vote-create-btn"
+                  (click)="onCreateVote(m)"
+                >投</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="vote-do-btn"
+                  (click)="onSubmitVote(m)"
+                >选</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="vote-read-btn"
+                  (click)="onReadVote(m)"
+                >看</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="vote-close-btn"
+                  (click)="onCloseVote(m)"
+                >截</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="vote-delete-btn"
+                  (click)="onDeleteVote(m)"
+                >删投</button>
                 @if (m.sendStatus === "failed") {
                   <button
                     class="im__mini"
@@ -970,5 +1000,53 @@ export class AppComponent implements OnInit, OnDestroy {
     const postId = (row.msgId ?? "").trim();
     if (!postId) return;
     void this.store.deleteBookmark(postId);
+  }
+
+  // ── UC-8.x 投票 CRUD 交互件（C007 必配方法 · 便捷 UI 入口 · e2e 走 bridge 直 invoke 覆盖）─────
+  // 投票卡 id 取自 row.vote（emit_post_updated props.vote 透传的卡 id）·缺则取 row.msgId（消息 server id）。
+  // 写族（create/do/close/delete）fire-and-forget 无乐观合成；读族（read）靠 im:read:result 投影驱动。
+
+  /** UC-8.x 投票·发起：对当前频道发起投票卡（fields=最简 wire 字段集·真源 partials/6 §createVote）。
+   *  此便捷入口用占位字段；e2e 走 bridge 直 invoke 注入真实 fields 覆盖。 */
+  onCreateVote(row: MessageRow): void {
+    const postId = (row.msgId ?? "").trim();
+    if (!postId) return;
+    void this.store.createVote({
+      title: "投票",
+      content: "",
+      options: ["A", "B"],
+      isReal: false,
+      votes: 1,
+    });
+  }
+
+  /** UC-8.x 投票·提交：对投票卡（id=row.vote||msgId）提交所选项 indexes（占位 ["0"]）。
+   *  e2e 走 bridge 直 invoke 注入真实 id/indexes 覆盖。 */
+  onSubmitVote(row: MessageRow): void {
+    const id = (row.vote ?? row.msgId ?? "").trim();
+    if (!id) return;
+    void this.store.submitVote(id, ["0"], (row.msgId ?? "").trim() || undefined);
+  }
+
+  /** UC-8.x 投票·读详情（读族）：读投票卡详情（id=row.vote||msgId）→ im:read:result 回灌。
+   *  e2e 走 bridge 直 invoke 注入真实 id/reqId 覆盖。 */
+  onReadVote(row: MessageRow): void {
+    const id = (row.vote ?? row.msgId ?? "").trim();
+    if (!id) return;
+    void this.store.readVote(id);
+  }
+
+  /** UC-8.x 投票·截止：截止投票卡（id=row.vote||msgId）。e2e 走 bridge 直 invoke 覆盖。 */
+  onCloseVote(row: MessageRow): void {
+    const id = (row.vote ?? row.msgId ?? "").trim();
+    if (!id) return;
+    void this.store.closeVote(id);
+  }
+
+  /** UC-8.x 投票·删除：删除投票卡（id=row.vote||msgId）。e2e 走 bridge 直 invoke 覆盖。 */
+  onDeleteVote(row: MessageRow): void {
+    const id = (row.vote ?? row.msgId ?? "").trim();
+    if (!id) return;
+    void this.store.deleteVote(id);
   }
 }

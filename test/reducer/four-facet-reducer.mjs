@@ -239,6 +239,16 @@ function isOutboundOptional(expect) {
   );
 }
 
+/** 投影期望是否「无约束 optional」（写族 fire-and-forget·UC-8.x 投票 create/do/close/delete 定位 ② N/A）：
+ *  显式 `expect.projection.optional === true`（或缺 projection 节）→ 不约束投影（有无 im:read:result 都合法）。
+ *  这不是放水：写族 vote 命令 helix 注册 is_read=false（HTTP fire-and-forget·数据走 server WS 回声·
+ *  HTTP 响应仅 ack 可丢）→ 单账号 L1 无 server WS post_updated 回声可观测（真 server-data/WS-dep·见
+ *  uc-coverage-ledger.md UC-8.x 节）→ 强求 ② im:read:result 反而假阳（写族本就不产读族回灌）。契约把
+ *  ② 显式标 optional 即声明本命令 ② N/A（与 readVote 读族实 dataKeys 约束区分·守可证伪——少 ① 出站仍红）。 */
+function isProjectionOptional(expect) {
+  return expect === undefined || expect === null || expect.optional === true;
+}
+
 /** body 关键字段对齐：期望列的每个键都要在实际 body 出现且值相等（实际允许多字段）。 */
 function diffOutbound(expect, actual) {
   // 读族 optional 出站（① N/A）：无约束期望 → 总绿（不论有无 HTTP hop·见 isOutboundOptional 注）。
@@ -604,7 +614,31 @@ export function runFourFacetRead({ jsonl, expect, reqId, ucId }) {
   const outboundFacet = diffOutbound(exp, httpHit);
 
   // ② 投影：UC 窗口内找 im:read:result projection·req_id 匹配 reqId（如提供）。
+  // 写族 optional 投影（② N/A·UC-8.x vote create/do/close/delete）：显式 optional → 不约束·总绿
+  // （fire-and-forget 无读族回灌·见 isProjectionOptional 注·守可证伪——少 ① 出站仍红）。
   const pexp = expect.projection ?? {};
+  if (isProjectionOptional(expect.projection)) {
+    const facets = {
+      outbound: outboundFacet,
+      projection: facetReport('projection', [], { optional: true }),
+    };
+    const order = ['outbound', 'projection'];
+    const brokenAt = order.find((f) => !facets[f].ok) ?? null;
+    const green = brokenAt === null && parseErrors.length === 0;
+    return {
+      ucId: uc,
+      green,
+      brokenAt,
+      reqId: reqId ?? null,
+      facets,
+      parseErrors,
+      summary: green
+        ? `✅ ${uc} 写族 ① 出站绿（② 投影 N/A·fire-and-forget·endpoint=${urlEnds}）`
+        : `❌ ${uc} 写族断在 [${brokenAt ?? 'parse'}] 面：${
+            brokenAt ? facets[brokenAt].issues.join('; ') : `JSONL 解析 ${parseErrors.length} 行坏`
+          }`,
+    };
+  }
   const projHops = events.filter(
     (e) =>
       (uc === undefined || e.uc_id === uc) &&

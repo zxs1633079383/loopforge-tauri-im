@@ -1090,6 +1090,82 @@ console.log('· UC-4.4 心跳 gap 补偿（runFourFacetHeartbeatGap·心跳 ping
     '可证伪：无锚 ch message 落库 → ④ 红');
 }
 
+// ── UC-8.x 投票 CRUD（写族 ① + ② optional 短路 / 读族 ①② · runFourFacetRead）────────
+
+console.log('· UC-8.x 投票 CRUD（写族 ① + projection.optional 短路·读族 ①②·runFourFacetRead）');
+{
+  const expVote = JSON.parse(
+    readFileSync(join(ROOT, 'test', 'expect', 'uc-8.x-vote.expect.json'), 'utf8')
+  );
+
+  // 写族 createVote 金标束：仅 ① 出站（整 args 透传 camelCase）·无 im:read:result（fire-and-forget）。
+  const createGood = JSON.stringify({
+    run_id: 'r', uc_id: 'UC-8.x', facet: 'outbound', hop: 'http-req', seq: 1,
+    payload: { method: 'POST', url: 'http://x:3399/vote/createVote',
+      body: { title: 't', content: 'c', options: ['A', 'B'], isReal: false, votes: 1 } },
+  });
+  const repCreate = runFourFacetRead({ jsonl: createGood, expect: expVote.voteCreate, reqId: null, ucId: 'UC-8.x' });
+  eq(repCreate.green, true, '写族 createVote：① 出站绿 + ② optional 短路 → 整体绿（无 im:read:result 也绿）');
+  eq(repCreate.facets.projection.ok, true, '写族 ② projection.optional → 短路总绿（fire-and-forget·N/A）');
+
+  // 可证伪 a：少 invoke（无出站）→ ① 红（optional 只豁免 ②·① 仍刚性·守可证伪非 tautology）。
+  const repNoOut = runFourFacetRead({ jsonl: '', expect: expVote.voteCreate, reqId: null, ucId: 'UC-8.x' });
+  eq(repNoOut.facets.outbound.ok, false, '可证伪：createVote 无出站（少 invoke）→ ① 红（optional 不放水 ①）');
+  eq(repNoOut.green, false, '可证伪：无出站 → 整体红（② optional 短路不掩盖 ① 红）');
+
+  // 可证伪 b：写族 body 泄漏 snake is_real（bodyForbidden）→ ① 红。
+  const leakSnake = JSON.stringify({
+    run_id: 'r', uc_id: 'UC-8.x', facet: 'outbound', hop: 'http-req', seq: 1,
+    payload: { method: 'POST', url: 'http://x:3399/vote/createVote',
+      body: { title: 't', content: 'c', options: ['A'], is_real: false, votes: 1 } },
+  });
+  const repLeak = runFourFacetRead({ jsonl: leakSnake, expect: expVote.voteCreate, reqId: null, ucId: 'UC-8.x' });
+  eq(repLeak.facets.outbound.ok, false, '可证伪：createVote body 缺 camel isReal + 泄漏 snake is_real → ① 红');
+
+  // 可证伪 c：写族 createVote body 泄漏 req_id（fire-and-forget 不应携·整透传误带污染）→ ① 红。
+  const leakReq = JSON.stringify({
+    run_id: 'r', uc_id: 'UC-8.x', facet: 'outbound', hop: 'http-req', seq: 1,
+    payload: { method: 'POST', url: 'http://x:3399/vote/createVote',
+      body: { title: 't', content: 'c', options: ['A'], isReal: false, votes: 1, req_id: 'req-x' } },
+  });
+  const repLeakReq = runFourFacetRead({ jsonl: leakReq, expect: expVote.voteCreate, reqId: null, ucId: 'UC-8.x' });
+  eq(repLeakReq.facets.outbound.ok, false, '可证伪：createVote 整透传误带 req_id（污染 wire body）→ ① 红');
+
+  // 写族 voteDo 金标束：① {id, indexes} 出站·② optional。
+  const doGood = JSON.stringify({
+    run_id: 'r', uc_id: 'UC-8.x', facet: 'outbound', hop: 'http-req', seq: 1,
+    payload: { method: 'POST', url: 'http://x:3399/vote/vote',
+      body: { id: 'vote-1', indexes: ['0', '2'], postId: 'p1' } },
+  });
+  const repDo = runFourFacetRead({ jsonl: doGood, expect: expVote.voteDo, reqId: null, ucId: 'UC-8.x' });
+  eq(repDo.green, true, '写族 voteDo：① {id, indexes} 出站绿 + ② optional → 整体绿');
+
+  // 读族 readVote 金标束：① {id} 出站 + ② im:read:result{req_id, body} 回灌。
+  const RID = 'req-vote-read1';
+  const readGood = [
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-8.x', facet: 'outbound', hop: 'http-req', seq: 1,
+      payload: { method: 'POST', url: 'http://x:3399/vote/readVote', body: { id: 'vote-1' } } }),
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-8.x', facet: 'projection', hop: 'projection', seq: 2,
+      payload: { event: 'im:read:result', data: { req_id: RID, body: { id: 'vote-1', options: [] } } } }),
+  ].join('\n');
+  const repRead = runFourFacetRead({ jsonl: readGood, expect: expVote.voteRead, reqId: RID, ucId: 'UC-8.x' });
+  eq(repRead.green, true, '读族 readVote：① {id} 出站 + ② im:read:result{req_id, body} 双面全绿');
+
+  // 可证伪 d：读族 readVote body 泄漏 req_id（id_body 应不漏 reqId）→ ① 红。
+  const readLeakReq = [
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-8.x', facet: 'outbound', hop: 'http-req', seq: 1,
+      payload: { method: 'POST', url: 'http://x:3399/vote/readVote', body: { id: 'vote-1', req_id: RID } } }),
+    readGood.split('\n')[1],
+  ].join('\n');
+  const repReadLeak = runFourFacetRead({ jsonl: readLeakReq, expect: expVote.voteRead, reqId: RID, ucId: 'UC-8.x' });
+  eq(repReadLeak.facets.outbound.ok, false, '可证伪：readVote wire body 泄漏 req_id（id_body 应不漏）→ ① 红');
+
+  // 可证伪 e：读族无 im:read:result 回灌（少回灌）→ ② 红（读族 dataKeys 刚性·非 optional）。
+  const readNoProj = readGood.split('\n')[0];
+  const repReadNoProj = runFourFacetRead({ jsonl: readNoProj, expect: expVote.voteRead, reqId: RID, ucId: 'UC-8.x' });
+  eq(repReadNoProj.facets.projection.ok, false, '可证伪：readVote 无 im:read:result 回灌 → ② 红（读族 ② 刚性）');
+}
+
 // ── 收尾 ─────────────────────────────────────────────────────────────────────
 
 console.log('');

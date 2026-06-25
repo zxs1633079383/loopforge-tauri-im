@@ -1216,6 +1216,125 @@ pub async fn im_load_older_context(
         .map_err(|e| format!("im_load_older_context: 入泵失败（泵已退出？）：{e}"))
 }
 
+// ── UC-8.x 投票 CRUD（vote/score 第二网关 :3399·partials/6 集合八）──────────────
+//
+// 五命令对 helix-im outbound registry（vote_score.rs）：
+//   im_vote_create → `POST vote/createVote`（写族·整 args 透传·body=fields 字面 camelCase wire）
+//   im_vote_do     → `POST vote/vote`        （写族·{id, postId?, indexes:[]}）
+//   im_vote_read   → `POST vote/readVote`     （读族 is_read=true·{id}·im:read:result{req_id, body} 回灌）
+//   im_vote_close  → `POST vote/closeVote`    （写族·{id}）
+//   im_vote_delete → `POST vote/deleteVote`   （写族·{id}）
+//
+// 薄壳纪律：仅翻译入参 + 入泵；出站 wire body / 落库 / WS 回声全在 helix-im。
+// **req_id 投放纪律**：写族（create/do/close/delete）是 fire-and-forget（is_read=false·无读族回灌）→
+//   payload **不**带 req_id（尤其 createVote 整 args 透传·带 req_id 会泄漏进 wire body 污染 ① 出站）。
+//   仅读族 im_vote_read payload 带 req_id（helix id_body 只取 id·req_id 不泄漏·read_req_id 抠出注册回灌）。
+
+/// UC-8.x 投票·发起：前端组好 camelCase wire fields（fromUserId/fromUserName/title/content/votes/
+/// isReal/finishTime/options[]/orgIds[]/source? 等·真源 partials/6 集合八 §createVote）→ 本壳整对象
+/// 透传入泵 `im_vote_create`（helix `VoteCreateCommand` 整 args 透传出站 `POST vote/createVote`·
+/// 字面 camelCase·不重列字段防漏）。写族 fire-and-forget（数据走 server WS post_updated 回声）·
+/// 不带 req_id（防泄漏进透传 body）。
+#[tauri::command]
+pub async fn im_vote_create(
+    state: State<'_, AppState>,
+    fields: serde_json::Value,
+) -> Result<(), String> {
+    if !fields.as_object().is_some_and(|o| !o.is_empty()) {
+        return Err("im_vote_create: fields 须为非空 object（camelCase wire 字段集）".into());
+    }
+    let tick = command("im_vote_create", fields);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_vote_create: 入泵失败（泵已退出？）：{e}"))
+}
+
+/// UC-8.x 投票·提交：前端传 `id`（投票卡 id）+ `indexes`（选项序号字符串数组）+ 可选 `postId`
+/// → 入泵 `im_vote_do`（helix `VoteDoCommand` 出站 `POST vote/vote` body `{id, indexes:[], postId?}`·
+/// 真源 partials/6 §vote）。写族·不带 req_id。
+#[tauri::command]
+pub async fn im_vote_do(
+    state: State<'_, AppState>,
+    id: String,
+    indexes: Vec<String>,
+    post_id: Option<String>,
+) -> Result<(), String> {
+    if id.is_empty() {
+        return Err("im_vote_do: id 为空（投票卡 id）".into());
+    }
+    let mut payload = serde_json::Map::new();
+    payload.insert("id".into(), serde_json::json!(id));
+    payload.insert("indexes".into(), serde_json::json!(indexes));
+    if let Some(p) = post_id {
+        if !p.is_empty() {
+            payload.insert("postId".into(), serde_json::json!(p));
+        }
+    }
+    let tick = command("im_vote_do", serde_json::Value::Object(payload));
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_vote_do: 入泵失败（泵已退出？）：{e}"))
+}
+
+/// UC-8.x 投票·读详情（读族 is_read=true）：前端传 `id` + `reqId` → 入泵 `im_vote_read`
+/// （helix `VoteReadCommand` 出站 `POST vote/readVote` body `{id}`·真源 partials/6 §readVote）。
+/// HTTP 响应体经 `query::emit_read_result` 透传回灌 `im:read:result{req_id, body}`（reqId 经 payload
+/// 透传·helix `read_req_id` 抠出·`id_body` 只取 id 不泄漏 reqId）。
+#[tauri::command]
+pub async fn im_vote_read(
+    state: State<'_, AppState>,
+    id: String,
+    req_id: String,
+) -> Result<(), String> {
+    if id.is_empty() {
+        return Err("im_vote_read: id 为空（投票卡 id）".into());
+    }
+    if req_id.is_empty() {
+        return Err("im_vote_read: reqId 为空（前端 bridge 须生成·回灌关联）".into());
+    }
+    let payload = serde_json::json!({ "id": id, "req_id": req_id });
+    let tick = command("im_vote_read", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_vote_read: 入泵失败（泵已退出？）：{e}"))
+}
+
+/// UC-8.x 投票·截止：前端传 `id` → 入泵 `im_vote_close`（helix `VoteCloseCommand` 出站
+/// `POST vote/closeVote` body `{id}`·真源 partials/6 §closeVote）。写族·不带 req_id。
+#[tauri::command]
+pub async fn im_vote_close(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    if id.is_empty() {
+        return Err("im_vote_close: id 为空（投票卡 id）".into());
+    }
+    let tick = command("im_vote_close", serde_json::json!({ "id": id }));
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_vote_close: 入泵失败（泵已退出？）：{e}"))
+}
+
+/// UC-8.x 投票·删除：前端传 `id` → 入泵 `im_vote_delete`（helix `VoteDeleteCommand` 出站
+/// `POST vote/deleteVote` body `{id}`·真源 partials/6 §deleteVote）。写族·不带 req_id。
+#[tauri::command]
+pub async fn im_vote_delete(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    if id.is_empty() {
+        return Err("im_vote_delete: id 为空（投票卡 id）".into());
+    }
+    let tick = command("im_vote_delete", serde_json::json!({ "id": id }));
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_vote_delete: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// 就绪 probe：前端轮询此命令直到返回 `true`（increment 流动 + 静默窗口达成）。
 ///
 /// 返回值真精确度的边界见 `state::ReadinessProbe` 注释 + integration_todos（inflight==0

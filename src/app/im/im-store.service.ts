@@ -989,6 +989,85 @@ export class ImStoreService {
     return rid;
   }
 
+  // ── UC-8.x 投票 CRUD（vote/score 第二网关 :3399·partials/6 集合八）──────────────
+  // 写族（create/do/close/delete·is_read=false·fire-and-forget·数据走 server WS post_updated 回声）+
+  // 读族（read·is_read=true·im:read:result{req_id, body} 透传回灌）。壳前端只组 wire 字段 + 入 invoke；
+  // 出站 body / 落库 message.props / WS 回声全在 helix-im（VoteXxxCommand）。
+
+  /**
+   * UC-8.x 投票·发起（写族）：invoke('im_vote_create', {fields})。
+   * fields = camelCase wire 字段集（fromUserId/fromUserName/title/content/votes/isReal/finishTime/
+   * options[]/orgIds[]/source? 等·真源 partials/6 集合八 §createVote·helix VoteCreateCommand 整 args 透传）。
+   * fire-and-forget（无读族回灌）→ 不带 reqId（防泄漏进透传 wire body）。
+   */
+  async createVote(fields: Record<string, unknown>): Promise<void> {
+    if (!fields || Object.keys(fields).length === 0) return;
+    try {
+      await this.bridge.invoke<void>("im_vote_create", { fields });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（投票卡靠 server WS post_updated 回声驱动·无乐观合成）。
+    }
+  }
+
+  /**
+   * UC-8.x 投票·提交（写族）：invoke('im_vote_do', {id, indexes, postId?}）。
+   * id=投票卡 id·indexes=选项序号字符串数组·postId 可选（真源 partials/6 §vote）。
+   */
+  async submitVote(id: string, indexes: string[], postId?: string): Promise<void> {
+    const vid = id.trim();
+    if (!vid) return;
+    const args: Record<string, unknown> = { id: vid, indexes };
+    const p = (postId ?? "").trim();
+    if (p) args["postId"] = p;
+    try {
+      await this.bridge.invoke<void>("im_vote_do", args);
+    } catch {
+      // 出站失败 → 静默（投票态靠 server WS 回声驱动·无乐观合成）。
+    }
+  }
+
+  /**
+   * UC-8.x 投票·读详情（读族）：invoke('im_vote_read', {id, reqId}）。
+   * HTTP 响应体经 helix query::emit_read_result 透传回灌 im:read:result{req_id, body}。返 reqId 供 e2e 关联。
+   */
+  async readVote(id: string, reqId?: string): Promise<string> {
+    const rid = (reqId ?? this.genReqId()).trim();
+    const vid = id.trim();
+    if (!vid) return rid;
+    try {
+      await this.bridge.invoke<void>("im_vote_read", { id: vid, reqId: rid });
+    } catch {
+      // 出站失败 → 静默（投票详情靠 im:read:result 投影驱动·无乐观合成）。
+    }
+    return rid;
+  }
+
+  /**
+   * UC-8.x 投票·截止（写族）：invoke('im_vote_close', {id}）。真源 partials/6 §closeVote。
+   */
+  async closeVote(id: string): Promise<void> {
+    const vid = id.trim();
+    if (!vid) return;
+    try {
+      await this.bridge.invoke<void>("im_vote_close", { id: vid });
+    } catch {
+      // 出站失败 → 静默（投票截止态靠 server WS 回声驱动·无乐观合成）。
+    }
+  }
+
+  /**
+   * UC-8.x 投票·删除（写族）：invoke('im_vote_delete', {id}）。真源 partials/6 §deleteVote。
+   */
+  async deleteVote(id: string): Promise<void> {
+    const vid = id.trim();
+    if (!vid) return;
+    try {
+      await this.bridge.invoke<void>("im_vote_delete", { id: vid });
+    } catch {
+      // 出站失败 → 静默（投票删除态靠 server WS 回声驱动·无乐观合成）。
+    }
+  }
+
   /** 读族关联 id（req_id）生成器（非 wire 字段·仅前端 bridge↔回灌关联用·z-base-32 短 id）。 */
   private genReqId(): string {
     return `req-${Math.random().toString(36).slice(2, 12)}`;

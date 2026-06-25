@@ -153,6 +153,11 @@ pub fn run() {
         commands::im_bookmark_create,
         commands::im_bookmark_delete,
         commands::im_bookmark_load,
+        commands::im_vote_create,
+        commands::im_vote_do,
+        commands::im_vote_read,
+        commands::im_vote_close,
+        commands::im_vote_delete,
         commands::im_sync_channels,
         commands::set_uc
     ]);
@@ -189,6 +194,11 @@ pub fn run() {
         commands::im_bookmark_create,
         commands::im_bookmark_delete,
         commands::im_bookmark_load,
+        commands::im_vote_create,
+        commands::im_vote_do,
+        commands::im_vote_read,
+        commands::im_vote_close,
+        commands::im_vote_delete,
         commands::im_sync_channels
     ]);
 

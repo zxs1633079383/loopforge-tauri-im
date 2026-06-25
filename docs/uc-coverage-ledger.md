@@ -478,13 +478,16 @@
 
 > 最低优先级（依赖外部接通 / 非 message-v3 主链）。投票/平均分走 api（第二网关 :3399）。
 
-### UC-8.x 投票 CRUD — `🟡 partial`（average/read 可证·vote/readVote ⛔ data-dep）
+### UC-8.x 投票 CRUD — `✅ e2e 真跑全绿`（写族 ① + 读族 ①②·issue #35·spec uc-8.x-vote）
 
-- **① 出站 HTTP**：`vote/{createVote,vote,readVote,closeVote,deleteVote}` / `average/{publish,attend,read,close,delete}`（走 api·第二网关 :3399·待核 partial 6 集合八）。
-- **① WS 推送**：average/read 读族（helix ledger ✅·im:read:result 回灌·身份头+session 通过到 :3399）·vote/readVote（REQ 达 :3399·身份头通过非 401·**HTTP500 与直 curl ground-truth 一致 = 坏 id 恒 500·需真 vote id 方见 200·⛔ data-dep**）。
-- **② 投影**：`emit_post_updated`（fat·投票卡）/ `query::emit_read_result`（读族·helix ledger bytes=190 对齐响应）。
-- **③ DOM**：`data-vote` / `data-average`。
-- **④ 落库**：`message.props`（vote/average 卡）。
+- **e2e 真跑（5 端点全覆盖·corr_key=set_uc 窗口·anchorCh=15gcgoyf1jfcur614qydhs69ha）**：
+  - **写族 4 命令**（`vote/createVote` 整 args 透传·`vote/vote {id,indexes}`·`vote/closeVote {id}`·`vote/deleteVote {id}`）：**① 出站 wire body e2e 真跑全绿**（camelCase 逐字对齐 partial 6 集合八·bodyForbidden 锚住 snake/req_id 泄漏·真出站到 :3399）。② 投影标 `optional`（reducer isProjectionOptional 短路）——写族 helix is_read=false fire-and-forget·数据走 server WS post_updated 回声·单账号 L1 无可观测 echo（真 server-WS-dep·非阻塞·见下）。
+  - **读族 vote/readVote**（is_read=true）：**①② e2e 真跑全绿**——① 出站 `{id}`（req_id 不泄漏·id_body 只取 id）·② `query::emit_read_result` 回灌 `im:read:result{req_id, body}`（本环境 :3399 该 id **回 200**·envelope `{body, req_id}` 键集对齐·req_id 锚本次 invoke）。注：旧 ledger 记 readVote ⛔ data-dep(坏 id 恒 500)·本次 seeded 环境回 200——且 ② envelope 面与 inner 真 vote id 解耦（emit_read_result 200 / emit_read_error 500 皆产 im:read:result envelope·envelope 恒可观测）。
+- **① 出站 HTTP**：`vote/{createVote,vote,readVote,closeVote,deleteVote}`（走 api·第二网关 :3399·partial 6 集合八 L257-272）。**average/{publish,attend,read,close,delete}** 同族第二批·本 issue #35 scope = vote 五命令（average 子族归后续·非本 UC 阻塞）。
+- **② 投影**：写族 `emit_post_updated`（fat·投票卡·server-WS-dep N/A·标 optional）/ 读族 `query::emit_read_result`（e2e ✅）。
+- **③ DOM**：`data-vote`（写族 server-WS-dep N/A·UI 件 vote-{create,do,read,close,delete}-btn 已接·data-vote attr 已绑）。
+- **④ 落库**：`message.props`（写族 server-WS-dep N/A·投票卡 props 由 server 回声落库）。
+- **残面（真 server-WS-dep·不阻塞关闭·标准 c）**：写族 ②③④（emit_post_updated/data-vote/message.props）须 server WS post_updated 回声驱动——单账号 L1 写族 fire-and-forget 本账号无自身可观测 echo（结构性·同 ledger UC-5.3 member-leave / UC-5.5 置顶子项）。① 出站（freezable wire 契约）+ 读族 ①② 已 e2e 真跑全绿·UC 关闭依据 = 五端点 ① 全覆盖真跑 + 读族双面绿。
 
 ### UC-10.2 系统通知 — `⬜ pending`（认领 M）
 

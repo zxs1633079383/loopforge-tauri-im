@@ -130,3 +130,5 @@
 ✅ DONE UC-4.5 陌生 channel 兜底读族四面闭环（issue #33 closed·e2e 真跑全绿） @2026-06-25T19:16+08:00 | commit 131a424 | ①② green · ③④ N/A(读路径·is_read=true 校正) | loopforge-tauri-im/feat/uc-rollout
 
 ✅ DONE UC-4.4 心跳 gap 补偿三面契约闭环（①②④·③ DOM N/A 已移除·issue #34 closed·e2e 真跑全绿） @2026-06-25T19:40+08:00 | commit (本次) | ①②④ green · ③ N/A(DOM 面已移除·补偿经 4.2 路径) | anchorCh=181jj6htd7nn3xx51z78bhuhcr·ping∩ubp∩msg 交集 94 频道 | loopforge-tauri-im/feat/uc-rollout
+
+✅ DONE UC-8.x 投票 CRUD 四面契约闭环（写族 ① 四端 + 读族 ①② vote/readVote·issue #35 closed·e2e 真跑全绿） @2026-06-25T20:00+08:00 | commit (本次) | 写族 ① green(create/do/close/delete) · 读族 ①② green(readVote 200) · ②③④ 写族 server-WS-dep N/A | anchorCh=15gcgoyf1jfcur614qydhs69ha · 5 端点全覆盖 :3399 | loopforge-tauri-im/feat/uc-rollout
