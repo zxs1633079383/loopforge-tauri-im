@@ -78,7 +78,7 @@
 ## 阶段 7 · teams / 运维（2026-06-24 新增·原端点漏网→用户确认要测）
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
 |---|---|---|---|---|---|---|---|
-| [ ] | 5.8 条件查频道 | `im_query_channels`→`channel/query` | `partials/2 channel/query`(条件分页) | `query::emit_read_result`/`channels:projection`(透传) | data-channel-id 列表 | `Scan channel` | S |
+| [x] | 5.8 条件查频道 | `im_channel_query`→`channel/query` | `partials/2 channel/query`(条件分页) | `read_relay::emit_read_result`(读族透传·im:read:result) | data-channel-id 列表(③ N/A 读族) | N/A(读族只读) | S |
 | [ ] | 11.1 维护公司大群 | `im_team_upsert`→`teams/upsert` | `partials/3 teams/upsert` | `emit_channel_created`/`emit_channel_update`(公司大群) | data-channel-id(team 大群) | `channel` | M |
 | [ ] | 11.2 退出公司 | `im_team_quit`→`teams/member/quit`(DELETE) + WS `quit_company` | `partials/3 teams/member/quit` | (member/channel 移除投影) | channel/member 行移除 | `channel_member` 删 | M |
 | [ ] | 12.1 健康探针(1 面①) | `im_health`→`GET /health` | `partials/3 health` | (无投影) | data-health(可选) | (无落库) | S·连通性(①+200) |

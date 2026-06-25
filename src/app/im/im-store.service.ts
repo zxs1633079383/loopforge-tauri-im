@@ -906,6 +906,39 @@ export class ImStoreService {
   }
 
   /**
+   * UC-5.8 条件查频道（条件分页查询·读族）：invoke('im_channel_query',
+   * {condition, pageNumber, pageSize, offset, reqId}）。
+   *
+   * **读族 request-response**（helix 注册 is_read=true·无 WS 回声）：HTTP 200 响应体（频道查询结果·
+   * 透传 []*Channel）经 helix `read_relay::emit_read_result` 透传回灌 `im:read:result{req_id, body}`。
+   * endpoint channel/query + wire body（condition map 平铺顶层 + pageNumber/pageSize/offset 同层 merge·
+   * 匿名 struct embed Channel + PageOpts）全 camelCase 化在 helix-im（ChannelQueryCommand）。壳只供
+   * condition（前端构造的查询条件 map·已 camelCase）+ 分页（缺省 0）+ reqId（前端 bridge 生成·回灌关联）。
+   * 返 reqId 供 caller/e2e 等回灌关联。
+   */
+  async queryChannels(
+    condition: Record<string, unknown> = {},
+    pageNumber = 0,
+    pageSize = 0,
+    offset = 0,
+    reqId?: string,
+  ): Promise<string> {
+    const rid = (reqId ?? this.genReqId()).trim();
+    try {
+      await this.bridge.invoke<void>("im_channel_query", {
+        condition,
+        pageNumber,
+        pageSize,
+        offset,
+        reqId: rid,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（结果靠 im:read:result 投影驱动·无乐观合成）。
+    }
+    return rid;
+  }
+
+  /**
    * UC-9.x 书签·收藏消息：invoke('im_bookmark_create', {channelId, postIds, reqId}）。
    *
    * **读族 request-response**（helix 注册 is_read=true·无 WS 回声）：HTTP 200 响应体（CommonRes 无

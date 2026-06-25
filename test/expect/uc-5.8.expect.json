@@ -1,0 +1,44 @@
+{
+  "$schema-note": "四面期望文件 (UC-5.8 条件查频道) — 读族 oracle（只读契约·contract-readonly-autofix.md §1）。读族 (request-response 传输·HTTP 体即数据·无 WS 回声·同 UC-6.4/UC-4.5) 断面退化为 ①②：① outbound HTTP wire body（channel/query·condition map 平铺顶层 + pageNumber/pageSize/offset 同层 merge）逐字检（urlEndsWith + bodyFields + bodyForbidden 禁 snake 泄漏）；② projection envelope（im:read:result {req_id, body} 外层键集 + req_id 锚本次 invoke）。③ DOM / ④ storage = N/A（读路径无 write 驱动 DOM·查询结果由前端从透传 body 抽频道渲染·非冻结契约面·reducer runFourFacetRead 不裁定）。reducer runFourFacetRead 裁定 ①②。",
+  "ucId": "UC-5.8",
+  "title": "条件查频道（读族 request-response·断面 ①②）",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/full-map/partials/2--backend-http-channel-sync.md §2 channel/query (内联匿名 struct {entity.Channel; entity.PageOpts}·同层 merge·condition 字段与分页字段平铺)；helix outbound/channel_read.rs ChannelQueryCommand 实证 wire body：condition map 平铺进顶层 + pageNumber/pageSize/offset i64（缺省 0）·全 camelCase",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1.2 read_relay::emit_read_result (im:read:result {req_id, body})",
+    "dom": "N/A (读族无 write 驱动 DOM 契约面·查询结果由前端从透传 body 抽频道渲染·非冻结契约面)",
+    "storage": "N/A (查询为只读·无落库 write·装饰器 facet④ 不暴露读路径·reducer 不裁定 ④)"
+  },
+
+  "corrAnchor": {
+    "note": "读族无四维领域键（channel/query outbound wire body 携 condition 平铺 + 分页字段·非 ch/tmp/sid 别名抽键；projection req_id 由 e2e invoke 时生成·经 bridge 透传·helix module::read_req_id 抠出注册回灌上下文）。reducer runFourFacetRead 在 set_uc 窗口内按 endpoint 找 ① 出站·按 req_id 锚 ② 投影。req_id 由 e2e 注入到 runFourFacetRead({reqId})。",
+    "req_id": null
+  },
+
+  "channelQuery": {
+    "_note": "① channel/query endpoint 子期望（flat·reducer diffOutbound 直消费）。wire body 真源 partial 2 §2：匿名 struct embed Channel + PageOpts → condition 字段（如 name/teamId）平铺顶层 + 分页字段 pageNumber/pageSize/offset 同层。helix outbound/channel_read.rs ChannelQueryCommand 实证：condition map clone 进顶层 + obj.insert pageNumber/pageSize/offset（i64·camelCase）。bodyForbidden 锚 snake 泄漏（page_number/page_size·condition 别名 pageOpts）。bodyFields 只锚分页三键（恒在·condition 字段随查询条件变·不硬编名/teamId 避免臆造条件契约）。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "channel/query",
+      "bodyFields": {
+        "pageNumber": "*",
+        "pageSize": "*",
+        "offset": "*"
+      },
+      "bodyForbidden": ["page_number", "page_size", "pageOpts", "condition"]
+    },
+    "projection": {
+      "event": "im:read:result",
+      "dataKeys": ["req_id", "body"],
+      "_note": "projection-schema §1.2：读族回灌外层恒 {req_id, body}（成功）。body = 后端 channel/query 响应体原样透传（[]*Channel 查询结果）·inner 不冻结（前端直消费抽频道渲染）。键集 = 2 键严格对齐（多/缺即红）。"
+    }
+  },
+
+  "storage": {
+    "_note": "N/A (读路径·查询只读无 write)。装饰器 facet④ 不暴露读路径。reducer runFourFacetRead 不裁定 ④ 面。"
+  },
+
+  "dom": {
+    "_note": "N/A (读族无 write 驱动 DOM 契约面)。查询结果列表 data-channel-id 由前端从透传 body 抽频道后渲染·属前端渲染非冻结契约面·reducer 不裁定 ③ 面。"
+  }
+}

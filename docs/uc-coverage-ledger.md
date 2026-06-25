@@ -383,6 +383,17 @@
 
 > **后端真阻塞缺失**：`users/status/ids`（缺口矩阵 P1-2）依赖 mattermost statusCache·迁移裁决前不能红转绿（改契约才能过 = 违护栏）。`channel/onlineStatus` / `modules/getAll`（待核·partial 6 UC-5.7·helix ledger status_change 真帧已观测但 status app 层 goBlocked）。后端裁决迁移前标 ⛔。
 
+### UC-5.8 条件查频道 — `✅ 四面全绿`（读族 ①②·③④ N/A·暖栈实跑全绿·corr_key=req_id·issue #38）
+
+> **读族 request-response 断面 ①②**（同 UC-4.5 / UC-6.4）：`channel/query` 是读命令（`channel_read.rs::ChannelQueryCommand` `is_read=true`·HTTP 200 响应体即查询结果·**不推送**·无 WS 回声）→ helix `read_relay::emit_read_result` 透传回灌 `im:read:result{req_id, body}`（projection-schema §1.2 读族·非 21 投影集）。按 C004 以冻结源码（channel_read.rs:115-143 + read_relay.rs）裁定为读族 ①② 两面·③④=N/A。
+
+- **① 出站 HTTP**：`im_channel_query` → `POST channel/query`，body = condition map 平铺顶层 + `pageNumber`/`pageSize`/`offset`（i64·缺省 0·匿名 struct embed Channel + PageOpts 同层 merge·全 camelCase）。✅ 暖栈实证（reducer diffOutbound：`bodyFields {pageNumber, pageSize, offset}` 命中 + `bodyForbidden` 锚 page_number/page_size/pageOpts/condition snake/别名泄漏 不命中）。真源 partial 2 §2 + helix outbound/channel_read.rs ChannelQueryCommand。
+- **② 投影**：`im:read:result`（读族透传·§1.2 `{req_id, body}`·外层键集严格对齐·req_id 锚本次 invoke·body = 后端 channel/query 响应体原样透传 []*Channel·inner 不冻结）。✅ 暖栈实证（req_id=req-6wlpf9wi41）。
+- **③ DOM**：N/A（读族无 write 驱动 DOM 契约面·查询结果列表 data-channel-id 由前端从透传 body 抽频道渲染·非冻结面）。reducer runFourFacetRead 不裁定 ③。
+- **④ 落库**：N/A（查询为只读·无 `Effect::Persist`·装饰器 facet④ 不暴露读路径）。reducer runFourFacetRead 不裁定 ④。
+- **artifacts**：`test/expect/uc-5.8.expect.json` + `test/specs/uc-5.8.e2e.mjs`（暖栈真跑·1 passing·192ms·reducer 报告「✅ UC-5.8 读族双面全绿·endpoint=channel/query」）。
+- **机器件改动**：Rust `im_channel_query` 命令（commands.rs·入泵 helix-im `im_channel_query`·lib.rs 双 cfg 分支注册）+ 前端 `ImStore.queryChannels` + `onQueryChannels` 接通（占位 → 真接·C007 事件配方法·按已渲染频道名构 condition）。reducer / 装饰器 / oracle 未改（读族断面复用 runFourFacetRead·无需新机件）。
+
 ### UC-4.3 too_long 重拉 — `⛔ unreachable`（harness-gap·触发态够不到）
 
 > **物理/数据够不到（非 wire-bug·代码侧实现完整有单测）**：testbed 无「注入本地落后 cursor」入口·冷启动 cursor=0 走 increment 不进 too_long 分支·也无法把本地 cursor 顶到远落后服务端 seq 的态（helix ledger 同标 harness-gap）。

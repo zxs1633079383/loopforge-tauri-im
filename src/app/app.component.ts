@@ -727,9 +727,19 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.store.createChannel(displayName, memberIds);
   }
 
-  /** UC-5.8 条件查频道。占位 → 接 im_query_channels。 */
+  /**
+   * UC-5.8 条件查频道（条件分页查询·读族）：store.queryChannels（invoke im_channel_query →
+   * 出站 channel/query·condition map 平铺 + pageNumber/pageSize/offset 同层）。读族无 WS 回声·
+   * 查询结果靠 helix `im:read:result{req_id, body}` 透传回灌（前端从 body 抽频道渲染·非冻结契约面）。
+   * 最简 UI：取一个本地已渲染频道的 displayName 作 condition（保证有命中·真实「按名查」流），
+   * 无频道则空 condition（仅带分页·查全部）。e2e 走 bridge 直 invoke 注入确定性 condition/reqId。
+   */
   onQueryChannels(): void {
-    /* UC-5.8 接通 */
+    const first = this.store.channels()[0];
+    const condition = first?.displayName
+      ? { name: first.displayName }
+      : {};
+    void this.store.queryChannels(condition, 0, 20, 0);
   }
 
   /** UC-4.2 按需 sync：触发引擎重连 → 重检 per-channel needSync gap → 对落后频道自驱

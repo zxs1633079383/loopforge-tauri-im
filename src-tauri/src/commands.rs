@@ -542,6 +542,49 @@ pub async fn im_ensure_channel_loaded(
         .map_err(|e| format!("im_ensure_channel_loaded: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-5.8 条件查频道（条件分页查询）：前端传 `condition`（object·频道查询条件 map·已 camelCase·
+/// 平铺进顶层 wire body·空则不带条件字段）+ 分页 `pageNumber`/`pageSize`/`offset`（i64·缺省 0）+
+/// `reqId` → 本命令转 snake_case 入泵 `im_channel_query`（helix-im `outbound/channel_read.rs`
+/// `ChannelQueryCommand` 兑现出站 `POST channel/query`·真源 partial 2 §2 内联匿名 struct
+/// {entity.Channel; entity.PageOpts} 同层 merge·全 camelCase）。读族注册（`is_read=true`）：HTTP 200
+/// 响应体经 helix `read_relay::emit_read_result` 透传回灌 `im:read:result{req_id, body}`
+/// （projection-schema §1.2）。
+///
+/// 薄壳纪律：只翻译入参 + 入泵（condition 透传·不臆造条件字段·body camelCase 化由前端构造）·
+/// `req_id` 经 payload 透传（helix `module::read_req_id` 抠出注册回灌上下文）。
+#[tauri::command]
+pub async fn im_channel_query(
+    state: State<'_, AppState>,
+    condition: serde_json::Value,
+    page_number: Option<i64>,
+    page_size: Option<i64>,
+    offset: Option<i64>,
+    req_id: String,
+) -> Result<(), String> {
+    if req_id.is_empty() {
+        return Err("im_channel_query: reqId 为空（前端 bridge 须生成·回灌关联）".into());
+    }
+    // condition 必须是 object（平铺进顶层 wire body）；缺省空对象（仅带分页字段）。
+    let condition = match condition {
+        serde_json::Value::Object(_) => condition,
+        serde_json::Value::Null => serde_json::json!({}),
+        _ => return Err("im_channel_query: condition 必须是 object（频道查询条件 map）".into()),
+    };
+    let payload = serde_json::json!({
+        "condition": condition,
+        "page_number": page_number.unwrap_or(0),
+        "page_size": page_size.unwrap_or(0),
+        "offset": offset.unwrap_or(0),
+        "req_id": req_id,
+    });
+    let tick = command("im_channel_query", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_channel_query: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-9.x 书签·收藏消息：前端传 `channelId` + `postIds`（被收藏消息 server_id 列表）+ `reqId`
 /// → 本命令补 `userId`（取自 AppState.identity·身份单一真源·壳不臆造 creds）→ 转 snake_case
 /// 入泵 helix-im `im_bookmark_create`（`BookmarkCreateCommand` 兑现出站 `POST post/bookmark/create`
