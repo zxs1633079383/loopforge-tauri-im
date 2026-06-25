@@ -51,6 +51,10 @@ export function extractDims(payload) {
     // 落库(sid) 聚同一束。多 post 信封(转发 UC-1.7)首元素代表，后续按需扩展。
     payload?.data?.posts?.[0],
     payload?.posts?.[0],
+    // batch sync 出站（channels/load/increment）：channelId 嵌在 body.cursors[0]，
+    // 顶层/.data/.body 都无单频道锚。探 body.cursors[0] 取锚频道，使 ① 出站与
+    // per-channel ② projection / ④ storage 聚同一束（UC-4.1 ① 面·与装饰器 event.rs 对齐）。
+    payload?.body?.cursors?.[0],
   ].filter((p) => p && typeof p === 'object');
   /** @type {{ch?:string,tmp?:string,sid?:string,seq?:string}} */
   const dims = {};

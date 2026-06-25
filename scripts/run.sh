@@ -54,6 +54,15 @@ trap cleanup_chain EXIT
 start_frontend "$NG_LOG"
 wait_http "http://localhost:$FRONTEND_PORT" "前端(ng serve)" 180
 
+# —— UC-4.1 专用 seed：起 app 前重置 cursor 到落后态（必须早于 app 加载 in-memory cursor）——
+# hello 握手发的 fromSeq = 启动时从 DB channel_event_cursor 灌入的 in-memory 值；
+# 故重置必须在 app 启动前（spec 的 before-hook 太晚·cursor 已灌入内存）。
+# 幂等可重复：每轮 run 都重置（上轮 hello 已把 cursor 推回 current）。
+if printf '%s\n' "${WDIO_ARGS[@]+"${WDIO_ARGS[@]}"}" | grep -q 'uc-4.1'; then
+  info "UC-4.1：起 app 前重置 cursor 到落后态（seed-behind-cursor·决策 A·C003/C004）"
+  bash "$REPO_ROOT/scripts/seed-behind-cursor.sh" || die "UC-4.1 cursor 重置失败（seed-behind-cursor）" 1
+fi
+
 # —— 起 app：cargo run debug（边构建边起；首次构建慢，耐心等 webdriver 就绪）——
 : >"$HELIX_RUN_JSONL" 2>/dev/null || true
 info "起 app：cargo run（src-tauri，debug，${MODE_ENV_VAR}=${MODE}，webdriver ${WEBDRIVER_PORT}，run.jsonl=${HELIX_RUN_JSONL}）"

@@ -105,7 +105,21 @@ pub fn extract_corr_key(payload: &Value) -> Option<String> {
         return Some(k);
     }
     if let Some(data) = payload.get("data") {
-        return probe(data);
+        if let Some(k) = probe(data) {
+            return Some(k);
+        }
+    }
+    // batch sync 出站（channels/load/increment）：channelId 嵌在 body.cursors[0]，
+    // 顶层/`.data` 都抽不到 → 探 body.cursors[0] 取锚频道（UC-4.1 ① 与 per-channel
+    // ② projection / ④ storage 同束的唯一 corr_key 来源；批次首元素代表本束）。
+    if let Some(c0) = payload
+        .get("body")
+        .and_then(|b| b.get("cursors"))
+        .and_then(|c| c.get(0))
+    {
+        if let Some(k) = probe(c0) {
+            return Some(k);
+        }
     }
     None
 }
@@ -133,5 +147,17 @@ mod tests {
     #[test]
     fn none_when_no_keys() {
         assert_eq!(extract_corr_key(&json!({"foo": 1})), None);
+    }
+
+    #[test]
+    fn extracts_from_batch_cursors_first_element() {
+        // channels/load/increment 出站：channelId 嵌在 body.cursors[0]，
+        // 顶层 + .data 都抽不到 → 探 cursors[0] 取锚频道（UC-4.1 ① 面）。
+        let p = json!({
+            "method": "POST",
+            "url": "https://x/channels/load/increment",
+            "body": {"timestamp": 0, "cursors": [{"channelId": "cAnchor", "fromSeq": 0}]}
+        });
+        assert_eq!(extract_corr_key(&p).as_deref(), Some("ch=cAnchor"));
     }
 }

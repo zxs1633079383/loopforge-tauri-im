@@ -231,11 +231,15 @@ export function runFourFacet({ jsonl, expect, dom, ucId }) {
   const { events, parseErrors } = parseJsonl(jsonl);
   const bundles = bundleByCorrKey(events, uc);
 
-  // 选「目标束」：领域键最匹配期望领域锚（优先含 tmp 的束 = send 主事件）。
+  // 选「目标束」：领域键最匹配期望领域锚。
+  // 优先 tmp（send 主事件）；无 tmp 时用 ch 锚（UC-4.1 批量 sync：outbound cursors[0].channelId
+  // + per-channel projection/storage 经同 ch 聚一束·target 须锁那个 ch 而非任取首束）。
   const tmpAnchor = expect.corrAnchor?.tmp;
+  const chAnchor = expect.corrAnchor?.ch;
   let target =
     (tmpAnchor && bundles.find((b) => b.dims.tmp === tmpAnchor)) ||
     bundles.find((b) => b.dims.tmp) ||
+    (chAnchor && bundles.find((b) => b.dims.ch === chAnchor && !b.dims.tmp)) ||
     bundles.find((b) => b.key) ||
     null;
 
