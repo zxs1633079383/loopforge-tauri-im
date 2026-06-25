@@ -106,12 +106,40 @@ import { MessageRow } from "./im/message-row.model";
             >
               <span class="ch__name">{{ c.displayName || c.channelId }}</span>
               <span class="ch__ops">
+                <input
+                  class="im__mini-input"
+                  type="text"
+                  data-testid="change-channel-name-input"
+                  placeholder="新群名"
+                  #chNameInput
+                  (click)="$event.stopPropagation()"
+                />
                 <button
                   class="im__mini"
                   type="button"
                   data-testid="change-channel-btn"
-                  (click)="onChangeChannel(c, 'displayName', '')"
-                >改</button>
+                  (click)="
+                    $event.stopPropagation();
+                    onChangeChannel(c, 'displayName', chNameInput.value)
+                  "
+                >改名</button>
+                <input
+                  class="im__mini-input"
+                  type="text"
+                  data-testid="change-channel-notice-input"
+                  placeholder="公告"
+                  #chNoticeInput
+                  (click)="$event.stopPropagation()"
+                />
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="change-channel-notice-btn"
+                  (click)="
+                    $event.stopPropagation();
+                    onChangeChannel(c, 'notice', chNoticeInput.value)
+                  "
+                >公告</button>
                 <button
                   class="im__mini"
                   type="button"
@@ -441,6 +469,10 @@ import { MessageRow } from "./im/message-row.model";
         background: #23232a; color: #ccc; cursor: pointer; font-size: 11px;
       }
       .im__mini:active { background: #2f59c9; }
+      .im__mini-input {
+        width: 56px; padding: 2px 4px; border-radius: 4px;
+        border: 1px solid #2a2a30; background: #1a1a1f; color: #ccc; font-size: 11px;
+      }
     `,
   ],
 })
@@ -598,9 +630,24 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.store.queryMessages(channelId);
   }
 
-  /** UC-5.4 群属性修改。占位 → 接 channel/change/*。 */
-  onChangeChannel(_channel: unknown, _field: string, _value: string): void {
-    /* UC-5.4 接通 */
+  /**
+   * UC-5.4 群属性修改。改群名 → store.changeChannelDisplayName（invoke
+   * im_channel_change_display_name → 出站 channel/change/displayName）；改公告 →
+   * store.changeChannelNotice（→ channel/change/notice）。属性回读靠 helix `im:channel:update`
+   * （thin）触发 dialogList 重查 → CL 行 data-channel-display-name/-notice 更新（壳纯渲染）。
+   */
+  onChangeChannel(
+    channel: { channelId: string },
+    field: string,
+    value: string,
+  ): void {
+    const channelId = channel?.channelId;
+    if (!channelId) return;
+    if (field === "displayName") {
+      void this.store.changeChannelDisplayName(channelId, value);
+    } else if (field === "notice") {
+      void this.store.changeChannelNotice(channelId, value);
+    }
   }
 
   /** UC-5.3 关闭/退出群。占位 → 接 im_channel_close。 */

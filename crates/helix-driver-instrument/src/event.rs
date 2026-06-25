@@ -104,6 +104,25 @@ pub fn extract_corr_key(payload: &Value) -> Option<String> {
         Some(parts.join(";"))
     };
 
+    // URL 感知归一（UC-5.4 ① 群属性修改出站 channel/change/*）：出站 body = {id, displayName}
+    // / {id, notice} 等——此处 `id` == **channelId**（helix outbound channel_change*.rs 真源
+    // `{ "id": channel_id, ... }`），非 server post id。但 `id` 在 sid 别名里会被误抽成 sid →
+    // 与 ② im:channel:update（ch 锚）/ ④ channel PATCH（ch 锚）不并束。专探：当出站 url 含
+    // `channel/change/` 且 body.id 是非空字符串 → 组 ch 键，使 ① 与 ②④ 同束。
+    // 契约不变（URL+body-shape 没变·仅抽键探针增强·与 reducer corr-key.mjs::extractDims 同步）。
+    if let Some(url) = payload.get("url").and_then(|v| v.as_str()) {
+        if url.contains("channel/change/") {
+            if let Some(id) = payload
+                .get("body")
+                .and_then(|b| b.get("id"))
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                return Some(format!("ch={id}"));
+            }
+        }
+    }
+
     // 表感知归一（UC-4.1 ④ storage channel 落库）：channel 表主键 `id` == channelId（非 server
     // post id）→ 必抽成 ch 而非 sid，使 ④ 与 ② im:channel:increment（ch 锚）同束。
     // 判据：payload.table == "channel" 且无独立 channel_id（落库 payload {id,op,table,rows} 形态）。
@@ -248,6 +267,32 @@ mod tests {
             "body": {"timestamp": 0, "cursors": [{"channelId": "cAnchor", "fromSeq": 0}]}
         });
         assert_eq!(extract_corr_key(&p).as_deref(), Some("ch=cAnchor"));
+    }
+
+    #[test]
+    fn channel_change_outbound_body_id_extracts_as_ch() {
+        // UC-5.4 ① 群属性修改出站 channel/change/displayName：body = {id, displayName}·id == channelId
+        // （非 server post id）。url 含 channel/change/ → 须把 body.id 抽成 ch（非 sid），使 ① 与
+        // ② im:channel:update（ch 锚）/ ④ channel PATCH（ch 锚）同束（否则 id 误抽成 sid·聚不上束）。
+        let p = json!({
+            "method": "POST",
+            "url": "http://x/api/cses/channel/change/displayName",
+            "headers": [],
+            "body": {"id": "ch5p4abcdefghijklmnopqrstu", "displayName": "新群名"}
+        });
+        assert_eq!(extract_corr_key(&p).as_deref(), Some("ch=ch5p4abcdefghijklmnopqrstu"));
+    }
+
+    #[test]
+    fn channel_change_notice_outbound_body_id_extracts_as_ch() {
+        // UC-5.4 改公告 channel/change/notice：body = {id, notice:{...}}·id == channelId·同上抽 ch。
+        let p = json!({
+            "method": "POST",
+            "url": "http://x/api/cses/channel/change/notice",
+            "headers": [],
+            "body": {"id": "ch5p4abcdefghijklmnopqrstu", "notice": {"text": "公告内容"}}
+        });
+        assert_eq!(extract_corr_key(&p).as_deref(), Some("ch=ch5p4abcdefghijklmnopqrstu"));
     }
 
     #[test]

@@ -140,6 +140,8 @@ pub fn run() {
         commands::im_get_reply_branch,
         commands::im_query_messages_by_channel,
         commands::im_load_older_context,
+        commands::im_channel_change_display_name,
+        commands::im_channel_change_notice,
         commands::set_uc
     ]);
     #[cfg(not(feature = "webdriver"))]
@@ -161,7 +163,9 @@ pub fn run() {
         commands::im_get_replies,
         commands::im_get_reply_branch,
         commands::im_query_messages_by_channel,
-        commands::im_load_older_context
+        commands::im_load_older_context,
+        commands::im_channel_change_display_name,
+        commands::im_channel_change_notice
     ]);
 
     // Record 模式退出落盘：app 退出（RunEvent::Exit）时把录好的 tape 存到 tape_path。

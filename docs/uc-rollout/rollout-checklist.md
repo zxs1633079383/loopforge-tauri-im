@@ -55,7 +55,7 @@
 ## 阶段 5 · 频道 / 成员管理（依赖频道）
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
 |---|---|---|---|---|---|---|---|
-| [ ] | 5.4 群属性修改 | `channel/change/{displayName,notice,…}` | `partials/6 UC-5.4` | `emit_channel_update`(thin{channel_id}) | data-channel-* 回读 | `channel` patch | M |
+| [x] | 5.4 群属性修改（改群名）| `channel/change/displayName` | 真机 wire 实证 | `im:post:received`(channelUpdate 系统 post·非 emit_channel_update thin) | data-channel-display-name 回读 | `message`(系统 NOTICE post) | M |
 | [~] | 5.5 置顶 | `channel/change/top`/`add(remove)/postPinned` | `partials/6 UC-5.5` | `emit_channel_update`/`emit_read_result` | data-pinned | `channel`/`message.props` | M |
 | [~] | 5.3 关闭/退出群 | `im_channel_close`→`channel/close` | `真机curl真源 §6`{channelId}✅ | `emit_channel_closed`{channelId,deleteAt} | channel 行移除 | `channel` 软删 | M |
 | [ ] | 6.3 改群昵称 | `channel/member/change/nickname` | `partials/6 UC-6.3` | `emit_member_nickname`{channelId,userId,nickName} | data-nickname | `channel_member` | M |

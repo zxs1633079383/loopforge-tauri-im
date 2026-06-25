@@ -316,6 +316,51 @@ export class ImStoreService {
   }
 
   /**
+   * UC-5.4 群属性修改（改群名）：invoke('im_channel_change_display_name', {channelId, displayName}）。
+   *
+   * **壳不臆造 body**：endpoint + body 形态由 Rust/helix-im 兜底（commands.rs
+   * im_channel_change_display_name → outbound/channel_change_dedicated.rs → POST
+   * channel/change/displayName {id, displayName}）。壳只供 channelId（目标频道）+ displayName（新群名）。
+   * 群行属性由 helix `im:channel:update`（thin·{channel_id}）信号触发回读 channel 行 → CL 区
+   * data-channel-display-name 更新（壳纯渲染·无乐观合成）。非 Tauri / 命令缺失 → 静默。
+   */
+  async changeChannelDisplayName(channelId: string, displayName: string): Promise<void> {
+    const ch = channelId.trim();
+    const name = displayName.trim();
+    if (!ch || !name) return;
+    try {
+      await this.bridge.invoke<void>("im_channel_change_display_name", {
+        channelId: ch,
+        displayName: name,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（群属性靠投影驱动·无乐观合成）。
+    }
+  }
+
+  /**
+   * UC-5.4 群属性修改（改公告）：invoke('im_channel_change_notice', {channelId, noticeText}）。
+   *
+   * **壳不臆造 body**：notice map 包装 + endpoint 由 Rust/helix-im 兜底（commands.rs
+   * im_channel_change_notice → outbound/channel_change.rs → POST channel/change/notice
+   * {id, notice:{text}}）。壳只供 channelId（目标频道）+ noticeText（公告文本）。
+   * 群行属性由 helix `im:channel:update`（thin）信号触发回读 → CL 区 data-channel-notice 更新。
+   * 非 Tauri / 命令缺失 → 静默。
+   */
+  async changeChannelNotice(channelId: string, noticeText: string): Promise<void> {
+    const ch = channelId.trim();
+    if (!ch) return;
+    try {
+      await this.bridge.invoke<void>("im_channel_change_notice", {
+        channelId: ch,
+        noticeText,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（群属性靠投影驱动·无乐观合成）。
+    }
+  }
+
+  /**
    * UC-1.9 加急消息（阶段①）：invoke('im_urgent_post', {channelId, postId, targetIds, message?}）。
    *
    * **壳不臆造 body**：camelCase 化 + targetIds 非空校验由 Rust/helix-im 兜底（commands.rs
@@ -750,6 +795,9 @@ export class ImStoreService {
 
     const data = env.payload?.data as MessageItemData | undefined;
     if (!data || typeof data !== "object") return;
+    // UC-5.4 群属性回读：channelUpdate 系统 post（props.type=channelUpdate）→ 刷 channel 行属性
+    // （data-channel-display-name/-notice）·不进 ML 消息列表（系统帧·非普通消息行）。命中即早退。
+    if (this.applyChannelUpdatePost(data)) return;
     this.applyMessageItem(data);
   }
 
@@ -781,15 +829,52 @@ export class ImStoreService {
   private applyDialogList(data: unknown): void {
     const list = (data as { dialogList?: unknown } | undefined)?.dialogList;
     if (!Array.isArray(list)) return;
-    const ids = list
-      .map((r) =>
-        r && typeof r === "object"
-          ? (r as Record<string, unknown>)["id"]
-          : undefined,
-      )
-      .filter((id): id is string => typeof id === "string" && !!id);
-    for (const id of ids) this.upsertChannelRow(id);
+    const ids: string[] = [];
+    for (const r of list) {
+      if (!r || typeof r !== "object") continue;
+      const row = r as Record<string, unknown>;
+      const id = row["id"];
+      if (typeof id !== "string" || !id) continue;
+      ids.push(id);
+      // UC-5.4 群属性回读：dialogList 行 = channel 表行（display_name / notice 列·patch.rs
+      // collect_present 白名单）。改群名后 im:channel:update（thin）触发本 dialog 重查 → fat
+      // dialogList 携新 display_name → 把 CL 区行 displayName/notice 刷新（data-channel-display-name/
+      // -notice 回读·壳纯渲染只透传 channel 列·不在 JS 合成）。notice 列形态透传（JSON/字符串兼容）。
+      this.upsertChannelRowFields(id, {
+        displayName:
+          typeof row["display_name"] === "string"
+            ? (row["display_name"] as string)
+            : undefined,
+        notice: this.normalizeNotice(row["notice"]),
+      });
+    }
     if (!this._activeChannel() && ids.length > 0) this._activeChannel.set(ids[0]);
+  }
+
+  /** notice 列透传归一：channel 表 notice 列可能是 JSON 字符串 `{"text":".."}` 或纯文本。
+   *  壳纯渲染只把它落成 data-channel-notice 可比对的字符串（出站 body 真源是 `{text}` map·
+   *  ④ 落库列存序列化字符串）。非字符串/空 → undefined（行不带该属性）。 */
+  private normalizeNotice(v: unknown): string | undefined {
+    if (typeof v !== "string" || v.length === 0) return undefined;
+    return v;
+  }
+
+  /** 按 channelId 补/更新行字段（加法式·仅覆盖传入的非 undefined 字段·行不存在则先建）。 */
+  private upsertChannelRowFields(
+    channelId: string,
+    fields: Partial<ChannelRow>,
+  ): void {
+    this.upsertChannelRow(channelId);
+    this._channels.update((rows) =>
+      rows.map((c) => {
+        if (c.channelId !== channelId) return c;
+        const next = { ...c };
+        for (const [k, val] of Object.entries(fields)) {
+          if (val !== undefined) (next as Record<string, unknown>)[k] = val;
+        }
+        return next;
+      }),
+    );
   }
 
   /**
@@ -862,7 +947,9 @@ export class ImStoreService {
 
   /**
    * UC-4.1：im:channel:update（{channel_id}·瘦·批次结束）→ 确保该 channel 行存在（badge 回读触发位）。
-   * 当前壳仅保证行存在；displayName/unread 等回读由 UC-5.4/4.2 接 channel 表回读填。
+   * 当前壳仅保证行存在；unread 等回读由 UC-4.2 接 channel 表回读填。
+   * 注：UC-5.4 改群名的 displayName 回读**不**走此 thin 信号（server 不推 update_channel）——走
+   * channelUpdate 系统 post（applyChannelUpdatePost·见 message-row fat 分支）。
    */
   private applyChannelUpdate(data: unknown): void {
     if (!data || typeof data !== "object") return;
@@ -870,6 +957,36 @@ export class ImStoreService {
     if (typeof channelId === "string" && channelId) {
       this.upsertChannelRow(channelId);
     }
+  }
+
+  /**
+   * UC-5.4 群属性修改回读：改群名/公告的 server echo = channelUpdate 系统 NOTICE post
+   * （im:post:received·props.type=channelUpdate·props.field=displayName|notice·props.content=新值·
+   * userId=SYS·真机 wire 实证）。把该系统帧的 field/content 透传刷 CL 区频道行——displayName →
+   * data-channel-display-name、notice → data-channel-notice（壳纯渲染只透传系统帧 field/content·
+   * 不臆造·权威在系统 post）。命中 channelUpdate 返回 true（fat 分支据此跳过普通消息行覆写·
+   * 系统 channelUpdate 不进 ML 消息列表，只刷 channel 行属性）。
+   */
+  private applyChannelUpdatePost(data: MessageItemData): boolean {
+    const d = data as unknown as Record<string, unknown>;
+    const props = d["props"];
+    if (!props || typeof props !== "object") return false;
+    const pr = props as Record<string, unknown>;
+    if (pr["type"] !== "channelUpdate") return false;
+    const channelId =
+      (typeof d["channel_id"] === "string" && (d["channel_id"] as string)) ||
+      (typeof d["channelId"] === "string" && (d["channelId"] as string)) ||
+      "";
+    if (!channelId) return true; // 是 channelUpdate 帧（已认领·不进消息列表）·但无频道锚 → 不刷
+    const field = typeof pr["field"] === "string" ? (pr["field"] as string) : "";
+    const content =
+      typeof pr["content"] === "string" ? (pr["content"] as string) : undefined;
+    if (field === "displayName") {
+      this.upsertChannelRowFields(channelId, { displayName: content });
+    } else if (field === "notice") {
+      this.upsertChannelRowFields(channelId, { notice: content });
+    }
+    return true;
   }
 
   /** 按 channelId upsert CL 区频道行（已存在则跳过·加法式·壳纯渲染只持 channelId 直映 data-channel-id）。 */

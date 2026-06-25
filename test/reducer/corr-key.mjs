@@ -45,6 +45,23 @@ function pickFrom(obj, keys) {
  * `sid` 的空串特殊处理：outbound send body 的 `id:""` 不算 server_id（发送时 server 未分配）。
  */
 export function extractDims(payload) {
+  // URL 感知归一（UC-5.4 ① 群属性修改出站 channel/change/*）：出站 body = {id, displayName}
+  // / {id, notice} 等——此处 `id` == **channelId**（helix outbound channel_change*.rs 真源），
+  // 非 server post id。但 id 在 sid 别名里会被误抽成 sid → 与 ② im:channel:update（ch 锚）/
+  // ④ channel PATCH（ch 锚）不并束。专探：当出站 url 含 channel/change/ 且 body.id 非空字符串 →
+  // 组 ch 键，使 ① 与 ②④ 同束（与装饰器 event.rs::extract_corr_key channel/change/→ch 规则同步）。
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    typeof payload.url === 'string' &&
+    payload.url.includes('channel/change/') &&
+    payload.body &&
+    typeof payload.body === 'object' &&
+    typeof payload.body.id === 'string' &&
+    payload.body.id.length > 0
+  ) {
+    return { ch: payload.body.id };
+  }
   // 表感知归一（UC-4.1 ④ storage channel 落库）：channel 表主键 `id` == channelId（非 server
   // post id）→ 必抽成 ch 而非 sid，使 ④ 与 ② im:channel:increment（ch 锚）同束。
   // 判据：payload.table === 'channel' 且无独立 channel_id（落库 payload {id,op,table,rows} 形态）。

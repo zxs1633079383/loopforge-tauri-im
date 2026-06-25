@@ -272,6 +272,12 @@ function diffProjection(expect, actual) {
     if (want2 !== '*' && !valEq(actual.data?.[k], want2))
       issues.push(`投影 data.${k} 期望 ${JSON.stringify(want2)} 实得 ${JSON.stringify(actual.data?.[k])}`);
   }
+  // 可选：props 子集断言（UC-5.4 channelUpdate 帧锚 props.type=channelUpdate/field=displayName/
+  // content=新名·区分同形态 join 帧·守可证伪——props 不符即 ② 红，非 tautology）。
+  for (const [k, want3] of Object.entries(expect.propsMatch ?? {})) {
+    if (want3 !== '*' && !valEq(actual.data?.props?.[k], want3))
+      issues.push(`投影 data.props.${k} 期望 ${JSON.stringify(want3)} 实得 ${JSON.stringify(actual.data?.props?.[k])}`);
+  }
   return facetReport('projection', issues, { event: actual.event, dataKeys: got });
 }
 
@@ -641,9 +647,43 @@ export function runFourFacet({ jsonl, expect, dom, ucId }) {
   // 无 tmp/sid）—— **须先于** generic any-tmp 兜底，否则 UC-4.1 窗口里混入的 post 束（带 tmp）
   // 会被任取为 target → ②④ 误锚 post 而非锚频道增量。③ generic any-tmp（无显式锚的 send 自测）
   // ④ 任意有键束兜底。
+  //
+  // UC-5.4 群属性修改特例（ch 锚 + 期望投影是 per-post 系统帧）：改群名的 server echo 不是
+  // 独立 update_channel WS，而是一条 **channelUpdate 系统 NOTICE post**（props.type=channelUpdate·
+  // props.field=displayName·props.content=新名·真机 wire 实证）。该 post 帧带 ch+sid+tmp（非 ch-only），
+  // 故 `ch===chAnchor && !tmp` 选不中它。当期望投影是 per-post 事件（im:post:received）时，须在 ch
+  // 匹配的束里挑**含该期望投影事件**那束作 target（机器件 target 选择·非改冻结 oracle）。窗口隔离
+  // （uc_id 过滤）+ field=displayName 唯一保证本 UC 内该 channelUpdate post 唯一·非 tautology。
+  const wantProjEvent = expect.projection?.event;
+  const wantProjValues = expect.projection?.dataValues ?? {};
+  const wantPropsMatch = expect.projection?.propsMatch ?? null;
+  // 区分同 ch 多个 im:post:received（UC-5.4 建群 join post seq=1 + channelUpdate post seq=2·两者
+  // type=NOTICE/userId=SYS 全同·dataValues 区分不开）：chPerPostTarget 须挑**期望投影事件 + dataValues +
+  // propsMatch（props 子集匹配·如 {type:channelUpdate,field:displayName}）全匹配**那束·精确锚定
+  // channelUpdate 帧（非 join 帧）——守可证伪（漏发 channelUpdate post 则锚不上 → ② 红·非 tautology）。
+  const projMatches = (h) =>
+    h.facet === 'projection' &&
+    h.hop === 'projection' &&
+    h.payload?.event === wantProjEvent &&
+    Object.entries(wantProjValues).every(
+      ([k, v]) => v === '*' || valEq(h.payload?.data?.[k], v)
+    ) &&
+    (!wantPropsMatch ||
+      Object.entries(wantPropsMatch).every(([k, v]) =>
+        valEq(h.payload?.data?.props?.[k], v)
+      ));
+  const chPerPostTarget =
+    chAnchor && wantProjEvent
+      ? bundles.find((b) => b.dims.ch === chAnchor && b.hops.some(projMatches))
+      : null;
+  // chPerPostTarget 优先于 ch-only 兜底：UC-5.4 出站 channel/change/displayName 自成 ch-only 束
+  // （body.id→ch·无 post），若让 `ch===chAnchor && !tmp` 先命中会锚到无投影的出站束 → ②④ 假红。
+  // 故当 chPerPostTarget 命中（per-post echo 束·含期望系统投影）时优先取之·出站由 createOutbound
+  // fallback（URL endsWith）并入。
   let target =
     (tmpAnchor && bundles.find((b) => b.dims.tmp === tmpAnchor)) ||
     (sidAnchor && bundles.find((b) => b.dims.sid === sidAnchor)) ||
+    chPerPostTarget ||
     (chAnchor && bundles.find((b) => b.dims.ch === chAnchor && !b.dims.tmp)) ||
     bundles.find((b) => b.dims.tmp) ||
     bundles.find((b) => b.key) ||

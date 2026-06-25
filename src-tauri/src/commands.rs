@@ -554,6 +554,73 @@ pub async fn im_make_topic(
         .map_err(|e| format!("im_make_topic: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-5.4 群属性修改（改群名）：前端传 `channelId`（目标频道）+ `displayName`（新群名）→ 转
+/// snake_case 入泵 `im_channel_change_display_name`（helix-im `outbound/channel_change_dedicated.rs`
+/// `ChangeDisplayNameCommand` 兑现出站 `POST channel/change/displayName {id, displayName}`·全
+/// camelCase·真机curl真源 partials/6 UC-5.4）。
+///
+/// WS 回 `update_channel`（path2 PATCH·collect_present 收 displayName 列）→ ④ channel 表 PATCH
+/// + ② `im:channel:update`（thin·{channel_id}·increment_channel_end 批次结束触发）→ ③ DOM
+/// data-channel-display-name 回读。薄壳纪律：只翻译入参 + 入泵，body camelCase 化 + endpoint
+/// 全在 helix-im，本壳不臆造。
+#[tauri::command]
+pub async fn im_channel_change_display_name(
+    state: State<'_, AppState>,
+    channel_id: String,
+    display_name: String,
+) -> Result<(), String> {
+    if channel_id.trim().is_empty() {
+        return Err("im_channel_change_display_name: channelId 为空".into());
+    }
+    if display_name.trim().is_empty() {
+        return Err("im_channel_change_display_name: displayName 为空（改名须非空）".into());
+    }
+    let tick = command(
+        "im_channel_change_display_name",
+        serde_json::json!({
+            "channel_id": channel_id,
+            "display_name": display_name,
+        }),
+    );
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_channel_change_display_name: 入泵失败（泵已退出？）：{e}"))
+}
+
+/// UC-5.4 群属性修改（改公告）：前端传 `channelId`（目标频道）+ `noticeText`（公告文本）→ 本命令
+/// 把文本包成 helix 认的 `notice` map（`{text}`·真源 `command.ChangeChannelNotice.notice` 是
+/// `*map[string]any`）转 snake_case 入泵 `im_channel_change_notice`（helix-im
+/// `outbound/channel_change.rs` `ChangeNoticeCommand` 兑现出站 `POST channel/change/notice
+/// {id, notice}`·真机curl真源 partials/6 UC-5.4）。
+///
+/// WS 回 `update_channel`/`update_channel_notice`（notice 列 PATCH）→ ④ channel 表 PATCH +
+/// ② `im:channel:update`（thin）→ ③ DOM data-channel-notice 回读。薄壳纪律：只翻译入参 + 包
+/// notice map + 入泵，endpoint 全在 helix-im，本壳不臆造。
+#[tauri::command]
+pub async fn im_channel_change_notice(
+    state: State<'_, AppState>,
+    channel_id: String,
+    notice_text: String,
+) -> Result<(), String> {
+    if channel_id.trim().is_empty() {
+        return Err("im_channel_change_notice: channelId 为空".into());
+    }
+    let tick = command(
+        "im_channel_change_notice",
+        serde_json::json!({
+            "channel_id": channel_id,
+            "notice": { "text": notice_text },
+        }),
+    );
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_channel_change_notice: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-1.8 快捷回复 emoji：前端传 `postId`（被回复消息 server id）+ `emoji`（用户选的表情）→
 /// 本命令补上自身 `userId`（AppState.identity·身份单一真源·壳不臆造 creds）转 snake_case 入泵
 /// `im_quick_reply`（helix-im `outbound/quick_reply.rs` `QuickReplyCommand` 兑现出站

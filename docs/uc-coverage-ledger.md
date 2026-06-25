@@ -340,13 +340,19 @@
 - **③ DOM**：channel 行移除。
 - **④ 落库**：`channel` 软删。
 
-### UC-5.4 群属性修改 — `⬜ pending`（认领 M）
+### UC-5.4 群属性修改（改群名 displayName）— `✅ 四面全绿`（round5·corr_key=ch=…;seq=2）
 
-- **① 出站 HTTP**：`channel/change/{displayName,notice,purpose,orient,permission,top}` / `member/change/notify`（待核·partial 6 UC-5.4）。
-- **① WS 推送**：改名简介 → action=`update_channel`（全频道对象刷新）·改公告 → action=`update_channel_notice`（content.text 逐字·helix ledger 实证 marker 窗内归因）。
-- **② 投影**：`emit_channel_update`（thin·`{channel_id}`·channel-row 故意留瘦）。
-- **③ DOM**：`data-channel-*` 回读刷新（batch 结束低频回读）。
-- **④ 落库**：`channel` patch 列。
+> **真机 wire 实证纠偏（C010/C011）**：改群名 server echo **不**走独立 `update_channel` WS / `emit_channel_update` thin（先前 ledger 假设错·server 不推该帧）——实抓走 **channelUpdate 系统 NOTICE post**（`im:post:received`·`props.type=channelUpdate`·`props.field=displayName`·`props.content=新名`·`userId=SYS`·`type=NOTICE`）。oracle 以真机 wire 为准（run.jsonl seq19/514 实证）。
+>
+> **覆盖**：本 UC 实跑 displayName 改名一面四绿（crossmap HTTP #13 `channel/change/displayName`）。同族 notice/purpose/orient/permission/picture/source/info/props（crossmap #9-17）走同 channelUpdate-post 回声机制·命令已接（`im_channel_change_notice` 等可按需补 spec）。
+
+- **① 出站 HTTP**：`channel/change/displayName`（body `{id, displayName}`·真源 ChangeDisplayNameCommand）✅。同族 `channel/change/{notice,info,source,picture,orient,purpose,props,permission}` 命令已接（按需补 spec）。
+- **① WS 推送**：改属性 → server 回 **channelUpdate 系统 post**（`props.field` 标改的字段·`props.content` 新值）✅。
+- **② 投影**：`im:post:received`（fat·channelUpdate 系统帧·`propsMatch type=channelUpdate/field=displayName/content=新名` 精确区分 vs 同形态 join 帧·守可证伪）✅。
+- **③ DOM**：`data-channel-display-name` 回读（壳 `applyChannelUpdatePost` 透传 props.field/content 刷 CL 行）✅。
+- **④ 落库**：`message` 行（channelUpdate 系统 NOTICE post 逐条落库·batch_upsert message）✅。
+- **admin 权限真实约束**：改群名须本人 owner/admin（非 owner → server `update_cses_channel` app_error）·e2e 先建本人 CREATOR 新群再改名（真实用户流·C003）。
+- **机器件**：装饰器 `extract_corr_key` url-aware（`channel/change/`→body.id→ch）+ reducer `chPerPostTarget`（ch 匹配 + 含期望 channelUpdate 投影·`propsMatch` 子集断言）·均非冻结 oracle（C009）。
 
 ### UC-5.5 置顶 — `🟡 partial`（频道置顶可证·消息置顶 ⛔ data-dep）
 

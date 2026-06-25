@@ -1,0 +1,71 @@
+{
+  "$schema-note": "四面期望文件 (UC-5.4 群属性修改·改群名 displayName) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现 / 本仓渲染壳 / 机器件（reducer target 选择·装饰器抽键·seed）。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-5.4",
+  "title": "群属性修改（改群名）：UI 改名 → 出站 channel/change/displayName → WS 推 channelUpdate 系统 NOTICE post（props.field=displayName·content=新名）→ 投影 im:post:received + DOM data-channel-display-name 回读 + DB message 行落库",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/src/outbound/channel_change_dedicated.rs ChangeDisplayNameCommand（im_channel_change_display_name → POST channel/change/displayName · body {id, displayName}） + 真机 wire 实证（run.jsonl seq13 outbound·真源 partials/6 UC-5.4 + Go command.ChangeChannelDisPlayName）",
+    "projection": "真机 wire 实证（run.jsonl·改群名 server echo = channelUpdate 系统 NOTICE post）：projection-schema 行?? emit_post_received（im:post:received·fat·透传 props.type=channelUpdate / props.field=displayName / props.content=新名 / userId=SYS / type=NOTICE / channel_id / event_seq / msg_id）。改群名**不**走独立 update_channel WS（server 不推），而走 channelUpdate 系统 post——契约真源以真机 wire 为准（C010 金标=现网真抓非手写猜测）。",
+    "dom": "docs/uc-coverage-ledger.md §UC-5.4 ③ data-channel-display-name 回读（channelUpdate post field=displayName → 壳 applyChannelUpdatePost 把 channel 行 displayName 刷新）",
+    "storage": "真机 wire 实证（run.jsonl seq511）：channelUpdate 系统 post 落 message 行（batch_upsert message·NOTICE 系统消息逐条落库）"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：改群名作用于已存在的 channelId（出站 body {id, displayName} 的 id = 该 channelId）。② channelUpdate post echo / ④ message 行带 ch+sid+tmp（系统 post 自带 msg_id）；reducer 经 chPerPostTarget（ch 匹配 + 束含 im:post:received 投影）锁该 post-echo 束作 target。① 出站 channel/change/displayName 经 createOutbound fallback（URL endsWith·窗口内唯一一条 change/displayName·非 tautology）归本束。e2e 选锚频道（本人新建·有 admin 权限）填实 ch 覆写本字段。",
+    "ch": null
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "channel/change/displayName",
+    "bodyFields": {
+      "id": "*",
+      "displayName": "*"
+    },
+    "bodyForbidden": ["channelId", "channel_id", "orient", "users"],
+    "_note": "ChangeDisplayNameCommand 真源：body = {id, displayName}（id=channelId·displayName=新群名·全 camelCase）。bodyForbidden 锚——改名 body 只该携 id+displayName，不该混入 channelId 别名（旧形态串）/ orient / users（建群 §4 才有·改名无此字段）。① 出站经 createOutbound fallback（URL endsWith channel/change/displayName·窗口内唯一一条）归锚 ch 束。"
+  },
+
+  "projection": {
+    "event": "im:post:received",
+    "dataKeys": [
+      "channelId",
+      "channel_id",
+      "createAt",
+      "event_seq",
+      "message",
+      "msg_id",
+      "props",
+      "readBits",
+      "temporaryId",
+      "type",
+      "updateAt",
+      "userId",
+      "viewers"
+    ],
+    "dataValues": {
+      "type": "NOTICE",
+      "userId": "SYS"
+    },
+    "propsMatch": {
+      "type": "channelUpdate",
+      "field": "displayName"
+    },
+    "_note": "改群名 server echo = channelUpdate 系统 NOTICE post（im:post:received·fat·真机 wire 实证）。字段集严格对齐 emit_post_received 透传形态（channelId/channel_id 双写·props 含 type=channelUpdate/field=displayName/content=新名·userId=SYS·type=NOTICE·viewers=[all]）。缺/多即 fail。dataValues type=NOTICE+userId=SYS 锚系统帧；**propsMatch type=channelUpdate+field=displayName 精确区分 channelUpdate 帧 vs 同形态 join 帧**（两者 type=NOTICE/userId=SYS 全同·仅 props 区分·守可证伪防误锚 join）。content=新名由 e2e 注入 propsMatch.content（动态值·与 ch 锚同理）。"
+  },
+
+  "storage": {
+    "op": "batch_upsert",
+    "table": "message",
+    "minRows": 1,
+    "_note": "真机 wire 实证（run.jsonl seq511）：channelUpdate 系统 post 落 message 行（batch_upsert message ≥1 行·NOTICE 系统消息逐条落库·与普通 post echo 同落库路径）。装饰器 facet④ payload 暴露 {op,table:message,rows}；表感知归一不触发（table=message·id 仍 sid）→ 经 ch+sid+tmp 与 ② post echo 同束。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "channel-id": "*",
+      "channel-display-name": "*"
+    },
+    "_note": "ledger §UC-5.4 ③：data-channel-display-name 回读（channelUpdate post field=displayName → 壳 applyChannelUpdatePost 把 CL 行 displayName 刷成 props.content 新名·壳纯渲染只透传系统帧 field/content·不在 JS 臆造）。e2e 等该行 data-channel-display-name == 新群名后读注入 reducer。"
+  }
+}

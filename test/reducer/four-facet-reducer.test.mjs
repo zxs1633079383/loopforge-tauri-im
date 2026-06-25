@@ -646,6 +646,98 @@ console.log('· UC-2.4 读族 getReplies/getReplyBranch（runFourFacetRead）');
   eq(repBadKeys.facets.projection.ok, false, '可证伪：im:read:result 外层多字段 extra → ② 红');
 }
 
+// ── UC-5.4 群属性修改（改群名）— channelUpdate 系统 post 锚 + propsMatch 区分 join（可证伪）──
+// 改群名 server echo = channelUpdate 系统 NOTICE post（im:post:received·props.type=channelUpdate·
+// field=displayName·content=新名）。同 ch 还有建群 join post（type=NOTICE/userId=SYS 全同·仅 props
+// 区分）。reducer chPerPostTarget 须经 propsMatch 精确锚 channelUpdate 束（非 join）·出站 channel/
+// change/displayName 经 createOutbound fallback 并入。守可证伪：propsMatch 不符 / 漏 channelUpdate post → 红。
+console.log('· UC-5.4 群属性修改（改群名·channelUpdate post 锚·propsMatch 区分 join）');
+{
+  const CH = 'ch54rename';
+  const JOIN_SID = 'joinPostSid';
+  const CU_SID = 'cuPostSid';
+  const NEW = 'lf-rename-xyz';
+  const joinPost = (data) =>
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-5.4', facet: 'projection', hop: 'projection', seq: 2,
+      corr_key: `ch=${CH};tmp=${JOIN_SID};sid=${JOIN_SID};seq=1`,
+      payload: { event: 'im:post:received', data: {
+        channelId: CH, channel_id: CH, createAt: 1, event_seq: 1, message: '', msg_id: JOIN_SID,
+        props: { type: 'join' }, readBits: '00', temporaryId: JOIN_SID, type: 'NOTICE',
+        updateAt: 1, userId: 'SYS', viewers: ['all'], ...data } } });
+  const cuPost = () =>
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-5.4', facet: 'projection', hop: 'projection', seq: 4,
+      corr_key: `ch=${CH};tmp=${CU_SID};sid=${CU_SID};seq=2`,
+      payload: { event: 'im:post:received', data: {
+        channelId: CH, channel_id: CH, createAt: 2, event_seq: 2, message: '', msg_id: CU_SID,
+        props: { type: 'channelUpdate', field: 'displayName', content: NEW, channel_event_seq: 2 },
+        readBits: '00', temporaryId: CU_SID, type: 'NOTICE', updateAt: 2, userId: 'SYS',
+        viewers: ['all'] } } });
+  const lines = [
+    // ① 改名出站：body {id, displayName}·url 含 channel/change/ → 抽 ch（自成 ch-only 束·createOutbound 并入）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-5.4', facet: 'outbound', hop: 'http-req', seq: 1,
+      payload: { method: 'POST', url: 'http://x/api/cses/channel/change/displayName',
+        body: { id: CH, displayName: NEW } } }),
+    joinPost(),                                       // ② 建群 join post（同 ch·同形态·须被 propsMatch 排除）
+    // ④ join 落库 message。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-5.4', facet: 'storage', hop: 'storage', seq: 3,
+      corr_key: `ch=${CH};tmp=${JOIN_SID};sid=${JOIN_SID}`,
+      payload: { id: JOIN_SID, op: 'batch_upsert', table: 'message', rows: 1 } }),
+    cuPost(),                                          // ② channelUpdate post（本 UC 真锚）
+    // ④ channelUpdate 落库 message。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-5.4', facet: 'storage', hop: 'storage', seq: 5,
+      corr_key: `ch=${CH};tmp=${CU_SID};sid=${CU_SID}`,
+      payload: { id: CU_SID, op: 'batch_upsert', table: 'message', rows: 1 } }),
+  ].join('\n');
+  const expect54 = {
+    ucId: 'UC-5.4',
+    corrAnchor: { ch: CH },
+    outbound: { method: 'POST', urlEndsWith: 'channel/change/displayName',
+      bodyFields: { id: '*', displayName: '*' },
+      bodyForbidden: ['channelId', 'channel_id', 'orient', 'users'] },
+    projection: { event: 'im:post:received',
+      dataKeys: ['channelId', 'channel_id', 'createAt', 'event_seq', 'message', 'msg_id',
+        'props', 'readBits', 'temporaryId', 'type', 'updateAt', 'userId', 'viewers'],
+      dataValues: { type: 'NOTICE', userId: 'SYS' },
+      propsMatch: { type: 'channelUpdate', field: 'displayName', content: NEW } },
+    storage: { op: 'batch_upsert', table: 'message', minRows: 1 },
+    dom: { dataAttrs: { 'channel-id': '*', 'channel-display-name': '*' } },
+  };
+  const dom = { 'channel-id': CH, 'channel-display-name': NEW };
+  const rep = runFourFacet({ jsonl: lines, expect: expect54, dom });
+  ok(rep.facets.outbound.ok, '① change/displayName 出站（createOutbound fallback）绿');
+  ok(rep.facets.projection.ok, '② channelUpdate post 投影（propsMatch 精确锚·非 join）绿');
+  ok(rep.facets.storage.ok, '④ channelUpdate post 落 message 行绿');
+  ok(rep.facets.dom.ok, '③ data-channel-display-name 回读绿');
+  ok(rep.green, `UC-5.4 四面全绿（实 brokenAt=${rep.brokenAt} :: ${rep.summary}）`);
+  // 锚的确是 channelUpdate 束（seq=2 的 sid·非 join seq=1）。
+  ok(rep.summary.includes(CU_SID) || rep.summary.includes('seq=2'),
+    `UC-5.4 锚 channelUpdate 束（非 join）·summary=${rep.summary}`);
+
+  // 可证伪 a：只有 join post（删 channelUpdate post + 其落库）→ propsMatch 无命中 → ② 红（防 join 误锚冒充绿）。
+  const joinOnly = [lines.split('\n')[0], lines.split('\n')[1], lines.split('\n')[2]].join('\n');
+  const repJoinOnly = runFourFacet({ jsonl: joinOnly, expect: expect54, dom });
+  eq(repJoinOnly.facets.projection.ok, false, '可证伪：仅 join post（无 channelUpdate）→ ② 红');
+
+  // 可证伪 b：channelUpdate post content 不符本次新名（改坏 content）→ propsMatch.content 失配 → ② 红。
+  const wrongContentLines = [
+    lines.split('\n')[0], lines.split('\n')[1], lines.split('\n')[2],
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-5.4', facet: 'projection', hop: 'projection', seq: 4,
+      corr_key: `ch=${CH};tmp=${CU_SID};sid=${CU_SID};seq=2`,
+      payload: { event: 'im:post:received', data: {
+        channelId: CH, channel_id: CH, createAt: 2, event_seq: 2, message: '', msg_id: CU_SID,
+        props: { type: 'channelUpdate', field: 'displayName', content: 'WRONG-NAME' },
+        readBits: '00', temporaryId: CU_SID, type: 'NOTICE', updateAt: 2, userId: 'SYS', viewers: ['all'] } } }),
+    lines.split('\n')[4],
+  ].join('\n');
+  const repWrong = runFourFacet({ jsonl: wrongContentLines, expect: expect54, dom });
+  eq(repWrong.facets.projection.ok, false, '可证伪：channelUpdate content 不符新名 → ② 红');
+
+  // 可证伪 c：无改名出站（删 ① 行）→ createOutbound 无命中 → ① 红。
+  const noOut = lines.split('\n').slice(1).join('\n');
+  const repNoOut = runFourFacet({ jsonl: noOut, expect: expect54, dom });
+  eq(repNoOut.facets.outbound.ok, false, '可证伪：无 channel/change/displayName 出站 → ① 红');
+}
+
 // ── 收尾 ─────────────────────────────────────────────────────────────────────
 
 console.log('');
