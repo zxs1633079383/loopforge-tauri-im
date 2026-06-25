@@ -485,6 +485,105 @@ export function runFourFacetMultiChannel({ jsonl, expect, domRows, targetChannel
   };
 }
 
+// ── 读族（request-response）对账（UC-2.4 getReplies/getReplyBranch）─────────────────
+//
+// 与写族 runFourFacet 的差异（projection-schema §1.2 / spec read-family）：
+//   - **无 corr_key 束**：读族 outbound wire body 携 server postId（replyId/replyFirstLevelId·非
+//     ch/tmp/sid 别名）→ 抽不到领域键；projection `im:read:result{req_id, body}` 的 req_id 也非
+//     四维之一。故不走 bundleByCorrKey，而是在 **UC 窗口（uc_id 过滤）** 内按 endpoint + req_id 直找。
+//   - **四面退化为 ①②**：① 出站 wire body 逐字检（urlEndsWith + bodyFields + bodyForbidden）；
+//     ② 投影 `im:read:result` 外层键集 {req_id, body} 严格对齐 + req_id 匹配 corrAnchor.req_id（如指定）。
+//     ③ DOM / ④ storage = N/A（读路径无 write 驱动 DOM·不落新行·cursor 不推进）→ 自动 ok（不参与裁定）。
+//   - **窗口隔离保证唯一**：e2e 每个读 endpoint 在独立 set_uc 窗口里 invoke 一次 → 窗口内 outbound
+//     http-req（按 endpoint 过滤）唯一·im:read:result projection 唯一·非 tautology（少发即 ① 红·
+//     少回灌即 ② 红·见可证伪对偶）。
+//
+// 机器件归属（非改冻结 oracle·C009）：本入口与抽键规则同属 reducer 领域件·读族契约 URL+body-shape
+// 由 expect.outbound（真机curl真源派生）冻结·绿由本 reducer 裁定。
+//
+// @param {object} args
+// @param {string} args.jsonl   run.jsonl 全文
+// @param {object} args.expect  读族期望（expect.outbound flat·expect.projection {event,dataKeys}）
+// @param {string} args.reqId   本次 invoke 生成的 req_id（projection ② 面锚·outbound ① 不携·按 endpoint 找）
+// @param {string} [args.ucId]  默认取 expect.ucId
+// @returns {object} 报告（facets.outbound / facets.projection）
+export function runFourFacetRead({ jsonl, expect, reqId, ucId }) {
+  const uc = ucId ?? expect.ucId;
+  const { events, parseErrors } = parseJsonl(jsonl);
+
+  const exp = expect.outbound ?? {};
+  const urlEnds = exp.urlEndsWith;
+
+  // ① 出站：UC 窗口内按 endpoint（urlEndsWith）找 read outbound http-req（窗口隔离保证唯一·
+  // 多于一个取最后一条——同窗口同 endpoint 重发取最新·一般唯一）。
+  const httpHops = events
+    .filter(
+      (e) =>
+        (uc === undefined || e.uc_id === uc) &&
+        e.facet === 'outbound' &&
+        e.hop === 'http-req' &&
+        (!urlEnds || urlEnds === '*' || String(e.payload?.url ?? '').endsWith(urlEnds))
+    )
+    .map((e) => ({ method: e.payload?.method, url: e.payload?.url, body: e.payload?.body ?? {} }));
+  const httpHit = httpHops.length ? httpHops[httpHops.length - 1] : null;
+  const outboundFacet = diffOutbound(exp, httpHit);
+
+  // ② 投影：UC 窗口内找 im:read:result projection·req_id 匹配 reqId（如提供）。
+  const pexp = expect.projection ?? {};
+  const projHops = events.filter(
+    (e) =>
+      (uc === undefined || e.uc_id === uc) &&
+      e.facet === 'projection' &&
+      e.hop === 'projection' &&
+      (e.payload?.event ?? e.payload?.channel) === (pexp.event ?? 'im:read:result')
+  );
+  // req_id 锚：优先精确匹配本次 reqId（窗口可能多次回灌·锁本束）；缺 reqId 则取窗口内首条。
+  const matchProj =
+    (reqId &&
+      projHops.find(
+        (e) => (e.payload?.data?.req_id ?? e.payload?.data?.reqId) === reqId
+      )) ||
+    projHops[0] ||
+    null;
+  const projActual = matchProj
+    ? {
+        event: matchProj.payload?.event ?? matchProj.payload?.channel,
+        data: matchProj.payload?.data ?? {},
+      }
+    : null;
+  const projFacet = diffProjection(pexp, projActual);
+  // req_id 值锚（如 expect/reqId 指定·守「回灌的 req_id 确为本次 invoke 生成」非任取）。
+  if (projFacet.ok && reqId) {
+    const got = projActual?.data?.req_id ?? projActual?.data?.reqId;
+    if (got !== reqId)
+      projFacet.issues.push(`im:read:result req_id 期望 ${reqId} 实得 ${got}`);
+    projFacet.ok = projFacet.issues.length === 0;
+  }
+
+  // 读族断面：① 出站 + ② 投影（③④ N/A 不裁定）。
+  const facets = {
+    outbound: outboundFacet,
+    projection: projFacet,
+  };
+  const order = ['outbound', 'projection'];
+  const brokenAt = order.find((f) => !facets[f].ok) ?? null;
+  const green = brokenAt === null && parseErrors.length === 0;
+
+  return {
+    ucId: uc,
+    green,
+    brokenAt,
+    reqId: reqId ?? null,
+    facets,
+    parseErrors,
+    summary: green
+      ? `✅ ${uc} 读族双面全绿（req_id=${reqId ?? 'n/a'}·endpoint=${urlEnds}）`
+      : `❌ ${uc} 读族断在 [${brokenAt ?? 'parse'}] 面：${
+          brokenAt ? facets[brokenAt].issues.join('; ') : `JSONL 解析 ${parseErrors.length} 行坏`
+        }`,
+  };
+}
+
 /**
  * 主入口：跑四面对账，出报告。
  *

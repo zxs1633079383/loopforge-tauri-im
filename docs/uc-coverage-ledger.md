@@ -215,12 +215,24 @@
 - **③ DOM**：`data-msg-id` 命中高亮。
 - **④ 落库**：Scan `message`。
 
-### UC-2.4 一级/二级回复 — `⬜ pending`（认领 M）
+### UC-2.4 一级/二级回复 — `✅ 四面全绿`（读族 ①②·③④ N/A·认领 M·issue #19）
 
-- **① 出站 HTTP**：`posts/getReplies` / `posts/getReplyBranch`（待核·partial 6 UC-2.4）。
-- **② 投影**：`im:read:result`（读族透传·§1.2 `{req_id, body}`）。
-- **③ DOM**：回复抽屉 `data-reply-id`。
-- **④ 落库**：Scan `message`（回复链）。
+- **① 出站 HTTP**：`posts/getReplies` `{replyId, pageNumber, pageSize}` / `posts/getReplyBranch`
+  `{replyFirstLevelId, pageNumber, pageSize}`（全 camelCase·真源 partial 1 §15-16 GetPostOpts 嵌
+  PageOpts·实跑 run.jsonl 实证）。**契约纠偏**：前 draft 期望 getReplyBranch body 含 `offset` 是误把
+  partial 6 §129 前端 UI 层 `queryReplyBranchMessage({...offset})` 当 wire body；后端 wire 真相是
+  GetPostOpts.pageNumber（posts.go:261 嵌 PageOpts·helix page_body() helper 发 pageNumber 非 offset）→
+  expect 改 pageNumber + offset 进 bodyForbidden（证据：run.jsonl 出站 body 实抓 `pageNumber:0`）。
+- **② 投影**：`im:read:result`（读族透传·§1.2 `{req_id, body}`·实跑 body 透传后端 `{status, data}`
+  SUCCESS 信封·外层键集 2 键严格对齐 + req_id 锚本次 invoke）。
+- **③ DOM**：N/A（读族无 write 驱动 DOM 契约面·前端 AX reply-drawer 从透传 body 抽 Post.id 渲染
+  `data-reply-id` chips·属前端渲染非冻结契约面·reducer runFourFacetRead 不裁定 ③）。
+- **④ 落库**：N/A（Scan-only 读路径·不落新行·cursor 不推进·reducer 不裁定 ④）。
+- **测试件**：`test/specs/uc-2.4.e2e.mjs`（e2e 经 `__lf.invoke` 直 invoke `im_get_replies`/
+  `im_get_reply_branch` 注真实 seeded postId + reqId → 等 run.jsonl im:read:result 回灌 → reducer
+  `runFourFacetRead` 裁 ①②）+ `test/expect/uc-2.4.expect.json`（两 endpoint flat 子期望）。e2e 实跑
+  2 passing 全绿（getReplies + getReplyBranch 各 ①② 绿）。reducer 自测含 6 可证伪对偶（snake/offset
+  泄漏·少 invoke·少回灌·req_id 错束·投影多字段·均破坏即红）。
 
 ### UC-1.3 发送图片/文件 — `🌙 untested·按需`（上传接口在 java·先列 todo·真 go 夜间）
 
@@ -452,7 +464,7 @@
 > - **✅ four-facet-verified = 10**：UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-1.4（2026-06-25 实跑全绿·onResend→store.resend 复用 tmp upsert + debug 桥注入失败前置·corr_key=ch=15gcgoyf;tmp=pfuneqqp;sid=c58zkjqn;seq=68）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）、UC-1.9（2026-06-25 实跑全绿·im_urgent_post/confirm 命令 + diffOutboundPhases 两阶段 + msg_id→sid 归一 + 关窗前等 post_update in-window·corr_key=sid=tasdeqxtubbrzbigoic5iya77o）、UC-1.10（2026-06-25 实跑全绿·im_create_schedule 命令 + create-outbound fallback 复用·posts/createSchedule + im:channel:schedule-created·storage op 草拟纠正 update→batch_update·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）、UC-3.3（2026-06-25 实跑全绿·im_template_received 命令 camelCase {postId} + 前置发 TEMPLATE 类型消息 + store extractTemplateReceived + storage op 草拟纠正 update→batch_update + dom _note 移出 dataAttrs·post_update 广播含发起连接故单账号即绿·corr_key=sid=1ouh77refibz8j4ujz4aiy1m8a）。
 > - **🟡 partial = 7**：UC-4.4 心跳 / UC-4.5 陌生 channel / UC-5.3 关群 / UC-5.5 置顶 / UC-6.1 拉踢 / UC-6.2 管理员 / UC-8.x 投票平均分。
 > - **🟡 ①③-verified · ②④ server-data-gap（read echo 多设备-only）= 2**：UC-3.1 会话已读 / UC-3.2 单条已读（2026-06-25 实跑·①③ 严格断言绿 + ②④ read echo 是多设备 echo·单连接结构性不可观测·带 run.jsonl 证据 + 可证伪护栏·须 L2 双账号转绿）。
-> - **⬜ pending = 14**：1.2 / 1.5 / 1.8 / 2.1 / 2.2 / 2.3 / 2.4 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 / UC-3.3 / UC-1.4 / UC-1.7 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
+> - **⬜ pending = 13**：1.2 / 1.5 / 1.8 / 2.1 / 2.2 / 2.3 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 / UC-3.3 / UC-1.4 / UC-1.7 / UC-2.4 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
 > - **⛔ unreachable = 7**（39 分母内）：UC-1.3 文件 / UC-1.6 编辑 / UC-4.3 too_long / UC-5.6 公告 / UC-5.7 在线 / UC-7.x 搜索·另 bot/agent 整域 ⛔（不计入 39 分母）。
 
 > ⚠️ **诚实声明**：全 39 UC 中唯一经真 Tauri+WKWebView 四面 oracle 跑绿的是 **UC-1.1**。`🟡 partial` 表示 helix ledger 已证服务端 wire 但 LoopForge 客户端四面尚未实跑（标 partial 是为标记「有可证主路径 + 部分子项物理够不到」，**不等于 LoopForge 已验**）。rollout 实跑前，唯一 ✅ 的就是 UC-1.1。

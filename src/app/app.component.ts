@@ -215,8 +215,16 @@ import { MessageRow } from "./im/message-row.model";
                   class="im__mini"
                   type="button"
                   data-testid="reply-drawer-btn"
+                  data-role="open-reply-drawer"
                   (click)="onLoadReplies(m)"
                 >回</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="reply-branch-btn"
+                  data-role="open-reply-branch"
+                  (click)="onLoadReplyBranch(m)"
+                >支</button>
                 @if (m.sendStatus === "failed") {
                   <button
                     class="im__mini"
@@ -676,9 +684,22 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.store.makeTopic(rootId, postId, displayName, memberIds);
   }
 
-  /** UC-2.4 加载回复链。占位 → 接读族 getReplies。 */
-  onLoadReplies(_row: MessageRow): void {
-    /* UC-2.4 接通 */
+  /** UC-2.4 加载一级回复链：replyId=消息 server id → store.loadReplies（读族 getReplies·endpoint +
+   *  wire body camelCase 化由 Rust/helix 拼·壳不臆造）。无 server id（未对账乐观消息）→ 不发。
+   *  回复链由 helix `im:read:result`（读族透传·{req_id, body}）投影驱动 AX reply-drawer data-reply-id·
+   *  壳纯渲染·无乐观合成。e2e 走 bridge 直 invoke 注入真实 replyId + reqId 覆盖此 UI 便捷路径。 */
+  onLoadReplies(row: MessageRow): void {
+    const replyId = row.msgId;
+    if (!replyId) return; // 无 server id（未对账乐观消息）→ 不可取回复链
+    void this.store.loadReplies(replyId);
+  }
+
+  /** UC-2.4 加载二级回复分支：replyFirstLevelId=一级回复 server id → store.loadReplyBranch（读族
+   *  getReplyBranch）。同 onLoadReplies 走 im:read:result 透传回灌。无 server id → 不发。 */
+  onLoadReplyBranch(row: MessageRow): void {
+    const firstLevelId = row.msgId;
+    if (!firstLevelId) return;
+    void this.store.loadReplyBranch(firstLevelId);
   }
 
   /** UC-1.4 重发失败：复用失败行原 temporaryId 重走 posts/create（upsert）。 */

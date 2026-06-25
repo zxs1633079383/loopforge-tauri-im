@@ -1,52 +1,63 @@
 {
-  "$schema-note": "四面期望文件 (UC-2.4) — 一级/二级回复读族 oracle。读族 (request-response 传输) 四面契约：① outbound HTTP query body ② projection envelope (im:read:result) ③ N/A DOM (读族无写) ④ N/A storage (读路径)。",
+  "$schema-note": "四面期望文件 (UC-2.4) — 一级/二级回复读族 oracle（只读契约·contract-readonly-autofix.md §1）。读族 (request-response 传输) 断面退化为 ①② 两面：① outbound HTTP wire body（getReplies/getReplyBranch）② projection envelope (im:read:result {req_id, body})；③ DOM / ④ storage = N/A（读路径无 write 驱动 DOM·不落新行·cursor 不推进）。两 endpoint 各一份 flat 子期望（e2e 每个 it 块在独立 set_uc 窗口跑一个·reducer runFourFacetRead 裁定）。",
   "ucId": "UC-2.4",
   "title": "一级/二级回复列表查询 (读族透传)",
   "contractReadonly": true,
   "contractSources": {
-    "outbound": "helix/crates/helix-im/docs/csesapi-migration/full-map/partials/1--backend-http-posts.md §15-16 getReplies/getReplyBranch",
-    "projection": "helix/crates/helix-im/docs/projection-schema.md §1.2 query::emit_read_result (读族回灌)",
-    "dom": "N/A (读族无 write 驱动 DOM 变更)",
-    "storage": "N/A (Scan-only 读路径)"
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/full-map/partials/1--backend-http-posts.md §15 getReplies (GetPostOpts+ReplyId) / §16 getReplyBranch (GetPostOpts+ReplyFirstLevelId)；helix outbound/posts_read.rs page_body() 实证 wire body = {<idKey>, pageNumber, pageSize, revoke?} 全 camelCase",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1.2 read_relay::emit_read_result (im:read:result {req_id, body})",
+    "dom": "N/A (读族无 write 驱动 DOM 变更·data-reply-id 仅前端从透传 body 抽 postId 渲染·非契约面)",
+    "storage": "N/A (Scan-only 读路径·不落新行·cursor 不推进)"
   },
 
   "corrAnchor": {
-    "note": "领域锚：读族 req_id 由 e2e 在 invoke 时生成；projection 回灌时携 req_id 作 corr_key；hops 不含 tmp (write UC 特有)。",
+    "note": "读族无四维领域键（outbound wire body 携 server postId replyId/replyFirstLevelId·非 ch/tmp/sid 别名；projection req_id 由 e2e invoke 时生成·经 bridge 透传·helix 抠出注册回灌上下文）。reducer runFourFacetRead 在 set_uc 窗口内按 endpoint 找 ① 出站·按 req_id 锚 ② 投影。req_id 由 e2e 注入到 runFourFacetRead({reqId})。",
     "req_id": null
   },
 
-  "outbound": {
-    "method": "POST",
-    "urlEndpoints": ["posts/getReplies", "posts/getReplyBranch"],
-    "bodyFields": {
-      "getReplies": {
+  "getReplies": {
+    "_note": "① getReplies endpoint 子期望（flat·reducer diffOutbound 直消费）。wire body 真源 partial 1 §15：GetPostOpts(嵌 PageOpts{pageNumber,pageSize}+Revoke)+ReplyId → 全 camelCase {replyId, pageNumber, pageSize, revoke?}。revoke 仅前端传 bool 时才出（page_body 条件插入）·本壳默认不传 → 不校验 revoke 存在。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "posts/getReplies",
+      "bodyFields": {
         "replyId": "*",
-        "pageSize": "*",
         "pageNumber": "*",
-        "revoke": "*"
+        "pageSize": "*"
       },
-      "getReplyBranch": {
-        "replyFirstLevelId": "*",
-        "pageSize": "*",
-        "offset": "*",
-        "revoke": "*"
-      }
+      "bodyForbidden": ["reply_id", "page_number", "page_size", "offset"]
     },
-    "bodyForbidden": ["reply_id", "reply_first_level_id", "page_size", "page_number"],
-    "_note": "真源 partial 1 §15-16：全 camelCase body。getReplies 含 replyId/pageSize/pageNumber/revoke；getReplyBranch 含 replyFirstLevelId/pageSize/offset/revoke。body 值用 * = 仅校验键存在（页码/id 随 invoke 参变）。读族无 WS 回声，HTTP 200 响应体经 query::emit_read_result 透传。"
+    "projection": {
+      "event": "im:read:result",
+      "dataKeys": ["req_id", "body"],
+      "_note": "projection-schema §1.2：读族回灌外层恒 {req_id, body}（成功）。body = 后端 getReplies 响应体原样透传（{rootPost, replies}）·inner 不冻结（前端直消费）。键集 = 2 键严格对齐（多/缺即红）。"
+    }
   },
 
-  "projection": {
-    "event": "im:read:result",
-    "dataKeys": ["req_id", "body"],
-    "_note": "projection-schema §1.2 query::emit_read_result：读族回灌通道（request-response）。外层恒为 {req_id, body}（成功）或 {req_id, error}（失败）；body = 后端 getReplies/getReplyBranch 响应体原样透传（`{rootPost, replies}` / `{...branch result...}`），inner 结构由后端定。内层 Post 字段不冻结（同 §1.3 上拉翻页），前端直接消费。"
+  "getReplyBranch": {
+    "_note": "① getReplyBranch endpoint 子期望。wire body 真源 partial 1 §16：GetPostOpts(嵌 PageOpts{pageNumber,pageSize})+ReplyFirstLevelId → 全 camelCase {replyFirstLevelId, pageNumber, pageSize, revoke?}。契约纠偏（证据见 commit body）：前 draft 期望 offset 是误把 partial 6 §129 前端 UI 层 queryReplyBranchMessage({...offset}) 当 wire body；后端 wire 真相是 GetPostOpts.pageNumber（posts.go:261 嵌 PageOpts·page_body() helper 发 pageNumber 非 offset）。offset 进 bodyForbidden。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "posts/getReplyBranch",
+      "bodyFields": {
+        "replyFirstLevelId": "*",
+        "pageNumber": "*",
+        "pageSize": "*"
+      },
+      "bodyForbidden": ["reply_first_level_id", "page_number", "page_size", "offset"]
+    },
+    "projection": {
+      "event": "im:read:result",
+      "dataKeys": ["req_id", "body"],
+      "_note": "同 getReplies·读族回灌外层恒 {req_id, body}。body = getReplyBranch 响应体透传（HasMorePage[Post]）·inner 不冻结。"
+    }
   },
 
   "storage": {
-    "_note": "N/A (读路径)。DB Scan message 表取回复链，不落新行；cursor 不推进。"
+    "_note": "N/A (读路径)。DB Scan post 表取回复链·不落新行·cursor 不推进。reducer runFourFacetRead 不裁定 ④ 面。"
   },
 
   "dom": {
-    "_note": "N/A (读族无 write)。读结果渲染由前端 bridge resolve req_id，在 reply-drawer 组件显示列表，无特定 data-* 契约（与 send-1 write 驱动 DOM 差异）。"
+    "_note": "N/A (读族无 write 驱动 DOM 契约面)。前端 bridge resolve req_id 后在 AX reply-drawer 渲染 data-reply-id chips（从透传 body 抽 Post.id）·属前端渲染非冻结契约面·reducer 不裁定 ③ 面。"
   }
 }

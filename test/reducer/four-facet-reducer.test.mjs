@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   runFourFacet,
+  runFourFacetRead,
   parseJsonl,
   bundleByCorrKey,
 } from './four-facet-reducer.mjs';
@@ -457,6 +458,82 @@ console.log('· UC-1.9 加急两阶段 outbound（urgentPost + urgentConfirm 同
   ].join('\n');
   const repNoTargets = runFourFacet({ jsonl: noTargets, expect: expectAnchored, dom });
   eq(repNoTargets.facets.outbound.ok, false, '可证伪：urgentPost 缺 targetIds → ① 红');
+}
+
+// ── UC-2.4 读族（runFourFacetRead·request-response 断面 ①②）────────────────────
+
+console.log('· UC-2.4 读族 getReplies/getReplyBranch（runFourFacetRead）');
+{
+  const RID = 'req-abc123def4';
+  const REPLY = 'qkyxnn3yi78wxmeqnr51tc9jne';
+  const expReplies = JSON.parse(
+    readFileSync(join(ROOT, 'test', 'expect', 'uc-2.4.expect.json'), 'utf8')
+  ).getReplies;
+
+  // 金标束：① getReplies 出站 wire body（camelCase）+ ② im:read:result{req_id, body} 回灌。
+  const goodLines = [
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-2.4', facet: 'outbound', hop: 'http-req', seq: 1,
+      payload: { method: 'POST', url: 'http://x/api/cses/posts/getReplies',
+        body: { replyId: REPLY, pageNumber: 0, pageSize: 20 } } }),
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-2.4', facet: 'projection', hop: 'projection', seq: 2,
+      payload: { event: 'im:read:result', data: { req_id: RID, body: { rootPost: { id: REPLY }, replies: [] } } } }),
+    // 噪声：另一 UC 窗口的帧（uc_id 过滤须排除·不串味）。
+    JSON.stringify({ run_id: 'r', uc_id: '__quiescence__', facet: 'outbound', hop: 'http-req', seq: 3,
+      payload: { method: 'POST', url: 'http://x/api/cses/posts/top20', body: { channel_id: 'cX' } } }),
+  ].join('\n');
+
+  const repGood = runFourFacetRead({ jsonl: goodLines, expect: expReplies, reqId: RID, ucId: 'UC-2.4' });
+  eq(repGood.green, true, '读族金标束：① getReplies wire body + ② im:read:result 双面全绿');
+  eq(repGood.facets.outbound.ok, true, '读族 ① 出站 getReplies camelCase 对齐');
+  eq(repGood.facets.projection.ok, true, '读族 ② 投影 im:read:result{req_id, body} 键集对齐 + req_id 锚');
+
+  // 可证伪 a：出站 body 泄漏 snake page_number（bodyForbidden）→ ① 红。
+  const leakSnake = [
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-2.4', facet: 'outbound', hop: 'http-req', seq: 1,
+      payload: { method: 'POST', url: 'http://x/api/cses/posts/getReplies',
+        body: { replyId: REPLY, page_number: 0, pageSize: 20 } } }),
+    ...goodLines.split('\n').slice(1),
+  ].join('\n');
+  const repLeak = runFourFacetRead({ jsonl: leakSnake, expect: expReplies, reqId: RID, ucId: 'UC-2.4' });
+  eq(repLeak.facets.outbound.ok, false, '可证伪：getReplies body 缺 camel pageNumber + 泄漏 snake page_number → ① 红');
+
+  // 可证伪 b：出站 body 泄漏 offset（UI 层概念误进 wire·bodyForbidden）→ ① 红。
+  const leakOffset = [
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-2.4', facet: 'outbound', hop: 'http-req', seq: 1,
+      payload: { method: 'POST', url: 'http://x/api/cses/posts/getReplies',
+        body: { replyId: REPLY, pageNumber: 0, pageSize: 20, offset: 0 } } }),
+    ...goodLines.split('\n').slice(1),
+  ].join('\n');
+  const repOffset = runFourFacetRead({ jsonl: leakOffset, expect: expReplies, reqId: RID, ucId: 'UC-2.4' });
+  eq(repOffset.facets.outbound.ok, false, '可证伪：getReplies body 泄漏 offset（UI 概念误进 wire）→ ① 红');
+
+  // 可证伪 c：没发出站（少 invoke）→ ① 红（无出站命令体·断在 invoke→HTTP 这跳）。
+  const noOut = goodLines.split('\n').slice(1).join('\n');
+  const repNoOut = runFourFacetRead({ jsonl: noOut, expect: expReplies, reqId: RID, ucId: 'UC-2.4' });
+  eq(repNoOut.facets.outbound.ok, false, '可证伪：getReplies 无出站（少 invoke）→ ① 红');
+
+  // 可证伪 d：没回灌 im:read:result（少回灌）→ ② 红（无投影 emit·断在 gate→投影这跳）。
+  const noProj = goodLines.split('\n').filter((l) => !l.includes('im:read:result')).join('\n');
+  const repNoProj = runFourFacetRead({ jsonl: noProj, expect: expReplies, reqId: RID, ucId: 'UC-2.4' });
+  eq(repNoProj.facets.projection.ok, false, '可证伪：getReplies 无 im:read:result 回灌 → ② 红');
+
+  // 可证伪 e：回灌 req_id 不匹配本次 invoke（错束）→ ② 红（req_id 锚守「确为本次」非任取）。
+  const wrongReq = [
+    goodLines.split('\n')[0],
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-2.4', facet: 'projection', hop: 'projection', seq: 2,
+      payload: { event: 'im:read:result', data: { req_id: 'req-OTHER0000', body: {} } } }),
+  ].join('\n');
+  const repWrongReq = runFourFacetRead({ jsonl: wrongReq, expect: expReplies, reqId: RID, ucId: 'UC-2.4' });
+  eq(repWrongReq.facets.projection.ok, false, '可证伪：im:read:result req_id 不匹配本次 invoke → ② 红');
+
+  // 可证伪 f：投影外层多/缺键（非 {req_id, body}）→ ② 红（读族外层键集冻结）。
+  const badKeys = [
+    goodLines.split('\n')[0],
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-2.4', facet: 'projection', hop: 'projection', seq: 2,
+      payload: { event: 'im:read:result', data: { req_id: RID, body: {}, extra: 1 } } }),
+  ].join('\n');
+  const repBadKeys = runFourFacetRead({ jsonl: badKeys, expect: expReplies, reqId: RID, ucId: 'UC-2.4' });
+  eq(repBadKeys.facets.projection.ok, false, '可证伪：im:read:result 外层多字段 extra → ② 红');
 }
 
 // ── 收尾 ─────────────────────────────────────────────────────────────────────

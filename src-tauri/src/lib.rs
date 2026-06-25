@@ -136,6 +136,8 @@ pub fn run() {
         commands::im_read_channel,
         commands::im_template_received,
         commands::im_relay_messages,
+        commands::im_get_replies,
+        commands::im_get_reply_branch,
         commands::set_uc
     ]);
     #[cfg(not(feature = "webdriver"))]
@@ -153,7 +155,9 @@ pub fn run() {
         commands::im_mark_read,
         commands::im_read_channel,
         commands::im_template_received,
-        commands::im_relay_messages
+        commands::im_relay_messages,
+        commands::im_get_replies,
+        commands::im_get_reply_branch
     ]);
 
     // Record 模式退出落盘：app 退出（RunEvent::Exit）时把录好的 tape 存到 tape_path。

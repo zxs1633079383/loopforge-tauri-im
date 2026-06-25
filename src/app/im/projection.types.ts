@@ -113,6 +113,21 @@ export interface ChannelScheduleCreatedData {
   hasSchedulePost: boolean;
 }
 
+/**
+ * UC-2.4 读族回灌 channel（projection-schema §1.2 read_relay::emit_read_result）。
+ * data 形态 = `{ req_id, body }`（成功）或 `{ req_id, error }`（失败）——body = 后端
+ * getReplies/getReplyBranch 响应体原样透传（`{rootPost, replies}` / 分支结果·inner 不冻结）。
+ * 读族无 WS 回声·HTTP 200 即数据·壳收到即把回复 postId 抽进 AX reply-drawer（data-reply-id 直映）。
+ */
+export const READ_RESULT_CHANNEL = "im:read:result";
+
+/** im:read:result data 形态（projection-schema §1.2·{req_id, body}|{req_id, error}·body 透传不冻结）。 */
+export interface ReadResultData {
+  req_id: string;
+  body?: unknown;
+  error?: string;
+}
+
 /** message-row 类 channel（携 message_item_data fat 完整集） */
 export const MESSAGE_ROW_CHANNELS: ReadonlySet<string> = new Set([
   "im:post:received",

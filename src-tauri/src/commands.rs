@@ -310,6 +310,88 @@ pub async fn im_query_dialog_list(state: State<'_, AppState>) -> Result<(), Stri
         .map_err(|e| format!("im_query_dialog_list: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-2.4 一级回复列表（读族 request-response）：前端传 `replyId`（回复链根 server postId）+
+/// 可选分页 `pageNumber`/`pageSize` + 可选 `revoke` + `reqId`（前端 bridge 生成的关联 id）→
+/// 本命令转 snake_case 入泵 `im_get_replies`（helix-im `outbound/posts_read.rs` `GetRepliesCommand`
+/// 兑现出站 `POST posts/getReplies {replyId, pageNumber, pageSize, revoke?}`·全 camelCase·真机curl真源
+/// partial 1 §15 GetPostOpts+ReplyId）。读族无 WS 回声：HTTP 200 响应体经 helix `read_relay::
+/// emit_read_result` 透传回灌 `im:read:result{req_id, body}`（projection-schema §1.2）。
+///
+/// 薄壳纪律：只翻译入参 + 入泵，body camelCase 化（replyId/pageNumber/pageSize）在 helix-im build，
+/// 本壳不臆造 wire body；`req_id` 经 payload 透传（helix `module::read_req_id` 抠出注册回灌上下文）。
+#[tauri::command]
+pub async fn im_get_replies(
+    state: State<'_, AppState>,
+    reply_id: String,
+    req_id: String,
+    page_number: Option<i64>,
+    page_size: Option<i64>,
+    revoke: Option<bool>,
+) -> Result<(), String> {
+    if reply_id.is_empty() {
+        return Err("im_get_replies: replyId 为空".into());
+    }
+    if req_id.is_empty() {
+        return Err("im_get_replies: reqId 为空（前端 bridge 须生成·回灌关联）".into());
+    }
+    let mut payload = serde_json::json!({
+        "reply_id": reply_id,
+        "req_id": req_id,
+        "page_number": page_number.unwrap_or(0),
+        "page_size": page_size.unwrap_or(20),
+    });
+    if let Some(rv) = revoke {
+        payload["revoke"] = serde_json::json!(rv);
+    }
+    let tick = command("im_get_replies", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_get_replies: 入泵失败（泵已退出？）：{e}"))
+}
+
+/// UC-2.4 二级回复分支（读族 request-response）：前端传 `replyFirstLevelId`（一级回复 server postId）
+/// + 可选分页 `pageNumber`/`pageSize` + 可选 `revoke` + `reqId` → 本命令转 snake_case 入泵
+/// `im_get_reply_branch`（helix-im `GetReplyBranchCommand` 兑现出站 `POST posts/getReplyBranch
+/// {replyFirstLevelId, pageNumber, pageSize, revoke?}`·全 camelCase·真机curl真源 partial 1 §16
+/// GetPostOpts+ReplyFirstLevelId）。同 getReplies 走 `im:read:result{req_id, body}` 透传回灌。
+///
+/// 注：前端 UI 层翻页用 `offset` 概念（partial 6 §129 queryReplyBranchMessage），但**后端 wire**
+/// body 是 `GetPostOpts.pageNumber`（partial 1 §16 嵌 PageOpts·posts.go:261）——offset 是 UI 表征·
+/// pageNumber 是 wire 真相·壳/helix 出站发 pageNumber（page_body helper 实证）。
+#[tauri::command]
+pub async fn im_get_reply_branch(
+    state: State<'_, AppState>,
+    reply_first_level_id: String,
+    req_id: String,
+    page_number: Option<i64>,
+    page_size: Option<i64>,
+    revoke: Option<bool>,
+) -> Result<(), String> {
+    if reply_first_level_id.is_empty() {
+        return Err("im_get_reply_branch: replyFirstLevelId 为空".into());
+    }
+    if req_id.is_empty() {
+        return Err("im_get_reply_branch: reqId 为空（前端 bridge 须生成·回灌关联）".into());
+    }
+    let mut payload = serde_json::json!({
+        "reply_first_level_id": reply_first_level_id,
+        "req_id": req_id,
+        "page_number": page_number.unwrap_or(0),
+        "page_size": page_size.unwrap_or(20),
+    });
+    if let Some(rv) = revoke {
+        payload["revoke"] = serde_json::json!(rv);
+    }
+    let tick = command("im_get_reply_branch", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_get_reply_branch: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-5.1 创建群聊：前端传 `displayName` + `memberIds`（其他成员真实 userId 列表）→ 本命令按
 /// 真机curl真源 §4 拼 `channel/create` raw body 入泵 `im_create_channel`（helix-im
 /// `CreateChannelCommand` 透传 args 到 `POST /api/cses/channel/create`）。

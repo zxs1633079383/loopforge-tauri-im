@@ -1,6 +1,7 @@
 import { Injectable, computed, inject, signal } from "@angular/core";
 import { TauriBridgeService } from "./tauri-bridge.service";
 import { extractReactions, extractTemplateReceived } from "./props-extract";
+import { extractReplyIds } from "./read-result-extract";
 import {
   BookmarkRow,
   ChannelRow,
@@ -24,6 +25,8 @@ import {
   MessageItemData,
   POST_SENDING_CHANNEL,
   PostSendingData,
+  READ_RESULT_CHANNEL,
+  ReadResultData,
 } from "./projection.types";
 
 /**
@@ -446,6 +449,62 @@ export class ImStoreService {
   }
 
   /**
+   * UC-2.4 一级回复列表（读族）：invoke('im_get_replies', {replyId, reqId}）。
+   *
+   * **读族 request-response**：HTTP 200 响应体即数据→helix `read_relay::emit_read_result` 透传回灌
+   * `im:read:result{req_id, body}`→onBus applyReadResult 抽 postId 进 AX reply-drawer（data-reply-id）。
+   * **壳不臆造 body**：endpoint（posts/getReplies）+ wire body camelCase 化（replyId/pageNumber/pageSize）
+   * 全在 helix-im（commands.rs im_get_replies → outbound/posts_read.rs GetRepliesCommand）。壳只供
+   * replyId（回复链根 server postId）+ reqId（前端 bridge 生成·回灌关联·非 wire 字段·helix
+   * module::read_req_id 抠出注册 OutboundReadReply 上下文）。返 reqId 供 caller/e2e 等回灌关联。
+   * 非 Tauri / 命令缺失 → 静默（dev 浏览器单独调 UI 不卡），仍返 reqId（一致返回类型）。
+   */
+  async loadReplies(replyId: string, reqId?: string): Promise<string> {
+    const rid = (reqId ?? this.genReqId()).trim();
+    const post = replyId.trim();
+    if (!post) return rid;
+    try {
+      await this.bridge.invoke<void>("im_get_replies", {
+        replyId: post,
+        reqId: rid,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（回复链靠 im:read:result 投影驱动·无乐观合成）。
+    }
+    return rid;
+  }
+
+  /**
+   * UC-2.4 二级回复分支（读族）：invoke('im_get_reply_branch', {replyFirstLevelId, reqId}）。
+   *
+   * 同 loadReplies 走 `im:read:result{req_id, body}` 透传回灌。endpoint posts/getReplyBranch + wire body
+   * camelCase 化（replyFirstLevelId/pageNumber/pageSize）全在 helix-im（GetReplyBranchCommand）。壳只供
+   * replyFirstLevelId（一级回复 server postId）+ reqId。返 reqId 供 caller/e2e 等回灌关联。
+   */
+  async loadReplyBranch(
+    replyFirstLevelId: string,
+    reqId?: string,
+  ): Promise<string> {
+    const rid = (reqId ?? this.genReqId()).trim();
+    const post = replyFirstLevelId.trim();
+    if (!post) return rid;
+    try {
+      await this.bridge.invoke<void>("im_get_reply_branch", {
+        replyFirstLevelId: post,
+        reqId: rid,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（分支靠 im:read:result 投影驱动·无乐观合成）。
+    }
+    return rid;
+  }
+
+  /** 读族关联 id（req_id）生成器（非 wire 字段·仅前端 bridge↔回灌关联用·z-base-32 短 id）。 */
+  private genReqId(): string {
+    return `req-${Math.random().toString(36).slice(2, 12)}`;
+  }
+
+  /**
    * UC-3.3 模板已收到回执：invoke('im_template_received', {postId}）。
    *
    * **壳不臆造 body**：endpoint（`POST post/templateReceived`·`/post` 单数前缀）+ body 形态
@@ -550,6 +609,14 @@ export class ImStoreService {
       return;
     }
 
+    // UC-2.4 读族回灌：im:read:result（{req_id, body}）→ 把回复链 postId 抽进 AX reply-drawer
+    // （data-reply-id 直映·壳纯渲染透传 body·不解析重组业务）。读族无 WS 回声·HTTP 200 即数据。
+    // 先于 captureActiveChannel/message-row 分支（读结果非 channel-row 信号·body 无顶层 channel_id）。
+    if (channel === READ_RESULT_CHANNEL) {
+      this.applyReadResult(env.payload?.data as ReadResultData | undefined);
+      return;
+    }
+
     // 活动频道锚定（在任何早退过滤之前）：stream 第一个真实频道胜出，含 im:channel:increment。
     // 兼容 snake(channel_id) 与 camel(channelId)；只在尚未锚定时 set（第一个胜出，不被后续覆盖）。
     this.captureActiveChannel(env.payload?.data);
@@ -606,6 +673,25 @@ export class ImStoreService {
       .filter((id): id is string => typeof id === "string" && !!id);
     for (const id of ids) this.upsertChannelRow(id);
     if (!this._activeChannel() && ids.length > 0) this._activeChannel.set(ids[0]);
+  }
+
+  /**
+   * UC-2.4 读族回灌：im:read:result（{req_id, body}）→ 把回复链 postId 抽进 AX reply-drawer。
+   *
+   * body = 后端 getReplies（`{rootPost, replies:[Post]}`）/ getReplyBranch（HasMorePage·`{data:[Post]}`
+   * 或 `[Post]`）响应体原样透传（projection-schema §1.2·inner 不冻结）。壳纯渲染：仅从 body 抽 Post.id
+   * 作 data-reply-id（不解析重组业务字段）。失败回灌（{req_id, error}）→ 清空抽屉（不卡）。
+   * 透传形态防御：rootPost.id / replies[].id / data[].id / 顶层数组[].id 全探（兼容两 endpoint 不同壳）。
+   */
+  private applyReadResult(data: ReadResultData | undefined): void {
+    if (!data || typeof data !== "object") return;
+    if (data.error !== undefined) {
+      this._replies.set([]); // 失败回灌 → 清抽屉（前端 reject 语义·不残留旧链）
+      return;
+    }
+    // 读族 body 抽 reply postId 经纯函数 extractReplyIds（read-result-extract.ts·壳体积控制 <800 行）。
+    const ids = extractReplyIds(data.body);
+    this._replies.set(ids.map((replyId) => ({ replyId })));
   }
 
   /**
