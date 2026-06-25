@@ -47,7 +47,9 @@ const DISCIPLINE = `
 - **#7(UC-4.1 cold-increment) 已知 yellow=真 server-data-gap（cursor 重置后 hello 仍回空增量·server 无 channel event 历史可回放·commit 63bfc7e ①③已绿）·不阻塞任何下游 UC**：建群(#8)/发消息(#10)/已读/历史 都是独立流·**不依赖 cold-increment**。遇 issue 上"Blocked by #7"一律视为可推进·别再回头死磕 #7。#7 留到所有数据生成类 UC 后由收尾复跑（那时 server 已有真事件→②④ 多半自愈转绿）。
 - **不回退已绿** UC-1.1/1.2/1.5 + UC-4.1 的 ①③(63bfc7e/f72fdf2)；前端事件必配组件方法(C007)。
 - **绝不 merge main / 不 push**；commit 前验 pwd 在仓内 + branch=feat/uc-rollout + \`bash scripts/gate.sh\` 须绿；conventional 中文结构化 commit。
-- **唯一允许 yellow 的情形**：确凿 server-side 数据 gap(如 cursor 重置后 hello 仍回空增量=cses-java 无该 channel event 历史)·必带 run.jsonl 证据 + issue comment 说明·**其余一律修到绿**。
+- **read-receipt 正确语义(2026-06-25 用户权威·别再写"多设备 echo"错因)**：\`post_read\`(type6) 推给**消息的发送者**·当**别人已读了发送者的消息**时(不是自读回执·不是多设备 echo)。故 UC-3.1(channels/view)/3.2(post/read) 的 ②④(im:post:read 投影 + message.read_bits 落库) **L1 单账号结构上造不出**(无第二账号读本账号消息)=**真 L2 双账号**·已由 L2 追踪 issue **#47** 接盘。
+- **L2-facet 处置(标准 c·关闭门槛)**：某面**结构上只有第二账号才观测得到**(read-receipt 推发送者 / member-leave 广播他人 / admin 广播他人 / 他人发消息收推送)→ ①③(本账号自身可达)验 L1 绿·该 L2-facet **不当 yellow 糊弄关闭**：(1) **issue 留 OPEN**·改 label \`ready-for-human\`(removeLabel ready-for-agent·防自动再抓)·(2) 在 comment **写精确机制**(谁推给谁·为何单账号造不出·别写"多设备 echo")·(3) 链到对应 L2 追踪 issue(read-receipt→#47·其余按 #42-45 或新建)。**issue 只有四面真全绿(L1 面绿 + L2 面在 L2 issue 验证绿)才 close**·**禁止 ①③绿+②④延后就 close**(C011 不留"关了没测"的账)。
+- **真 server-data-gap(区别于 L2-facet)**：纯环境数据缺失(如 #7 cold-increment 若 server 真无 event 历史)·带 run.jsonl 证据·标 yellow 留 open·**非**结构性 L2。其余非 L2-facet 的红一律修到绿。
 - 完成/中断写终态行到 docs/harness/log.md。
 `
 
