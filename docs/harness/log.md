@@ -60,3 +60,4 @@
 ✅ DONE UC-1.4 重发失败消息四面闭环（issue #17 closed·四面全绿） @2026-06-25 11:29:16 +0800 | commit 5d7822e | onResend→resend upsert + debug 桥失败前置 | feat/uc-rollout
 
 ✅ DONE UC-1.7 转发/合并转发多频道四面闭环（issue #18·N=2 目标）@2026-06-25T11:53:35+0800 | commit 357b186 | 四面真绿 | loopforge-tauri-im/feat/uc-rollout | 根因=转发 Post 缺 userId 被 postSender PrePostSend Ack-drop·补 userId 后绿
+✅ DONE UC-2.4 一级/二级回复读族闭环（getReplies/getReplyBranch 四面①②全绿·issue #19 CLOSED）@2026-06-25 12:16:31 CST | commit 5b71a2b | 2 endpoint e2e 2 passing | loopforge-tauri-im/feat/uc-rollout
