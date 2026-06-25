@@ -102,7 +102,7 @@ function actualOutbound(bundle, opts = {}) {
   if (ws) return { kind: 'ws', body: ws.payload };
 
   // batch fallback：用窗口内覆盖锚 ch 的批请求（cursors[*].channelId 含锚 ch）。
-  const { batchOutbound, anchorCh } = opts;
+  const { batchOutbound, anchorCh, createOutbound } = opts;
   if (anchorCh && Array.isArray(batchOutbound)) {
     const hit = batchOutbound.find((h) => {
       const cursors = h.payload?.body?.cursors;
@@ -119,6 +119,21 @@ function actualOutbound(bundle, opts = {}) {
         body: hit.payload?.body ?? {},
       };
     }
+  }
+
+  // create fallback（UC-5.1 建群·spec §1）：建群出站 body 无 server 分配的 channelId → 出站
+  // hop 抽不到 corr_key 归 unkeyed，目标束（锚 server 分配 ch）不含它。在 createOutbound
+  // （窗口内 URL endsWith expectUrlEndsWith 的请求，建群语义=窗口内唯一一条）里取之作 ①——
+  // faithful（该次 create 确实是本 UC 触发的建群请求·窗口隔离保证唯一），非 tautology
+  // （无 create 请求则不命中 → ① 仍红，见单测可证伪对偶）。
+  if (Array.isArray(createOutbound) && createOutbound.length > 0) {
+    const hit = createOutbound[0];
+    return {
+      kind: 'http',
+      method: hit.payload?.method,
+      url: hit.payload?.url,
+      body: hit.payload?.body ?? {},
+    };
   }
   return null;
 }
@@ -283,10 +298,27 @@ export function runFourFacet({ jsonl, expect, dom, ucId }) {
   );
   const anchorCh = chAnchor ?? target?.dims?.ch ?? null;
 
+  // create 出站候选（UC-5.1 建群 ①·窗口内 URL endsWith expect.outbound.urlEndsWith 的 http-req）：
+  // 建群 body 无 server 分配 channelId → 出站 hop 归 unkeyed 不进锚 ch 束；此候选供 createOutbound
+  // fallback 取之。窗口隔离（uc_id 过滤）保证本 UC 内建群请求唯一（≥1 才命中·否则 ① 红·非放水）。
+  // 仅对**非批量**出站启用 create fallback（body 无 cursors）——批量请求归 batchOutbound 域
+  // （按 cursors 覆盖锚 ch 命中·不命中则 ① 红·守该路径可证伪对偶），不被 create fallback 抢答。
+  const createUrlEnds = expect.outbound?.urlEndsWith;
+  const createOutbound = createUrlEnds
+    ? events.filter(
+        (e) =>
+          (uc === undefined || e.uc_id === uc) &&
+          e.facet === 'outbound' &&
+          e.hop === 'http-req' &&
+          !Array.isArray(e.payload?.body?.cursors) &&
+          String(e.payload?.url ?? '').endsWith(createUrlEnds)
+      )
+    : [];
+
   const facets = {
     outbound: diffOutbound(
       expect.outbound ?? {},
-      target && actualOutbound(target, { batchOutbound, anchorCh })
+      target && actualOutbound(target, { batchOutbound, anchorCh, createOutbound })
     ),
     projection: diffProjection(expect.projection ?? {}, target && actualProjection(target, expect.projection?.event)),
     storage: diffStorage(expect.storage ?? {}, target && actualStorage(target, expect.storage?.table)),

@@ -10,10 +10,12 @@ import {
 } from "./message-row.model";
 import {
   BusEnvelope,
+  CHANNEL_CREATED_CHANNEL,
   CHANNEL_INCREMENT_CHANNEL,
   CHANNEL_UPDATE_CHANNEL,
   CHANNELS_LOADED_CHANNEL,
   CHANNELS_PROJECTION_CHANNEL,
+  ChannelCreatedData,
   ChannelIncrementData,
   MESSAGE_ROW_CHANNELS,
   MessageItemData,
@@ -192,6 +194,27 @@ export class ImStoreService {
     }
   }
 
+  /**
+   * UC-5.1 创建群聊：invoke('im_create_channel', {displayName, memberIds})。
+   *
+   * **壳不臆造 body**：teamId / 自身 userId（CREATOR）由 Rust 命令从 profile 单一真源拼装
+   * （src-tauri commands.rs im_create_channel）。壳只供 displayName + 其他成员 memberIds。
+   * 新建群行由 helix `im:channel:created` 投影驱动 upsert（壳纯渲染，不在 JS 合成 channel 行）。
+   * 非 Tauri / 命令缺失 → 静默（dev 浏览器单独调 UI 不卡）。
+   */
+  async createChannel(displayName: string, memberIds: string[]): Promise<void> {
+    const name = displayName.trim();
+    if (!name) return;
+    try {
+      await this.bridge.invoke<void>("im_create_channel", {
+        displayName: name,
+        memberIds,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（建群行靠投影驱动，无乐观合成）。
+    }
+  }
+
   // ——— 私有 ———
 
   private onBus(env: BusEnvelope): void {
@@ -219,6 +242,12 @@ export class ImStoreService {
     }
     if (channel === CHANNEL_UPDATE_CHANNEL) {
       this.applyChannelUpdate(env.payload?.data);
+      return;
+    }
+    // UC-5.1 建群：im:channel:created（{channel_id, channel}）→ upsert CL 区新频道行
+    // （data-channel-id 直映·壳纯渲染只持 channelId）。先于 message-row 分支（channel-row 信号）。
+    if (channel === CHANNEL_CREATED_CHANNEL) {
+      this.applyChannelCreated(env.payload?.data as ChannelCreatedData | undefined);
       return;
     }
 
@@ -297,6 +326,20 @@ export class ImStoreService {
    * 同时锚定活动频道（增量流首个真实频道胜出·send 族决定性目标）。
    */
   private applyChannelIncrement(data: ChannelIncrementData | undefined): void {
+    if (!data || typeof data !== "object") return;
+    const channelId =
+      (typeof data.channel_id === "string" && data.channel_id) || "";
+    if (!channelId) return;
+    this.upsertChannelRow(channelId);
+    if (!this._activeChannel()) this._activeChannel.set(channelId);
+  }
+
+  /**
+   * UC-5.1：im:channel:created（{channel_id, channel}·建群 WS channel_created 透传）→ upsert
+   * CL 区新频道行（data-channel-id 直映·壳纯渲染只持 channel_id·channel 对象不解析重组）。
+   * 同时锚定活动频道（若尚未锚定·新建群即作当前会话目标）。
+   */
+  private applyChannelCreated(data: ChannelCreatedData | undefined): void {
     if (!data || typeof data !== "object") return;
     const channelId =
       (typeof data.channel_id === "string" && data.channel_id) || "";

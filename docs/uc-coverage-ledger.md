@@ -242,13 +242,16 @@
 - **③ DOM**：单 channel 增量渲染。
 - **④ 落库**：`channel`（自动注册行）+ cursor。
 
-### UC-5.1 创建群聊 — `🟡 blocked-on-#7`（认领 M·Blocked by #7 UC-4.1 未绿·artifacts 未 author）
+### UC-5.1 创建群聊 — `✅ 四面全绿`（live·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th·issue #8 closed）
 
-- **① 出站 HTTP**：`POST /api/cses/channel/create`，body 锚 `真机curl真源 §4`——`{teamId, displayName, orient:"", type:"P", users:[{id,teamId,role}]（自己 CREATOR + 他人 MEMBER）, picturetype:"USER", picture:{userIds}, forceCreate:true}`。
+- **① 出站 HTTP**：`POST /api/cses/channel/create`，body 锚 `真机curl真源 §4`——`{teamId, displayName, orient:"", type:"P", users:[{id,teamId,role}]（自己 CREATOR + 他人 MEMBER）, picturetype:"USER", picture:{userIds}, forceCreate:true}`。✅ live 实证 body keys 全集匹配·无 channelId 泄漏（出站 body 无 server 分配 id → reducer createOutbound fallback 归锚 ch 束·窗口隔离保证唯一）。
 - **① WS 推送**：action=`channel_created`（type:P·data.id 命中·helix ledger 实证）+ `channel_member_update` + `post`。
-- **② 投影**：`emit_channel_created`（`{channel_id, channel}`·透传帧 channel 对象）。
-- **③ DOM**：`data-channel-id` 新行。
-- **④ 落库**：`channel` 新行。
+- **② 投影**：`emit_channel_created`（`{channel_id, channel}`·透传帧 channel 对象）。✅ live 实证字段集 == {channel_id, channel}。
+- **③ DOM**：`data-channel-id` 新行。✅ live 实证（before=114 → after=115·新 ch 行渲染·store.applyChannelCreated upsert）。
+- **④ 落库**：`channel` 新行。✅ live 实证 batch_upsert channel rows=1 id=ch。
+- **变体备注**：HTTP #8 `channel/createSpecifyOwner`（指定 owner·`im_create_specify_owner`）是同建群母 UC 的指定-owner 变体（独立 endpoint·session 默认 owner 走本 #7）；本 UC 收口 #7 主路径。
+- **artifacts**：`test/expect/uc-5.1.expect.json` + `test/specs/uc-5.1.e2e.mjs`（live 真跑·1 passing）。
+- **机器件改动**：reducer `actualOutbound` 加 create fallback（非批量·URL endsWith·窗口唯一）+ 单测 3 断言（绿 + 2 可证伪：无 create→红 / channelId 泄漏→红）；装饰器 extract_corr_key 未改（建群出站本就 corr_key None·归 unkeyed 是预期·靠 fallback 归束·非改抽键口径）。Rust：`im_create_channel` 命令 + AppState.identity（profile 单一真源拼 body·壳不臆造）。
 
 ### UC-5.2 创建话题 — `⬜ pending`（认领 M）
 
@@ -415,16 +418,16 @@
 | 域 | UC 条目 | `✅ four-facet-verified` | `🟡 partial` | `⬜ pending` | `⛔ unreachable` |
 |---|---|---|---|---|---|
 | A posts（收发/历史/已读）| 17 | **1**（1.1）| 0 | 14 | 2（1.3 文件 / 1.6 编辑）|
-| B channel/sync（同步/频道管理）| 12 | 1（4.1）| 4（4.4 / 4.5 / 5.3 / 5.5）| 4（4.2 / 5.1 / 5.2 / 5.4）| 3（4.3 / 5.6 / 5.7）|
+| B channel/sync（同步/频道管理）| 12 | 2（4.1 / 5.1）| 4（4.4 / 4.5 / 5.3 / 5.5）| 3（4.2 / 5.2 / 5.4）| 3（4.3 / 5.6 / 5.7）|
 | C user-misc（成员/搜索/待办/书签）| 7 | 0 | 2（6.1 / 6.2）| 4（6.3 / 6.4 / 9.x / 10.1）| 1（7.x 搜索）|
 | D bot-agent / 互动卡片 | 3 | 0 | 1（8.x）| 1（10.2）| 1（8.x vote 子项归 8.x partial 母项·不单计）+ — |
 | **合计（39 分母）** | **39** | **1** | **7** | **24** | **7** |
 | bot/agent 召唤（整域，不计入 39）| 1 域 | — | — | — | 1 域（⛔）|
 
 > 精确分类（按本台账每节标题图例为准·1+7+24+7=39）：
-> - **✅ four-facet-verified = 4**：UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）。
+> - **✅ four-facet-verified = 5**：UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）。
 > - **🟡 partial = 7**：UC-4.4 心跳 / UC-4.5 陌生 channel / UC-5.3 关群 / UC-5.5 置顶 / UC-6.1 拉踢 / UC-6.2 管理员 / UC-8.x 投票平均分。
-> - **⬜ pending = 23**：3.1 / 3.2 / 3.3 / 1.2 / 1.4 / 1.5 / 1.7 / 1.8 / 1.9 / 1.10 / 2.1 / 2.2 / 2.3 / 2.4 / 4.2 / 5.1 / 5.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 已转 ✅）。
+> - **⬜ pending = 22**：3.1 / 3.2 / 3.3 / 1.2 / 1.4 / 1.5 / 1.7 / 1.8 / 1.9 / 1.10 / 2.1 / 2.2 / 2.3 / 2.4 / 4.2 / 5.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 已转 ✅）。
 > - **⛔ unreachable = 7**（39 分母内）：UC-1.3 文件 / UC-1.6 编辑 / UC-4.3 too_long / UC-5.6 公告 / UC-5.7 在线 / UC-7.x 搜索·另 bot/agent 整域 ⛔（不计入 39 分母）。
 
 > ⚠️ **诚实声明**：全 39 UC 中唯一经真 Tauri+WKWebView 四面 oracle 跑绿的是 **UC-1.1**。`🟡 partial` 表示 helix ledger 已证服务端 wire 但 LoopForge 客户端四面尚未实跑（标 partial 是为标记「有可证主路径 + 部分子项物理够不到」，**不等于 LoopForge 已验**）。rollout 实跑前，唯一 ✅ 的就是 UC-1.1。

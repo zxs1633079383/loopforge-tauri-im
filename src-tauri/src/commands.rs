@@ -87,6 +87,67 @@ pub async fn im_query_dialog_list(state: State<'_, AppState>) -> Result<(), Stri
         .map_err(|e| format!("im_query_dialog_list: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-5.1 创建群聊：前端传 `displayName` + `memberIds`（其他成员真实 userId 列表）→ 本命令按
+/// 真机curl真源 §4 拼 `channel/create` raw body 入泵 `im_create_channel`（helix-im
+/// `CreateChannelCommand` 透传 args 到 `POST /api/cses/channel/create`）。
+///
+/// body 单一真源：`teamId` / 自身 `userId`（role=CREATOR）取自 AppState.identity（profile
+/// companyId / cookieId），**不在前端 TS 硬编 creds**（守 src-tauri 纪律 3·身份单一真源）。
+/// 其他成员（role=MEMBER）由前端供 `memberIds`（e2e 读 seeded channel_member 真实 userId）。
+/// 形态锚真源 §4：`{teamId, displayName, orient:"", type:"P", users:[{id,teamId,role}],
+/// picturetype:"USER", picture:{userIds:[...]}, forceCreate:true}`（全 camelCase）。
+#[tauri::command]
+pub async fn im_create_channel(
+    state: State<'_, AppState>,
+    display_name: String,
+    member_ids: Vec<String>,
+) -> Result<(), String> {
+    if display_name.trim().is_empty() {
+        return Err("im_create_channel: displayName 为空".into());
+    }
+    let team_id = state.identity.team_id.clone();
+    let self_id = state.identity.user_id.clone();
+    if self_id.is_empty() {
+        return Err("im_create_channel: 自身 userId 为空（profile cookieId 未注入）".into());
+    }
+
+    // users[]：自己 CREATOR + 其他成员 MEMBER（真源 §4 三键 id/teamId/role 全 camelCase）。
+    let mut users: Vec<serde_json::Value> = Vec::with_capacity(member_ids.len() + 1);
+    let mut user_ids: Vec<String> = Vec::with_capacity(member_ids.len() + 1);
+    users.push(serde_json::json!({
+        "id": self_id,
+        "teamId": team_id,
+        "role": "CREATOR",
+    }));
+    user_ids.push(self_id.clone());
+    for mid in member_ids.into_iter().filter(|m| !m.is_empty() && *m != self_id) {
+        users.push(serde_json::json!({
+            "id": mid,
+            "teamId": team_id,
+            "role": "MEMBER",
+        }));
+        user_ids.push(mid);
+    }
+
+    let body = serde_json::json!({
+        "teamId": team_id,
+        "displayName": display_name,
+        "orient": "",
+        "type": "P",
+        "users": users,
+        "picturetype": "USER",
+        "picture": { "userIds": user_ids },
+        "forceCreate": true,
+    });
+
+    let tick = command("im_create_channel", body);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_create_channel: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// 就绪 probe：前端轮询此命令直到返回 `true`（increment 流动 + 静默窗口达成）。
 ///
 /// 返回值真精确度的边界见 `state::ReadinessProbe` 注释 + integration_todos（inflight==0

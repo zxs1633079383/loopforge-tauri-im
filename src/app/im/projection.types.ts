@@ -80,10 +80,23 @@ export const CHANNELS_LOADED_CHANNEL = "im:channels:loaded";
 export const CHANNEL_INCREMENT_CHANNEL = "im:channel:increment";
 export const CHANNEL_UPDATE_CHANNEL = "im:channel:update";
 
+/**
+ * UC-5.1 创建群聊投影 channel（projection-schema 行 68 to_effect_s1::emit_channel_created）。
+ * data 形态 = `{ channel_id, channel }`（channel = 透传帧 data 原始 channel 对象·schema 行 210）。
+ * 壳收到即往 CL 区频道列表 upsert 该 channel 行（data-channel-id 直映·壳纯渲染不合成）。
+ */
+export const CHANNEL_CREATED_CHANNEL = "im:channel:created";
+
 /** im:channel:increment data 形态（projection-schema 行 60·increment 透传帧 data·不解析重组）。 */
 export interface ChannelIncrementData {
   channel_id: string;
   increment: unknown;
+}
+
+/** im:channel:created data 形态（projection-schema 行 68·{channel_id, channel}·channel 透传不解析）。 */
+export interface ChannelCreatedData {
+  channel_id: string;
+  channel: unknown;
 }
 
 /** message-row 类 channel（携 message_item_data fat 完整集） */

@@ -472,9 +472,13 @@ export class AppComponent implements OnInit, OnDestroy {
     /* UC-12.1 接通 */
   }
 
-  /** UC-5.1 创建群聊。占位 → 接 im_create_channel。 */
+  /** UC-5.1 创建群聊：生成唯一群名 → store.createChannel（teamId/自身 CREATOR 由 Rust 拼·壳不臆造）。
+   *  memberIds 取当前成员区（MB）已加载成员 id（无则空·Rust 命令自动补自身 CREATOR 满足 Users≥1）。
+   *  e2e 走 bridge 直 invoke 注入真实 memberIds 覆盖此 UI 便捷路径。 */
   onCreateChannel(): void {
-    /* UC-5.1 接通 */
+    const displayName = `lf-grp-${Math.random().toString(36).slice(2, 8)}`;
+    const memberIds = this.store.members().map((m) => m.memberId).filter(Boolean);
+    void this.store.createChannel(displayName, memberIds);
   }
 
   /** UC-5.8 条件查频道。占位 → 接 im_query_channels。 */

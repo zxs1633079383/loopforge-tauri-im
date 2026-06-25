@@ -64,14 +64,27 @@ fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
-/// 装配并 spawn helix 引擎泵 + bus→app.emit 桥。返回进泵的 `tick_tx`（命令注入口）。
+/// 引擎装配出的本机身份（profile 真源·非 creds 部分）——供需要拼 body 的命令读。
+///
+/// 当前用途：`im_create_channel`（UC-5.1）拼 `channel/create` body 时，`teamId`/自身 `userId`
+/// 取自此单一真源（profile companyId / cookieId），避免前端 TS 硬编 creds（守 src-tauri 纪律 3：
+/// 身份单一真源·壳不臆造 body 字段）。
+#[derive(Clone, Default)]
+pub struct ImIdentity {
+    /// team/company id（profile companyId·= channel/create body 的 teamId）。
+    pub team_id: String,
+    /// 自身用户 id（profile cookieId·= channel/create body 里自己那条 users role=CREATOR 的 id）。
+    pub user_id: String,
+}
+
+/// 装配并 spawn helix 引擎泵 + bus→app.emit 桥。返回进泵的 `tick_tx`（命令注入口）+ 本机身份。
 ///
 /// 失败（ports 构造/DB 打开）→ 返回 `Err`，由 lib.rs 决定是否中止 app 启动。
 pub async fn spawn(
     app: AppHandle,
     ctx: InstrumentCtx,
     probe: Arc<ReadinessProbe>,
-) -> Result<mpsc::Sender<Tick>, String> {
+) -> Result<(mpsc::Sender<Tick>, ImIdentity), String> {
     // ── 部署配置（profile 文件真源；creds/端点不再散落 env）────────────────────────
     // debug→dev-local / release→prod；config/active-profile 可覆盖（见 config.rs）。
     let (profile_name, profile) = config::load()?;
@@ -240,7 +253,11 @@ pub async fn spawn(
         tracing::info!("helix engine loop 退出");
     });
 
-    Ok(tick_tx)
+    let identity = ImIdentity {
+        team_id: company_id.clone(),
+        user_id: cookie_id.clone(),
+    };
+    Ok((tick_tx, identity))
 }
 
 /// 投影面静默窗口（ms）：bus 流里 increment 流动后，连续无新事件超此窗口 → 判就绪。

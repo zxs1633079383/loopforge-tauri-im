@@ -307,6 +307,67 @@ console.log('· UC-4.1 batch 出站归束（① 批请求覆盖锚频道）');
   eq(rep2.brokenAt, 'outbound', '① 断点定位 outbound');
 }
 
+// ── UC-5.1 create 出站归束（① 建群 channel/create 无 server 分配 channelId）─────────
+// UC-5.1 ① 建群出站 body 无 channelId（server 端才分配）→ 出站 hop 抽不到 corr_key 归 unkeyed，
+// 锚 server 分配 ch 的束（②③④）不含它。reducer actualOutbound 须 create fallback：目标束无
+// outbound 时，取窗口内 URL endsWith expect.outbound.urlEndsWith 且 body 无 cursors 的请求作 ①
+// （faithful·窗口隔离保证本 UC 内建群请求唯一）。非 tautology：无 create 请求则 ① 红。
+console.log('· UC-5.1 create 出站归束（① 建群 channel/create 无 channelId）');
+{
+  const CH = 'srvAssignedCh';
+  const lines = [
+    // ① 建群出站：body 无 channelId（全 camelCase 必填集）→ corr_key None 归 unkeyed。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-5.1', facet: 'outbound', hop: 'http-req', seq: 1,
+      payload: { method: 'POST', url: 'http://x/api/cses/channel/create',
+        body: { teamId: 'T1', displayName: 'g', orient: '', type: 'P',
+          users: [{ id: '444', teamId: 'T1', role: 'CREATOR' }], picturetype: 'USER',
+          picture: { userIds: ['444'] }, forceCreate: true } } }),
+    // ② 建群投影（server 分配 ch）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-5.1', facet: 'projection', hop: 'projection', seq: 2,
+      corr_key: `ch=${CH}`,
+      payload: { event: 'im:channel:created', data: { channel_id: CH, channel: { id: CH } } } }),
+    // ④ 建群落库（id==ch·table=channel）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-5.1', facet: 'storage', hop: 'storage', seq: 3,
+      corr_key: `ch=${CH}`,
+      payload: { id: CH, op: 'batch_upsert', table: 'channel', rows: 1 } }),
+  ].join('\n');
+  const expect51 = {
+    ucId: 'UC-5.1',
+    corrAnchor: { ch: CH },
+    outbound: { method: 'POST', urlEndsWith: 'channel/create',
+      bodyFields: { teamId: '*', displayName: '*', orient: '', type: 'P', users: '*',
+        picturetype: 'USER', picture: '*', forceCreate: true },
+      bodyForbidden: ['channel_id', 'channelId'] },
+    projection: { event: 'im:channel:created', dataKeys: ['channel_id', 'channel'] },
+    storage: { op: 'batch_upsert', table: 'channel', minRows: 1 },
+    dom: { dataAttrs: { 'channel-id': '*' } },
+  };
+  const dom = { 'channel-id': CH };
+  const rep = runFourFacet({ jsonl: lines, expect: expect51, dom });
+  ok(rep.facets.projection.ok, '② 建群投影 created 绿');
+  ok(rep.facets.storage.ok, '④ 建群落库（id→ch）绿');
+  ok(rep.facets.dom.ok, '③ DOM 新频道行绿');
+  ok(rep.facets.outbound.ok, '① create fallback：channel/create 无 channelId → 归 ① 绿');
+  ok(rep.green, `UC-5.1 四面全绿（实 brokenAt=${rep.brokenAt} :: ${rep.summary}）`);
+
+  // 可证伪 a：无 create 出站请求（删 ① 行）→ create fallback 无命中 → ① 红。
+  const noCreate = lines.split('\n').slice(1).join('\n');
+  const repNoCreate = runFourFacet({ jsonl: noCreate, expect: expect51, dom });
+  eq(repNoCreate.facets.outbound.ok, false, '可证伪：无 channel/create 出站 → ① 红');
+  eq(repNoCreate.brokenAt, 'outbound', '① 断点定位 outbound');
+
+  // 可证伪 b：建群 body 泄漏 channelId（旧形态）→ bodyForbidden 命中 → ① 红。
+  const leakLines = [
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-5.1', facet: 'outbound', hop: 'http-req', seq: 1,
+      payload: { method: 'POST', url: 'http://x/api/cses/channel/create',
+        body: { channelId: 'leaked', teamId: 'T1', displayName: 'g', orient: '', type: 'P',
+          users: [{ id: '444' }], picturetype: 'USER', picture: { userIds: ['444'] }, forceCreate: true } } }),
+    lines.split('\n')[1], lines.split('\n')[2],
+  ].join('\n');
+  const repLeak = runFourFacet({ jsonl: leakLines, expect: expect51, dom });
+  eq(repLeak.facets.outbound.ok, false, '可证伪：建群 body 泄漏 channelId → ① 红');
+}
+
 // ── 收尾 ─────────────────────────────────────────────────────────────────────
 
 console.log('');

@@ -99,7 +99,7 @@ pub fn run() {
         let app_handle = app.handle().clone();
         // 引擎装配含 `transport.connect().await`（CLI 可阻塞端，setup 内 block_on 合法）。
         // 失败不中止 app 启动：前端仍可起，命令入泵会拿到错误（联调可见）。
-        let tick_tx = tauri::async_runtime::block_on(engine::spawn(
+        let (tick_tx, identity) = tauri::async_runtime::block_on(engine::spawn(
             app_handle,
             ctx_for_setup.clone(),
             probe_for_setup.clone(),
@@ -113,6 +113,7 @@ pub fn run() {
             tick_tx,
             ctx: ctx_for_setup,
             probe: probe_for_setup,
+            identity,
         });
         Ok(())
     });
@@ -125,6 +126,7 @@ pub fn run() {
         commands::im_ready,
         commands::im_query_dialog_list,
         commands::im_revoke,
+        commands::im_create_channel,
         commands::set_uc
     ]);
     #[cfg(not(feature = "webdriver"))]
@@ -132,7 +134,8 @@ pub fn run() {
         commands::im_send,
         commands::im_ready,
         commands::im_query_dialog_list,
-        commands::im_revoke
+        commands::im_revoke,
+        commands::im_create_channel
     ]);
 
     // Record 模式退出落盘：app 退出（RunEvent::Exit）时把录好的 tape 存到 tape_path。
