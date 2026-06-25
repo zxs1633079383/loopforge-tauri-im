@@ -108,3 +108,11 @@
   **处置（不 close·C011 不留"关了没测"账）**：#28 保持 OPEN·label ready-for-human（移除 ready-for-agent·防自动再抓）·comment 写精确机制 + run.jsonl 证据·链 L2 #43（已 blocked by #28·ready-for-human）。ledger UC-6.1 entry 诚实出账（[~]🟡 ① L1 绿·②③④ L2→#43）·rollout-checklist 6.1 已 [~]/6.1b 已 [2]（无需改）。
   接通件：Rust im_channel_member_change(commands.rs+lib.rs 双 feature) · 壳 store.changeMember+applyMemberUpdated(projection.types MEMBER_UPDATED_CHANNEL) · UI MB 区 change-member-input+拉/踢 btn+onChangeMember(C007) · expect/uc-6.1.expect.json+specs/uc-6.1.e2e.mjs。
   验证：cargo check PASS(3.58s) + tsc PASS + gate.sh PASS(reducer 125 断言·harness 索引=12·helix 单版本) + 暖栈 spec ① OK·②③④ 诚实红(L2)。未踩 ≥3 同根新坑（复用 C003/C004/C009/C011 + L2-facet 标准 c），不立新卡。
+
+---
+✅ DONE UC-6.2 设/撤管理员 ①③ 四面契约 e2e 实跑全绿（②④ 结构性 L2 #45） @2026-06-25 16:58 CST | commit 2ec0c08 | 阶段5 issue #29 | loopforge-tauri-im/feat/uc-rollout
+  - ① 出站 channel/add/manger body {channelId,users:[{id,name,role,teamId}]} 逐字证（run.jsonl uc_id=UC-6.2·bodyForbidden snake/顶层 userId/id/role）· ③ DOM data-admin 乐观刷（store.setManger·成员行缺则 upsert）。暖栈复现 ≥2 轮（450ms/261ms）。
+  - 接通件：Rust im_channel_set_manger(commands.rs+lib.rs 双 feature·set bool 切 add/remove·teamId 取 identity) · 壳 store.setManger + onChangeManger(UI『管』toggle) + debug 桥 debugSetManger · reducer runFourFacetCommandDom(①③ 断面·②④ N/A·structural L2) · expect/uc-6.2.expect.json(facetMode=command-dom)+specs/uc-6.2.e2e.mjs。
+  - ②④ 处置（L2-facet 标准 c·C011 不留"关了没测"账）：add/remove manger 后端 WS 已注释（仅 GrpcInvoke）+ channel_member_role_updated graceful no-op → emit_channel_member_updated/channel_member 全量落库须 channel_member_update 广播帧（须第二账号触发）。#29 留 OPEN·label ready-for-human（移除 ready-for-agent）·comment 写精确机制 + run.jsonl 证据·链 L2 #45（已 cross-link）。
+  - 环境纠偏：spec 前期红根因=gRPC 隧道断（WS 广播 channel_created/channel_member_update 不到达·UC-5.1/6.1 同步红）→ tp-connect.sh 重连 telepresence + reload-app 重建 WS → UC-5.1 sanity 恢复绿。move：删 UC-6.2 spec 内无谓的预拉成员步（依赖 channel_member_update 广播=结构性 L2·会假红 ①③ 主路径）。
+  - 验证：cargo check PASS(4.1s) + gate.sh PASS(reducer 125/0·harness 索引=12·helix 单版本) + runFourFacetCommandDom 可证伪对偶(dom/outbound/snake 各 brokenAt 红)。未踩 ≥3 同根新坑（复用 C003/C004/C005/C009/C011 + L2-facet 标准 c），不立新卡。
