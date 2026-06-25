@@ -88,6 +88,14 @@ export function extractDims(payload) {
       }
     }
   }
+  // UC-3.2 单条已读出站 `post/read`：body = {channelId, posts:[postId]}。posts 是**字符串**数组
+  // （元素非对象→上面 probes[posts[0]] 取不到 sid，pickFrom 要求 object）。当 sid 仍缺且 posts[0]
+  // 是非空字符串（postId == 投影 msg_id 同一 server post id）→ 补 sid，使出站经 sid 与投影
+  // im:post:read（msg_id）/落库（id）同束。契约不变（仅抽键探针增强·与 event.rs::extract_corr_key 同步）。
+  if (dims.sid === undefined) {
+    const p0 = payload?.posts?.[0] ?? payload?.body?.posts?.[0];
+    if (typeof p0 === 'string' && p0.length > 0) dims.sid = p0;
+  }
   return dims;
 }
 

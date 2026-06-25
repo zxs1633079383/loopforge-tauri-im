@@ -19,11 +19,11 @@
     "method": "POST",
     "urlEndsWith": "post/read",
     "bodyFields": {
-      "postId": "*",
-      "channelId": "*"
+      "channelId": "*",
+      "posts": "*"
     },
-    "bodyForbidden": ["post_id", "channel_id"],
-    "_note": "partial 6 UC-3.2 + helix ledger 实证：POST /api/cses/post/read，body camelCase `{postId, channelId}`（全两字段必填）。bodyForbidden 锚 snake_case 旧形态泄漏。值用 * = 仅校验键存在（具体值随 run 变）。"
+    "bodyForbidden": ["post_id", "channel_id", "postId"],
+    "_note": "【契约变更修正·2026-06-25】真源 helix `outbound/posts_existing.rs:13-42` PostReadCommand + 前端 message.service.ts:247 onPostRead：UC-3.2 单条已读出站 `POST /api/cses/post/read`，body camelCase `{channelId, posts:[postId]}`（posts 列表模式标单条·entity.PostRead.Posts `json:\"posts,omitempty\"`·post.go:527-536）。原 expect 写 `{postId, channelId}` 是 Phase1 草拟臆造（顶层 postId 非真 wire）——已据 helix 实现源更正。bodyForbidden 锚 snake_case 旧形态泄漏 + 顶层 postId（非真 wire key）。值用 * = 仅校验键存在（posts 数组含真 postId·具体值随 run 变）。"
   },
 
   "projection": {
@@ -43,7 +43,7 @@
       "readBits",
       "viewers"
     ],
-    "_note": "projection-schema §1 emit_post_read fat 完整集（13 键，同 emit_post_received）。缺/多即 fail（FixB 反转：少一字段=漂移）。命名陷阱 createAt 非 createdAt 已由键集锁定。"
+    "_note": "projection-schema §1 emit_post_read fat 完整集（13 键，同 emit_post_received）。缺/多即 fail（FixB 反转：少一字段=漂移）。命名陷阱 createAt 非 createdAt 已由键集锁定。【②④ server-data-gap·2026-06-25 实证】post_read 是已读回执（告知对端发送者）·go publishRead 对自读（单账号·对端离线）不回推本客户端 → 单账号夹具无 im:post:read 产出（run.jsonl：post/read 返 200·增量 sync no_change·无 type6 read event 回灌）。本面 oracle 不变（字段集冻结），待 L2 双账号（A 发→B 读→A 收 echo）复跑转绿；spec 单账号验 ①③（出站契约+DOM），②④ 标 gap 不 fail（保留可证伪：有 echo 必校验）。"
   },
 
   "storage": {

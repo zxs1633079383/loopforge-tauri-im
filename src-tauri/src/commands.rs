@@ -138,6 +138,38 @@ pub async fn im_urgent_confirm(
         .map_err(|e| format!("im_urgent_confirm: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-3.2 单条已读：前端传 `postId`（被标记已读的消息 server id）+ `channelId` → 本命令转
+/// snake_case 入泵 `im_post_read`（helix-im `outbound/posts_existing.rs` `PostReadCommand` 兑现出站
+/// `POST post/read {channelId, posts:[postId]}`·posts 列表模式标单条·真机curl真源 partials/6 UC-3.2
+/// + entity.PostRead.Posts `json:"posts,omitempty"`·post.go:527-536）。WS 回 `post_read`（type6，≤2 人）
+/// → 投影 `im:post:read`（fat·含 readBits）→ message.read_bits 落库 + DOM data-read-bits 更新。
+///
+/// 薄壳纪律：只翻译入参 + 把 postId 包成 `posts:[postId]` 单元素数组（对齐 helix posts 列表模式
+/// 标单条·非区间模式）+ 入泵，endpoint / camelCase 化 / 区间 vs 列表分支全在 helix-im，本壳不臆造。
+#[tauri::command]
+pub async fn im_mark_read(
+    state: State<'_, AppState>,
+    post_id: String,
+    channel_id: String,
+) -> Result<(), String> {
+    if post_id.trim().is_empty() {
+        return Err("im_mark_read: postId 为空（须指定被标记已读的消息 server id）".into());
+    }
+    if channel_id.trim().is_empty() {
+        return Err("im_mark_read: channelId 为空".into());
+    }
+    // posts 列表模式标单条（UC-3.2）：单元素数组 → helix PostReadCommand 注入 wire `posts:[postId]`。
+    let tick = command(
+        "im_post_read",
+        serde_json::json!({ "channel_id": channel_id, "posts": [post_id] }),
+    );
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_mark_read: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// 会话列表 bootstrap：拉本地 `channel` 表 dialogList（helix emit `im:channels:projection`）。
 ///
 /// 最简壳只靠增量流冒频道，而增量是严格 cursor delta——清/旧 DB 无新活动时拿不到 active

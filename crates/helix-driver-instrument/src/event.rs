@@ -119,17 +119,46 @@ pub fn extract_corr_key(payload: &Value) -> Option<String> {
         }
     }
 
+    // UC-3.2 单条已读出站 `post/read`：body = {channelId, posts:[postId]}。posts 是 string 数组
+    // （元素非对象·pick 取不到 sid）→ 单 probe 只抽到 ch，与投影 im:post:read（ch+sid(msg_id)+seq）
+    // 经 ch-only 聚不上束（reducer sameEvent 要求两侧全 scoped）。补 sid：obj.posts[0] 是非空字符串
+    // （postId == 投影 msg_id 同一 server post id）→ 追加 sid，使出站经 sid 与投影/落库同束。
+    // 契约不变（URL+body-shape 没变·仅抽键探针增强·与 reducer corr-key.mjs::extractDims 同步）。
+    let augment_posts = |k: String, obj: &Value| -> String {
+        if k.contains("sid=") {
+            return k;
+        }
+        if let Some(pid) = obj
+            .get("posts")
+            .and_then(|p| p.as_array())
+            .and_then(|a| a.first())
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            return format!("{k};sid={pid}");
+        }
+        k
+    };
+
     if let Some(k) = probe(payload) {
-        return Some(k);
+        return Some(augment_posts(k, payload));
     }
     if let Some(data) = payload.get("data") {
         if let Some(k) = probe(data) {
-            return Some(k);
+            return Some(augment_posts(k, data));
+        }
+    }
+    // 出站 HTTP body 嵌在 `payload.body`（http.rs::req_payload）：channelId/posts 等领域键在此层
+    // （顶层只有 method/url/headers/body）。探 body 取 ch + posts[0] sid（UC-3.2 post/read ① 面·
+    // 使出站与 per-post ② projection / ④ storage 经 sid 同束）。
+    if let Some(body) = payload.get("body") {
+        if let Some(k) = probe(body) {
+            return Some(augment_posts(k, body));
         }
     }
     // batch sync 出站（channels/load/increment）：channelId 嵌在 body.cursors[0]，
-    // 顶层/`.data` 都抽不到 → 探 body.cursors[0] 取锚频道（UC-4.1 ① 与 per-channel
-    // ② projection / ④ storage 同束的唯一 corr_key 来源；批次首元素代表本束）。
+    // 顶层/`.data`/`body`(顶层无 channelId) 都抽不到 → 探 body.cursors[0] 取锚频道（UC-4.1 ① 与
+    // per-channel ② projection / ④ storage 同束的唯一 corr_key 来源；批次首元素代表本束）。
     if let Some(c0) = payload
         .get("body")
         .and_then(|b| b.get("cursors"))
@@ -204,5 +233,36 @@ mod tests {
             "body": {"timestamp": 0, "cursors": [{"channelId": "cAnchor", "fromSeq": 0}]}
         });
         assert_eq!(extract_corr_key(&p).as_deref(), Some("ch=cAnchor"));
+    }
+
+    #[test]
+    fn post_read_posts_first_extracts_as_sid() {
+        // UC-3.2 单条已读出站 post/read：body = {channelId, posts:[postId]}。posts 是 string 数组
+        // → probe 顶层只抽到 ch（pick 取不到 sid）→ 补 posts[0] string 作 sid，使出站经 sid 与
+        // 投影 im:post:read（msg_id）/落库（id）同束（缺则出站只有 ch·与投影聚不上束 ②/④ 永红）。
+        let p = json!({"channelId": "c9", "posts": ["postZZZ"]});
+        assert_eq!(extract_corr_key(&p).as_deref(), Some("ch=c9;sid=postZZZ"));
+    }
+
+    #[test]
+    fn post_read_outbound_body_nested_extracts_ch_and_sid() {
+        // UC-3.2 ① 面真形态（http.rs::req_payload）：channelId/posts 嵌在 payload.body·顶层只有
+        // method/url/headers/body → 须探 body 取 ch + posts[0] sid（否则 ① 出站无 corr_key·与投影聚不上束）。
+        let p = json!({
+            "method": "POST",
+            "url": "http://x/api/cses/post/read",
+            "headers": [],
+            "body": {"channelId": "15gcg", "posts": ["pgn6uy"]}
+        });
+        assert_eq!(extract_corr_key(&p).as_deref(), Some("ch=15gcg;sid=pgn6uy"));
+    }
+
+    #[test]
+    fn post_read_posts_falsifiable_empty_no_sid() {
+        // 可证伪对偶（HX-C011）：posts 为空数组 / 非字符串元素 → 不补 sid（保持只 ch·不臆造束）。
+        let empty = json!({"channelId": "c9", "posts": []});
+        assert_eq!(extract_corr_key(&empty).as_deref(), Some("ch=c9"));
+        let non_str = json!({"channelId": "c9", "posts": [{"id": "x"}]});
+        assert_eq!(extract_corr_key(&non_str).as_deref(), Some("ch=c9"));
     }
 }

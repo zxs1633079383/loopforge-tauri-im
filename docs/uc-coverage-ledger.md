@@ -76,13 +76,15 @@
 - **③ DOM**：`data-read-bits`（self 位置 1）。
 - **④ 落库**：`message.read_bits` 单调覆盖（**禁前端算 readBits**·projection-schema §3）。
 
-### UC-3.2 单条已读 — `⬜ pending`（认领 S）
+### UC-3.2 单条已读 — `🟡 ①③ four-facet-verified · ②④ server-data-gap`（2026-06-25 实跑·认领 S）
 
-- **① 出站 HTTP**：`POST /api/cses/post/read`（待核·partial 6 UC-3.2）。
-- **① WS 推送**：action=`post_read`，data.postId 命中（helix ledger UC-3.2 实证 seq=62）。
-- **② 投影**：`im:post:read`（fat）。
-- **③ DOM**：`data-read-bits`。
-- **④ 落库**：`message.read_bits`。
+> 实证：`run.sh -- --spec test/specs/uc-3.2.e2e.mjs` → `✅ 四面报告全绿`（spec pass·①③ 严格断言绿 + ②④ 确认 server-data-gap·带 run.jsonl 证据）。接线：壳 `im_mark_read`（postId+channelId → posts 列表模式 `{channelId, posts:[postId]}` 入泵 `im_post_read`）+ 前端 `store.markRead` + 消息行 `data-read-bits`（既有渲染路径·复用 im:post:read fat 集）。装饰器 `extract_corr_key` 增 `payload.body` + `posts[0]` 探针（出站 post/read 经 sid 与投影聚束·契约不变）。
+
+- **① 出站 HTTP**：`POST /api/cses/post/read`，body `{channelId, posts:[postId]}`（**posts 列表模式标单条**·真源 helix `outbound/posts_existing.rs` PostReadCommand + entity.PostRead.Posts `json:"posts,omitempty"`·post.go:527-536）。✅ **实跑绿**（corr_key `ch=…;sid=…` 经 body+posts 探针归束）。
+- **① WS 推送**：action=`post_read`（≤2 人）+ `update_channel`（刷未读）。
+- **② 投影**：`im:post:read`（fat）。🟡 **server-data-gap**：`post_read` 是**已读回执**（告知对端发送者），go publishRead 对**自读**（单账号发自己读·对端离线）**不回推本客户端** → 单账号夹具无 `im:post:read` 产出。须 **L2 双账号**（A 发 → B 读 → A 收 echo）复跑转绿。run.jsonl 证据：post/read 返 200·频道 seq 进·但增量 sync 拉 `fromSeq:N` 返 `no_change`·无 type=6 read event 回灌。
+- **③ DOM**：`data-read-bits`。✅ **实跑绿**（壳纯渲染·send echo 投喂 readBits）。
+- **④ 落库**：`message.read_bits`。🟡 **server-data-gap**（同 ②·待 L2 双账号·依赖 post_read echo 落 read_bits）。
 
 ### UC-3.3 模板已收到 — `⬜ pending`（认领 S）
 

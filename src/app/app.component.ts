@@ -572,9 +572,15 @@ export class AppComponent implements OnInit, OnDestroy {
     /* UC-1.5 接通 */
   }
 
-  /** UC-3.2 单条已读。占位 → 接 im_post_read。 */
-  onPostRead(_row: MessageRow): void {
-    /* UC-3.2 接通 */
+  /** UC-3.2 单条已读：postId=消息 server id + channelId=消息所在群 → store.markRead
+   *  （posts 列表模式 `{channelId, posts:[postId]}` 由 Rust/helix 拼·壳不臆造）。无 server id
+   *  （未对账乐观消息）/ 无频道 → 不发。data-read-bits 由 helix `im:post:read`（fat·post_read echo）
+   *  投影驱动·壳纯渲染·无乐观合成。e2e 走 bridge 直 invoke 注入真实 postId 覆盖此 UI 便捷路径。 */
+  onPostRead(row: MessageRow): void {
+    const postId = row.msgId;
+    const channelId = row.channelId;
+    if (!postId || !channelId) return; // 无 server id（未对账消息）/ 无频道 → 不发
+    void this.store.markRead(postId, channelId);
   }
 
   /** UC-3.3 模板已收到。占位 → 接 templateReceived。 */
