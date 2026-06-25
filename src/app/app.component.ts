@@ -144,6 +144,7 @@ import { MessageRow } from "./im/message-row.model";
               [class.msg--sending]="m.sendStatus === 'sending'"
               [class.msg--failed]="m.sendStatus === 'failed'"
               [class.msg--revoked]="m.revoked"
+              [class.msg--highlighted]="m.highlighted"
               [attr.data-msg-id]="m.msgId"
               [attr.data-temporary-id]="m.temporaryId"
               [attr.data-channel-id]="m.channelId"
@@ -151,6 +152,7 @@ import { MessageRow } from "./im/message-row.model";
               [attr.data-send-status]="m.sendStatus"
               [attr.data-read-bits]="m.readBits"
               [attr.data-revoke]="m.revoked ? '1' : null"
+              [attr.data-highlighted]="m.highlighted ? 'true' : null"
               [attr.data-type]="m.type"
               [attr.data-urgent]="m.urgent ? '1' : null"
               [attr.data-reactions]="m.reactions ?? null"
@@ -211,6 +213,13 @@ import { MessageRow } from "./im/message-row.model";
                   data-testid="urgent-confirm-btn"
                   (click)="onUrgentConfirm(m)"
                 >确</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="locate-btn"
+                  data-role="locate-post"
+                  (click)="onLocate(m)"
+                >定位</button>
                 <button
                   class="im__mini"
                   type="button"
@@ -456,6 +465,10 @@ export class AppComponent implements OnInit, OnDestroy {
     ) {
       window.__lf.debugMarkFailed = (temporaryId: string) =>
         this.store.markSendFailed(temporaryId);
+      // UC-2.3 定位测试机件：读族纯本地无 Rust 命令，经此桥复用 store.locatePost 生产路径
+      // （拉首屏 query_result ②④ + 给命中行打高亮 ③）。
+      window.__lf.debugLocatePost = (postId: string, channelId?: string) =>
+        this.store.locatePost(postId, channelId);
     }
   }
 
@@ -685,6 +698,16 @@ export class AppComponent implements OnInit, OnDestroy {
     const displayName = `lf-topic-${Math.random().toString(36).slice(2, 8)}`;
     const memberIds = this.store.members().map((m) => m.memberId).filter(Boolean);
     void this.store.makeTopic(rootId, postId, displayName, memberIds);
+  }
+
+  /** UC-2.3 按 postId 定位：postId=消息 server id + channelId=消息所在群 → store.locatePost
+   *  （读族纯本地·定位已加载行打高亮·复用 query_result ②④·新增 ③ DOM data-highlighted）。无 server id
+   *  （未对账乐观消息·定位锚须 server postId）→ 不定位。e2e 走 bridge 直 store API / 取已加载行
+   *  msg-id 作 target 注入覆盖此 UI 便捷路径。 */
+  onLocate(row: MessageRow): void {
+    const postId = row.msgId;
+    if (!postId) return; // 无 server id（未对账乐观消息）→ 定位锚须 server postId
+    void this.store.locatePost(postId, row.channelId);
   }
 
   /** UC-2.4 加载一级回复链：replyId=消息 server id → store.loadReplies（读族 getReplies·endpoint +

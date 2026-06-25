@@ -460,6 +460,71 @@ console.log('· UC-1.9 加急两阶段 outbound（urgentPost + urgentConfirm 同
   eq(repNoTargets.facets.outbound.ok, false, '可证伪：urgentPost 缺 targetIds → ① 红');
 }
 
+// ── UC-2.3 按 postId 定位（读族纯本地 Scan·① N/A optional + ④ scan fallback）─────────
+// UC-2.3 定位 = queryMessages 拉首屏（② query_result + ④ Scan message）+ client 高亮（③）。
+// ① 读族本地无 HTTP 出站 → expect.outbound 全 *（optional）→ 不论有无 hop 总绿（isOutboundOptional）。
+// ④ Scan op payload 无 channel_id → corr_key=null 落 unkeyed → 不进 ch 锚 target → scanFallback
+// 取窗口内同 uc + scan op 的 storage 事件补 ④（与 UC-5.1 create fallback 同模式）。
+// 非 tautology：缺 scan(message) → ④ 红；缺/错 highlighted → ③ 红；缺 query_result → ② 红。
+console.log('· UC-2.3 按 postId 定位（① N/A optional + ④ scan fallback·读族本地）');
+{
+  const CH = 'locateCh01';
+  const SID = 'srvPost9z';
+  const lines = [
+    // ② query_result 投影（带 ch corr_key·外层 {channel_id, messages}）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-2.3', facet: 'projection', hop: 'projection', seq: 1,
+      corr_key: `ch=${CH}`,
+      payload: { event: 'im:messages:query_result', data: { channel_id: CH, messages: [{ id: SID }] } } }),
+    // ④ Scan message（读路径·payload 无 channel_id → corr_key=null 落 unkeyed·靠 scanFallback 归 ④）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-2.3', facet: 'storage', hop: 'storage', seq: 2,
+      corr_key: null,
+      payload: { op: 'scan', table: 'message', rows: 50 } }),
+    // 窗口噪声：bootstrap increment 的 outbound（与本 UC 定位无关·① optional 不约束·不该误绿/误红）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-2.3', facet: 'outbound', hop: 'http-req', seq: 3,
+      payload: { method: 'POST', url: 'http://x/api/cses/channels/increment', body: {} } }),
+  ].join('\n');
+  const expect23 = JSON.parse(
+    readFileSync(join(ROOT, 'test', 'expect', 'uc-2.3.expect.json'), 'utf8')
+  );
+  const expectAnchored = { ...expect23, corrAnchor: { ...expect23.corrAnchor, ch: CH } };
+  const dom = { 'msg-id': SID, 'channel-id': CH, highlighted: 'true' };
+  const rep = runFourFacet({ jsonl: lines, expect: expectAnchored, dom, ucId: 'UC-2.3' });
+  ok(rep.facets.outbound.ok, '① 读族 optional 出站绿（method/url=*·不论有无 HTTP）');
+  ok(rep.facets.projection.ok, '② query_result {channel_id, messages} 绿');
+  ok(rep.facets.storage.ok, `④ scan(message) fallback 归束绿（实 ${rep.facets.storage.issues.join('; ')}）`);
+  ok(rep.facets.dom.ok, '③ DOM 定位命中行 data-highlighted=true 绿');
+  ok(rep.green, `UC-2.3 四面全绿（实 brokenAt=${rep.brokenAt} :: ${rep.summary}）`);
+
+  // 可证伪 a：删 ④ scan(message) → scanFallback 无命中 → ④ 红（断点 storage）。
+  const noScan = [lines.split('\n')[0], lines.split('\n')[2]].join('\n');
+  const repNoScan = runFourFacet({ jsonl: noScan, expect: expectAnchored, dom, ucId: 'UC-2.3' });
+  eq(repNoScan.facets.storage.ok, false, '可证伪：无 scan(message) → ④ 红');
+  eq(repNoScan.brokenAt, 'storage', '④ 断点定位 storage');
+
+  // 可证伪 b：DOM 命中行缺 highlighted（定位未高亮）→ ③ 红。
+  const repNoHl = runFourFacet({
+    jsonl: lines, expect: expectAnchored, ucId: 'UC-2.3',
+    dom: { 'msg-id': SID, 'channel-id': CH },
+  });
+  eq(repNoHl.facets.dom.ok, false, '可证伪：DOM 缺 data-highlighted → ③ 红');
+  eq(repNoHl.brokenAt, 'dom', '③ 断点定位 dom');
+
+  // 可证伪 c：scan 错表（scan channel 而非 message）→ table 不匹配 → ④ 红（fallback 不放水跨表）。
+  const wrongTable = [
+    lines.split('\n')[0],
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-2.3', facet: 'storage', hop: 'storage', seq: 2,
+      corr_key: null, payload: { op: 'scan', table: 'channel', rows: 1 } }),
+    lines.split('\n')[2],
+  ].join('\n');
+  const repWrongTable = runFourFacet({ jsonl: wrongTable, expect: expectAnchored, dom, ucId: 'UC-2.3' });
+  eq(repWrongTable.facets.storage.ok, false, '可证伪：scan 错表(channel≠message) → ④ 红');
+
+  // 可证伪 d：删 ② query_result → ② 红（断点 projection·定位前置投影必须发生）。
+  const noProj = [lines.split('\n')[1], lines.split('\n')[2]].join('\n');
+  const repNoProj = runFourFacet({ jsonl: noProj, expect: expectAnchored, dom, ucId: 'UC-2.3' });
+  eq(repNoProj.facets.projection.ok, false, '可证伪：无 query_result → ② 红');
+}
+
 // ── UC-2.4 读族（runFourFacetRead·request-response 断面 ①②）────────────────────
 
 console.log('· UC-2.4 读族 getReplies/getReplyBranch（runFourFacetRead）');

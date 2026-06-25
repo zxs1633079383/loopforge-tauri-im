@@ -42,8 +42,8 @@
 | 9 | POST `/api/cses/posts/top20` | covered | UC-2.1（too_long 兜底首屏）| ✅ |
 | 10 | POST `/api/cses/posts/urgentConfirm` | covered | UC-1.9 | ✅ |
 | 11 | POST `/api/cses/posts/urgentCancel` | covered | UC-1.9（取消加急同 UC 母项）| ✅ |
-| 12 | POST `/api/cses/posts/get` | covered | UC-2.3（按 id 批量取，定位读路径）| ✅ |
-| 13 | POST `/api/cses/posts/getPostsAfterIndex` | covered | UC-2.3 | ✅ |
+| 12 | POST `/api/cses/posts/get` | covered | UC-2.3（越界翻页·helix `im_get_posts`·L2/真翻页·L1 走本地Scan未实跑此HTTP）| 🟡 |
+| 13 | POST `/api/cses/posts/getPostsAfterIndex` | covered | UC-2.3（越界翻页·helix `im_get_posts_after_index`{postIds:postId 单string}·L2兜底·L1 定位走本地Scan未实跑此HTTP）| 🟡 |
 | 14 | POST `/api/cses/posts/revoke` | covered | UC-1.5 | ✅ |
 | 15 | POST `/api/cses/posts/getReplies` | covered | UC-2.4 | ✅ |
 | 16 | POST `/api/cses/posts/getReplyBranch` | covered | UC-2.4 | ✅ |

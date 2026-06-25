@@ -46,7 +46,7 @@
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
 |---|---|---|---|---|---|---|---|
 | [x] | 2.1 切群首屏(3 面) | `im_query_messages_by_channel`(本地) | (本地 Scan·无 HTTP 出站) | `query::emit_message_query_result`(透传) | N 个消息行 data-msg-id | `Scan message` | S |
-| [ ] | 2.3 按 postId 定位 | `posts/getPostsAfterIndex`{postIds:postId} | `partials/6 UC-2.3` | `query::emit_message_query_result`(透传) | data-msg-id 命中高亮 | `Scan message` | S |
+| [x] | 2.3 按 postId 定位 ✅四面全绿(issue #21·读族本地·①N/A optional) | ①N/A(本地Scan·getPostsAfterIndex 是L2越界翻页兜底) | `partials/6 UC-2.3` | `query::emit_message_query_result`(透传·query.rs:92) | data-msg-id+data-highlighted=true 高亮 | `Scan message`(rows=50) | S |
 | [ ] | 2.2 上拉更早历史(3 面) | `im_load_older_context`→`posts/postContext`×N | `partials/8 http.rs:89`{postId,before} | `older_context::emit_older_loaded`(透传) | prepend 更早行 | `message` upsert prepend | M |
 
 > ⚠️ 2.2 ①预期红：acl query 放行 fix 在 helix round3，不在 pin 的 round6@248fc84 → 出 bug 报告(不改 helix)。

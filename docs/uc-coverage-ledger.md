@@ -217,12 +217,24 @@
 - **③ DOM**：prepend 更早消息行。
 - **④ 落库**：`message` upsert prepend。
 
-### UC-2.3 按 postId 定位 — `⬜ pending`（认领 S）
+### UC-2.3 按 postId 定位 — `✅ 四面全绿`（读族本地·②③④·① N/A optional·认领 S·issue #21·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）
 
-- **① 出站 HTTP**：`posts/getPostsAfterIndex`，body `{postIds:postId}`（待核·partial 6 UC-2.3）。
-- **② 投影**：`im:messages:query_result`（透传）。
-- **③ DOM**：`data-msg-id` 命中高亮。
-- **④ 落库**：Scan `message`。
+- **① 出站 HTTP**：`N/A optional`（读族纯本地 Scan·无 HTTP 出站·expect.outbound 全 `*` → reducer
+  `isOutboundOptional` 判 ① 不约束·总绿）。**契约纠偏**：前 draft 期望 `posts/getPostsAfterIndex
+  {postIds:postId}` 与 `im:messages:query_result` 投影**互斥**——HTTP getPostsAfterIndex 走 read_relay
+  `im:read:result` 透传，而 query_result 来自 `im_query_messages_by_channel` 本地 Scan（query.rs:96·零 HTTP）。
+  单账号 L1 + seeded DB 下定位目标必在已加载首屏内（≤500 条）→ 走本地 Scan 路径·①N/A。越界翻页
+  `posts/getPostsAfterIndex`（单 id string·posts.go:318·helix `im_get_posts_after_index`）是 L2/真翻页
+  HTTP 兜底·非本 L1 闭环（证据：run.jsonl 本 UC 束无 outbound hop·storage scan(message) rows=50）。
+- **② 投影**：`im:messages:query_result`（外层 `{channel_id, messages}`·query.rs:92 emit_message_query_result·
+  透传 DB Post 行·与 UC-2.1 同一投影路径）。
+- **③ DOM**：定位命中行 `data-msg-id`=server postId + `data-highlighted="true"`（client locate 高亮·
+  store `_locateTarget` 命中·rows computed 打标·壳纯渲染·非投影字段）。实跑 highlighted=true 命中
+  `bzs3hu9xzp8o9qduqq3q7q7ike`。
+- **④ 落库**：Scan `message`（读路径·op=scan/table=message/rows=50）。**reducer 机件纠偏**：Scan op
+  payload 仅 `{op,rows,table}`（防隐私·无 channel_id）→ corr_key=null 落 unkeyed·不进 ch 锚束·新增
+  `scanFallback`（窗口内同 uc + scan op 的 storage 事件补 ④·与 UC-5.1 create fallback 同模式·非放水：
+  缺 scan(message)/错表 → ④ 红·见 reducer 单测可证伪对偶 ×4）。
 
 ### UC-2.4 一级/二级回复 — `✅ 四面全绿`（读族 ①②·③④ N/A·认领 M·issue #19）
 
@@ -470,10 +482,10 @@
 | bot/agent 召唤（整域，不计入 39）| 1 域 | — | — | — | 1 域（⛔）|
 
 > 精确分类（按本台账每节标题图例为准·1+7+24+7=39）：
-> - **✅ four-facet-verified = 11**：UC-2.1（2026-06-25 实跑全绿·读族 ②③·①④ N/A·im_query_messages_by_channel 命令 + store applyMessagesQueryResult 渲染 50 行 + onSelectChannel 切群接线·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #20）、UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-1.4（2026-06-25 实跑全绿·onResend→store.resend 复用 tmp upsert + debug 桥注入失败前置·corr_key=ch=15gcgoyf;tmp=pfuneqqp;sid=c58zkjqn;seq=68）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）、UC-1.9（2026-06-25 实跑全绿·im_urgent_post/confirm 命令 + diffOutboundPhases 两阶段 + msg_id→sid 归一 + 关窗前等 post_update in-window·corr_key=sid=tasdeqxtubbrzbigoic5iya77o）、UC-1.10（2026-06-25 实跑全绿·im_create_schedule 命令 + create-outbound fallback 复用·posts/createSchedule + im:channel:schedule-created·storage op 草拟纠正 update→batch_update·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）、UC-3.3（2026-06-25 实跑全绿·im_template_received 命令 camelCase {postId} + 前置发 TEMPLATE 类型消息 + store extractTemplateReceived + storage op 草拟纠正 update→batch_update + dom _note 移出 dataAttrs·post_update 广播含发起连接故单账号即绿·corr_key=sid=1ouh77refibz8j4ujz4aiy1m8a）。
+> - **✅ four-facet-verified = 12**：UC-2.3（2026-06-25 实跑全绿·读族本地 ②③④·① N/A optional·store.locatePost + debug 桥 debugLocatePost 复用 query_result + rows computed highlighted 高亮 + reducer scanFallback/isOutboundOptional 机件·契约纠偏 getPostsAfterIndex/query_result 互斥→走本地 Scan·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #21）、UC-2.1（2026-06-25 实跑全绿·读族 ②③·①④ N/A·im_query_messages_by_channel 命令 + store applyMessagesQueryResult 渲染 50 行 + onSelectChannel 切群接线·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #20）、UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-1.4（2026-06-25 实跑全绿·onResend→store.resend 复用 tmp upsert + debug 桥注入失败前置·corr_key=ch=15gcgoyf;tmp=pfuneqqp;sid=c58zkjqn;seq=68）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）、UC-1.9（2026-06-25 实跑全绿·im_urgent_post/confirm 命令 + diffOutboundPhases 两阶段 + msg_id→sid 归一 + 关窗前等 post_update in-window·corr_key=sid=tasdeqxtubbrzbigoic5iya77o）、UC-1.10（2026-06-25 实跑全绿·im_create_schedule 命令 + create-outbound fallback 复用·posts/createSchedule + im:channel:schedule-created·storage op 草拟纠正 update→batch_update·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）、UC-3.3（2026-06-25 实跑全绿·im_template_received 命令 camelCase {postId} + 前置发 TEMPLATE 类型消息 + store extractTemplateReceived + storage op 草拟纠正 update→batch_update + dom _note 移出 dataAttrs·post_update 广播含发起连接故单账号即绿·corr_key=sid=1ouh77refibz8j4ujz4aiy1m8a）。
 > - **🟡 partial = 7**：UC-4.4 心跳 / UC-4.5 陌生 channel / UC-5.3 关群 / UC-5.5 置顶 / UC-6.1 拉踢 / UC-6.2 管理员 / UC-8.x 投票平均分。
 > - **🟡 ①③-verified · ②④ server-data-gap（read echo 多设备-only）= 2**：UC-3.1 会话已读 / UC-3.2 单条已读（2026-06-25 实跑·①③ 严格断言绿 + ②④ read echo 是多设备 echo·单连接结构性不可观测·带 run.jsonl 证据 + 可证伪护栏·须 L2 双账号转绿）。
-> - **⬜ pending = 12**：1.2 / 1.5 / 1.8 / 2.2 / 2.3 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 / UC-3.3 / UC-1.4 / UC-1.7 / UC-2.4 / UC-2.1 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
+> - **⬜ pending = 11**：1.2 / 1.5 / 1.8 / 2.2 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 / UC-3.3 / UC-1.4 / UC-1.7 / UC-2.4 / UC-2.1 / UC-2.3 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
 > - **⛔ unreachable = 7**（39 分母内）：UC-1.3 文件 / UC-1.6 编辑 / UC-4.3 too_long / UC-5.6 公告 / UC-5.7 在线 / UC-7.x 搜索·另 bot/agent 整域 ⛔（不计入 39 分母）。
 
 > ⚠️ **诚实声明**：全 39 UC 中唯一经真 Tauri+WKWebView 四面 oracle 跑绿的是 **UC-1.1**。`🟡 partial` 表示 helix ledger 已证服务端 wire 但 LoopForge 客户端四面尚未实跑（标 partial 是为标记「有可证主路径 + 部分子项物理够不到」，**不等于 LoopForge 已验**）。rollout 实跑前，唯一 ✅ 的就是 UC-1.1。

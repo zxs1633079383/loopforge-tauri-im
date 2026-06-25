@@ -50,7 +50,21 @@ export class ImStoreService {
 
   /** 消息行（按插入序） */
   private readonly _rows = signal<MessageRow[]>([]);
-  readonly rows = computed(() => this._rows());
+
+  /** UC-2.3 按 postId 定位目标（client locate 态·纯渲染高亮锚）。空串=无定位。
+   *  locatePost(postId) 设此值 → rows computed 给命中行打 highlighted=true → 模板渲染
+   *  [data-highlighted="true"]。读族纯本地：定位目标已在 query_result 加载的本地行集内
+   *  （单账号 L1 seeded DB），无需额外 HTTP；故定位 = 标记已加载行（spec §UC-2.3）。 */
+  private readonly _locateTarget = signal<string>("");
+  readonly locateTarget = computed(() => this._locateTarget());
+
+  /** 消息行（叠加 UC-2.3 定位高亮：命中 _locateTarget 的行 highlighted=true·壳纯渲染）。 */
+  readonly rows = computed(() => {
+    const target = this._locateTarget();
+    const rows = this._rows();
+    if (!target) return rows;
+    return rows.map((r) => (r.msgId === target ? { ...r, highlighted: true } : r));
+  });
 
   /** 就绪标志（W1 probe im:ready 后置 true → 渲染 data-ready，供 e2e before 轮询） */
   private readonly _ready = signal(false);
@@ -473,6 +487,30 @@ export class ImStoreService {
     } catch {
       // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（首屏靠 im:messages:query_result 投影驱动·无乐观合成）。
     }
+  }
+
+  /**
+   * UC-2.3 按 postId 定位：在当前已加载（query_result）的本地消息行里定位目标 server postId，
+   * 给命中行打高亮（rows computed 据 _locateTarget 渲染 [data-highlighted="true"]）。
+   *
+   * **读族纯本地·无 HTTP 出站**（spec §UC-2.3 / projection-schema §1 query 投影路径）：单账号
+   * L1 + seeded DB 下，定位目标必在 query_result 已 Scan 的本地行集内（首屏 ≤500 条）。故定位 =
+   * 标记已加载行，复用 UC-2.1 query_result（②）+ Scan message（④）两面，新增 ③ DOM 高亮锚。
+   * （锚不在本地首屏的越界翻页是 posts/getPostsAfterIndex HTTP 兜底·L2/真翻页另路·非本 L1 闭环。）
+   *
+   * 若目标频道未加载 → 先 queryMessages 拉首屏再定位（保证 query_result ② 投影发生·串四面）。
+   */
+  async locatePost(postId: string, channelId?: string): Promise<void> {
+    const target = postId.trim();
+    if (!target) return;
+    // 若目标频道与当前活动频道不同（或行集未含目标）→ 先拉该频道首屏（产 query_result 投影）。
+    const ch = (channelId ?? this._activeChannel()).trim();
+    const loaded = this._rows().some((r) => r.msgId === target);
+    if (ch && (!loaded || ch !== this._activeChannel())) {
+      await this.queryMessages(ch);
+    }
+    // 设定位锚 → rows computed 给命中行 highlighted=true（壳纯渲染·无业务合成）。
+    this._locateTarget.set(target);
   }
 
   /**

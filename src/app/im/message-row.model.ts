@@ -85,6 +85,10 @@ export interface MessageRow {
   /** data-revoke：撤回态（im:post:batch-updated / im:post:deleted 命中本行 server id → true）。
    *  渲染 [data-revoke="1"]；未撤回时不渲染该属性（spec uc-1.5 读 ds.revoke）。 */
   revoked?: boolean;
+  /** data-highlighted（UC-2.3 按 postId 定位）：client locate 态·命中 store._locateTarget 的行。
+   *  rows computed 据定位锚打此标 → 渲染 [data-highlighted="true"]（壳纯渲染·非投影字段·客户端定位高亮）。
+   *  未定位时不渲染该属性（e2e 读 [data-msg-id=target][data-highlighted="true"] 验定位命中）。 */
+  highlighted?: boolean;
 
   // ——— 待加集（spec §2.2 · 逐 UC 加法式扩展 · 模板 [attr.data-*] 占位 · 空不渲染）———
   // 这些字段当前**只占位**：MessageRow 一次扩到位 + 模板 [attr.*] 挂载位就绪，

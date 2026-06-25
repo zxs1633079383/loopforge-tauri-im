@@ -167,10 +167,19 @@ function actualProjection(bundle, preferEvent) {
 
 /** ④ storage：取首个匹配的写 op（{op,table,rows}）。
  *  影响计数字段随 op 异名：batch_upsert/insert → `rows`；batch_update/delete → `keys`（更新的键数）；
- *  scan → `rows`。统一归一为 rows（取 rows ?? keys ?? count），使 minRows 判据跨 op 一致。 */
-function actualStorage(bundle, table) {
-  const writes = bundle.hops.filter((h) => h.facet === 'storage' && h.payload?.op);
-  const hit = writes.find((h) => !table || h.payload?.table === table) ?? writes[0];
+ *  scan → `rows`。统一归一为 rows（取 rows ?? keys ?? count），使 minRows 判据跨 op 一致。
+ *
+ *  scanFallback（读族 Scan·UC-2.1/UC-2.3 定位）：读路径 Scan op 的 payload 仅 {op,rows,table}
+ *  （防隐私·无 channel_id）→ 装饰器抽不出 corr_key → 该 storage 事件落 unkeyed 束·不进 ch 锚 target。
+ *  故当 target 束内无匹配 table 的 storage hop 时，回退窗口内 uc_id 同 + table 同的 scan 事件
+ *  （与 createOutbound/batchOutbound 的窗口 fallback 同模式·窗口隔离保证本 UC 内唯一）。 */
+function actualStorage(bundle, table, scanFallback) {
+  const writes = bundle ? bundle.hops.filter((h) => h.facet === 'storage' && h.payload?.op) : [];
+  let hit = writes.find((h) => !table || h.payload?.table === table) ?? writes[0];
+  // 读族 Scan 回退：target 束无匹配 storage hop → 取窗口内同 uc + 同 table 的 scan 事件。
+  if (!hit && Array.isArray(scanFallback) && scanFallback.length > 0) {
+    hit = scanFallback.find((h) => !table || h.payload?.table === table) ?? scanFallback[0];
+  }
   if (!hit) return null;
   const rows = hit.payload.rows ?? hit.payload.keys ?? hit.payload.count;
   return { op: hit.payload.op, table: hit.payload.table, rows };
@@ -178,8 +187,23 @@ function actualStorage(bundle, table) {
 
 // ── 逐面 diff（期望 → 实际），返回 facet 报告 ─────────────────────────────────
 
+/** 出站期望是否「无约束 optional」（读族纯本地 Scan·UC-2.1/UC-2.3 定位 ① N/A）：
+ *  method/urlEndsWith 皆 `*` 且无 bodyFields/bodyForbidden 约束 → 不约束出站（有无 HTTP 都合法）。
+ *  这不是放水：读族本地 Scan **本就不产 HTTP 出站**，强求 ① 反而是假阳；契约把 ① 显式标 optional
+ *  （expect.outbound.method=* url=* 空 body）即声明本 UC ① N/A（与 send 族实 body 约束区分·守可证伪）。 */
+function isOutboundOptional(expect) {
+  return (
+    (expect.method ?? '*') === '*' &&
+    (expect.urlEndsWith ?? '*') === '*' &&
+    Object.keys(expect.bodyFields ?? {}).length === 0 &&
+    (expect.bodyForbidden ?? []).length === 0
+  );
+}
+
 /** body 关键字段对齐：期望列的每个键都要在实际 body 出现且值相等（实际允许多字段）。 */
 function diffOutbound(expect, actual) {
+  // 读族 optional 出站（① N/A）：无约束期望 → 总绿（不论有无 HTTP hop·见 isOutboundOptional 注）。
+  if (isOutboundOptional(expect)) return facetReport('outbound', [], actual ?? { optional: true });
   if (!actual) return facetFail('outbound', '无出站命令体（断在 invoke→HTTP 这跳）', { expect });
   const issues = [];
   if (expect.method && actual.method !== expect.method)
@@ -660,10 +684,23 @@ export function runFourFacet({ jsonl, expect, dom, ucId }) {
           target && actualOutbound(target, { batchOutbound, anchorCh, createOutbound })
         );
 
+  // 读族 Scan storage fallback（UC-2.1/UC-2.3 定位·expect.storage.op=scan）：窗口内 uc 同 + scan op
+  // 的 storage 事件（payload 无 channel_id → unkeyed·不进 ch 锚 target）。仅 scan 期望时启用，
+  // 避免抢答 keyed 写 op（send 族 batch_upsert/insert 仍走 target 束·守可证伪）。
+  const scanFallback =
+    expect.storage?.op === 'scan'
+      ? events.filter(
+          (e) =>
+            (uc === undefined || e.uc_id === uc) &&
+            e.facet === 'storage' &&
+            e.payload?.op === 'scan'
+        )
+      : [];
+
   const facets = {
     outbound: outboundFacet,
     projection: diffProjection(expect.projection ?? {}, target && actualProjection(target, expect.projection?.event)),
-    storage: diffStorage(expect.storage ?? {}, target && actualStorage(target, expect.storage?.table)),
+    storage: diffStorage(expect.storage ?? {}, actualStorage(target, expect.storage?.table, scanFallback)),
     dom: diffDom(expect.dom ?? {}, dom ?? null),
   };
 
