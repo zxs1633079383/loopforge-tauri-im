@@ -94,14 +94,19 @@ describe('UC-2.1 · 首屏频道加载（四面契约·Phase2 待接线）', () 
       console.warn('[UC-2.1] im_query_messages_by_channel 返 error：', queryResult.error);
     }
 
-    // 断言②：等投影 emit —— query_result 带 {channel_id, messages}。
-    // 锚点：[data-msg-id] 行存在且数量 ≥ minRows（本 UC minRows=0）。
+    // 断言②③：等投影 emit query_result {channel_id, messages} → 壳 applyMessagesQueryResult 渲染消息行。
+    // 锚点：[data-channel-id=CH][data-msg-id] 行批量出现。seeded DB 该频道有真实历史（非空），故等
+    // 「行数稳定 ≥1」——避免 minRows=0 的恒真 waitUntil 在 Angular 渲染前就早退（HX-C011 禁恒真断言）。
+    // 行数稳定判据：连续两次读取计数相同且 >0（渲染完成·不再增长）。
+    let prevCount = -1;
     await browser.waitUntil(
       async () => {
         const rows = await readMessageRows(CHANNEL_ID);
-        return rows.length >= (EXPECT.storage?.minRows ?? 0);
+        const stable = rows.length > 0 && rows.length === prevCount;
+        prevCount = rows.length;
+        return stable;
       },
-      { timeout: 8000, timeoutMsg: '消息行未渲染（断在投影→DOM 这跳）' }
+      { timeout: 10000, interval: 200, timeoutMsg: '消息行未渲染稳定（断在投影→DOM 这跳·query_result→applyMessagesQueryResult）' }
     );
 
     // 读消息行终态。

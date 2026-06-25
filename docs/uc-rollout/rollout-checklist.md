@@ -45,7 +45,7 @@
 ## 阶段 4 · 历史（依赖累积消息）
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
 |---|---|---|---|---|---|---|---|
-| [ ] | 2.1 切群首屏(3 面) | `im_query_messages_by_channel`(本地) | (本地 Scan·无 HTTP 出站) | `query::emit_message_query_result`(透传) | N 个消息行 data-msg-id | `Scan message` | S |
+| [x] | 2.1 切群首屏(3 面) | `im_query_messages_by_channel`(本地) | (本地 Scan·无 HTTP 出站) | `query::emit_message_query_result`(透传) | N 个消息行 data-msg-id | `Scan message` | S |
 | [ ] | 2.3 按 postId 定位 | `posts/getPostsAfterIndex`{postIds:postId} | `partials/6 UC-2.3` | `query::emit_message_query_result`(透传) | data-msg-id 命中高亮 | `Scan message` | S |
 | [ ] | 2.2 上拉更早历史(3 面) | `im_load_older_context`→`posts/postContext`×N | `partials/8 http.rs:89`{postId,before} | `older_context::emit_older_loaded`(透传) | prepend 更早行 | `message` upsert prepend | M |
 

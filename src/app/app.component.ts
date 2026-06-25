@@ -577,9 +577,12 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // ═══ CL 频道行交互件（占位骨架）═══
 
-  /** UC-2.1 切群首屏。占位 → 接 onSelectChannel → 加载该频道首屏。 */
-  onSelectChannel(_channelId: string): void {
-    /* UC-2.1 接通 */
+  /** UC-2.1 切群首屏：点 CL 频道行 → store.queryMessages（invoke im_query_messages_by_channel·
+   *  纯本地 Scan·无 HTTP 出站）→ helix Scan 回报 emit im:messages:query_result → ML 区渲染该频道
+   *  首屏消息行（data-msg-id 直映·壳纯渲染·无乐观合成）。同时把 activeChannel 切到目标频道。 */
+  onSelectChannel(channelId: string): void {
+    if (!channelId) return;
+    void this.store.queryMessages(channelId);
   }
 
   /** UC-5.4 群属性修改。占位 → 接 channel/change/*。 */

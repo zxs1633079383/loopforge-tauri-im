@@ -22,7 +22,9 @@ import {
   ChannelIncrementData,
   ChannelScheduleCreatedData,
   MESSAGE_ROW_CHANNELS,
+  MESSAGES_QUERY_RESULT_CHANNEL,
   MessageItemData,
+  MessagesQueryResultData,
   POST_SENDING_CHANNEL,
   PostSendingData,
   READ_RESULT_CHANNEL,
@@ -449,6 +451,31 @@ export class ImStoreService {
   }
 
   /**
+   * UC-2.1 切群首屏（读族·纯本地 Scan·无 HTTP 出站）：invoke('im_query_messages_by_channel', {channelId}）。
+   *
+   * 切换频道时调一次——helix `query_dispatch` 吐 `Scan(message WHERE channel_id ORDER BY create_at DESC)`，
+   * PortReply 回报后 `port_reply` emit `im:messages:query_result{channel_id, messages:[DB行]}`（无 WS/HTTP
+   * 回声·读路径）。壳收到投影即 applyMessagesQueryResult 渲染 ML 区消息行（data-msg-id 直映·壳纯渲染）。
+   * **壳不臆造 body**：engine build_message_query 认 snake channel_id/limit·本壳只翻译入泵（commands.rs
+   * im_query_messages_by_channel）。同时把 activeChannel 切到目标频道（切群语义·决定性发送/已读目标）。
+   * 非 Tauri / 命令缺失 → 静默（dev 浏览器单独调 UI 不卡）。
+   */
+  async queryMessages(channelId: string, limit?: number): Promise<void> {
+    const ch = channelId.trim();
+    if (!ch) return;
+    // 切群语义：把活动频道切到目标（覆盖 captureActiveChannel 的"首个胜出"锚·用户显式选群优先）。
+    this._activeChannel.set(ch);
+    try {
+      await this.bridge.invoke<void>("im_query_messages_by_channel", {
+        channelId: ch,
+        limit,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（首屏靠 im:messages:query_result 投影驱动·无乐观合成）。
+    }
+  }
+
+  /**
    * UC-2.4 一级回复列表（读族）：invoke('im_get_replies', {replyId, reqId}）。
    *
    * **读族 request-response**：HTTP 200 响应体即数据→helix `read_relay::emit_read_result` 透传回灌
@@ -614,6 +641,15 @@ export class ImStoreService {
     // 先于 captureActiveChannel/message-row 分支（读结果非 channel-row 信号·body 无顶层 channel_id）。
     if (channel === READ_RESULT_CHANNEL) {
       this.applyReadResult(env.payload?.data as ReadResultData | undefined);
+      return;
+    }
+
+    // UC-2.1 切群首屏：im:messages:query_result（{channel_id, messages:[DB行]}）→ 把 messages 渲染进
+    // ML 区消息行（data-msg-id 直映·壳纯渲染透传 DB 行·不解析重组业务）。读族纯本地 Scan·无 WS/HTTP
+    // 回声·invoke im_query_messages_by_channel 后 Scan 回报即 emit 本投影。先于 message-row fat 分支
+    // （query_result 外层 2 键·非 message_item_data fat 集·messages 元素是 snake DB 行）。
+    if (channel === MESSAGES_QUERY_RESULT_CHANNEL) {
+      this.applyMessagesQueryResult(env.payload?.data as MessagesQueryResultData | undefined);
       return;
     }
 
@@ -894,6 +930,83 @@ export class ImStoreService {
         templateReceived: templateReceived || undefined,
       },
     ]);
+  }
+
+  /**
+   * UC-2.1 切群首屏：im:messages:query_result（{channel_id, messages:[DB行]}）→ 把 Scan 出的本地
+   * message 表行渲染进 ML 区消息行（data-msg-id 直映·壳纯渲染透传 DB 行·不解析重组业务）。
+   *
+   * messages 元素 = `SELECT * FROM message` 原始 snake 列（schema.rs IM_SCHEMA·projection-schema 行 269）：
+   *  `temporary_id`（PK·乐观锚）· `id`（server msg id·空串=未对账）· `channel_id` · `type` · `message`
+   *  · `read_bits` · `revoke`（0/1）。msgId 优先取 server `id`，缺则退 `temporary_id`（与 send 链 data-msg-id
+   *  锚一致）。upsert：按 (temporary_id||id) 命中既有行则覆写关键 data-*（不抹乐观链已对账态·加法式），
+   *  否则追加（server 视角·sendStatus=sent·已落库行非乐观）。读族无 event_seq 列 → eventSeq=null（渲染空串）。
+   */
+  private applyMessagesQueryResult(
+    data: MessagesQueryResultData | undefined,
+  ): void {
+    if (!data || typeof data !== "object") return;
+    const channelId =
+      (typeof data.channel_id === "string" && data.channel_id) || "";
+    const messages = Array.isArray(data.messages) ? data.messages : [];
+    if (!channelId) return;
+    // 切群锚定：query_result 频道作活动频道（若尚未锚定·与 queryMessages 显式 set 一致）。
+    if (!this._activeChannel()) this._activeChannel.set(channelId);
+
+    for (const raw of messages) {
+      if (!raw || typeof raw !== "object") continue;
+      const m = raw as Record<string, unknown>;
+      const temporaryId = (typeof m["temporary_id"] === "string" && m["temporary_id"]) || "";
+      const serverId = (typeof m["id"] === "string" && m["id"]) || "";
+      // server id 优先作 data-msg-id（已落库行多有 server id）；缺则退 temporary_id（与 send 链锚一致）。
+      const msgId = serverId || temporaryId;
+      if (!msgId) continue;
+      const text = (typeof m["message"] === "string" && m["message"]) || "";
+      const type = (typeof m["type"] === "string" && m["type"]) || "TEXT";
+      const readBits = this.toReadBits(m["read_bits"] as string | number | undefined);
+      const ch = (typeof m["channel_id"] === "string" && m["channel_id"]) || channelId;
+      const revoked = m["revoke"] === 1 || m["revoke"] === true;
+
+      // upsert：按 temporary_id（乐观锚）或 server id 命中既有行 → 覆写关键 data-*（不抹已对账链态）。
+      const idx = this._rows().findIndex(
+        (r) =>
+          (temporaryId && r.temporaryId === temporaryId) ||
+          (serverId && r.msgId === serverId),
+      );
+      if (idx >= 0) {
+        this._rows.update((rows) => {
+          const next = rows.slice();
+          const prev = next[idx];
+          next[idx] = {
+            ...prev,
+            msgId: msgId || prev.msgId,
+            channelId: ch || prev.channelId,
+            text: text || prev.text,
+            type: type || prev.type,
+            readBits: readBits || prev.readBits,
+            revoked: revoked || prev.revoked,
+          };
+          return next;
+        });
+        continue;
+      }
+
+      // 新行（Scan 出的已落库历史·非乐观）→ 追加（server 视角·sendStatus=sent）。
+      this._rows.update((rows) => [
+        ...rows,
+        {
+          msgId,
+          temporaryId,
+          channelId: ch,
+          eventSeq: null, // message 表无 event_seq 列（读族·渲染空串）
+          sendStatus: "sent",
+          readBits,
+          text,
+          type,
+          revoked: revoked || undefined,
+        },
+      ]);
+    }
   }
 
   private patchByTemp(

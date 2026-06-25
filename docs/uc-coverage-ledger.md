@@ -189,13 +189,22 @@
 - **④ 落库**：`channel` 表 `batch_update`（has_schedule_post 列 patch·UPDATE WHERE id·keys=1）。**契约更正**：op=`batch_update`（非草拟误写的 `update`·helix storage port 无 plain update·ports/storage.rs:82 注 update==batch_update(len=1)·run.jsonl 实证 + UC-1.5/1.8/1.9 同 op）。
 - **接线**：src-tauri `im_create_schedule` 命令（lib.rs 双 handler 注册）+ store `createSchedule()`/`applyScheduleCreated()` + app.component `onSchedule()`。spec `test/specs/uc-1.10.e2e.mjs` + expect `test/expect/uc-1.10.expect.json`。
 
-### UC-2.1 切群首屏 — `⬜ pending`（认领 S，依赖发消息累积）
+### UC-2.1 切群首屏 — `✅ 四面全绿`（读族 ②③·①④ N/A·认领 S·issue #20·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）
 
-- **① 出站 HTTP**：本地优先 `im_query_messages_by_channel`（本地 Scan）/ too_long 兜底 `posts/getLatestPost`（待核·partial 8 http.rs:72 `{channelId}`）。
-- **② 投影**：`im:messages:query_result`（`{channel_id, messages}`·`query::emit_message_query_result` 透传本地 DB 行）。
-- **③ DOM**：N 个消息行 data-msg-id。
-- **④ 落库**：Scan `message`（读路径，不写）。
-- **注**：依赖 UC-2.2 的 accept 闸修复 — helix UC-2.2 揪出全 4 query 族命令经真命令路径不可达（见下）。
+- **① 出站 HTTP**：N/A（读族纯本地 Scan·无 HTTP 出站·expect.json `reachable=false`·reducer 不裁定 ①）。
+  too_long 兜底 `posts/getLatestPost` LoopForge 单账号闭环常态不命中（optional 校验）。
+- **② 投影**：`im:messages:query_result`（`{channel_id, messages}`·外层 2 键严格·`query::emit_message_query_result`
+  透传本地 DB 行·实跑 run.jsonl 实证 messages=58 行透传整 `SELECT * FROM message` snake 列）。**GREEN**。
+- **③ DOM**：N 个消息行 `data-msg-id`（壳 `applyMessagesQueryResult` 渲染·实跑 50 行·首行
+  msg-id=bzs3hu9xzp8o9qduqq3q7q7ike 对账 DB·默认 limit=50 截断 58→50）。**GREEN**。
+- **④ 落库**：N/A（Scan-only 读路径·不落新行·reducer `minRows:0` 不强求 storage 写 hop·读族无写）。
+- **链路**：切群点 CL 频道行 → `onSelectChannel` → `store.queryMessages` → invoke `im_query_messages_by_channel`
+  （commands.rs 薄壳翻译入泵·lib.rs 双 handler 注册）→ helix `query_dispatch` 吐 `Scan(message WHERE
+  channel_id ORDER BY create_at DESC LIMIT 50)` → `port_reply` emit `im:messages:query_result` → 壳渲染。
+- **测试件**：`test/specs/uc-2.1.e2e.mjs`（e2e 经 `__lf.invoke` 直 invoke `im_query_messages_by_channel`·
+  waitUntil 等行数稳定 ≥1 非恒真 minRows=0·HX-C011）+ `test/expect/uc-2.1.expect.json`（②③ 冻结·
+  ①④ optional/read-path）。helix `acl/from_tick.rs::accepts_tick` query 族放行已修（line 28
+  `|| is_query`）→ 真命令路径可达（实测 58 行 emit·原 ledger「依赖 UC-2.2 accept 闸修复」注已过时·删）。
 
 ### UC-2.2 上拉更早历史 — `⬜ pending`（认领 M）🔴 **helix 侧 wire-bug 待修**
 
@@ -461,10 +470,10 @@
 | bot/agent 召唤（整域，不计入 39）| 1 域 | — | — | — | 1 域（⛔）|
 
 > 精确分类（按本台账每节标题图例为准·1+7+24+7=39）：
-> - **✅ four-facet-verified = 10**：UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-1.4（2026-06-25 实跑全绿·onResend→store.resend 复用 tmp upsert + debug 桥注入失败前置·corr_key=ch=15gcgoyf;tmp=pfuneqqp;sid=c58zkjqn;seq=68）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）、UC-1.9（2026-06-25 实跑全绿·im_urgent_post/confirm 命令 + diffOutboundPhases 两阶段 + msg_id→sid 归一 + 关窗前等 post_update in-window·corr_key=sid=tasdeqxtubbrzbigoic5iya77o）、UC-1.10（2026-06-25 实跑全绿·im_create_schedule 命令 + create-outbound fallback 复用·posts/createSchedule + im:channel:schedule-created·storage op 草拟纠正 update→batch_update·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）、UC-3.3（2026-06-25 实跑全绿·im_template_received 命令 camelCase {postId} + 前置发 TEMPLATE 类型消息 + store extractTemplateReceived + storage op 草拟纠正 update→batch_update + dom _note 移出 dataAttrs·post_update 广播含发起连接故单账号即绿·corr_key=sid=1ouh77refibz8j4ujz4aiy1m8a）。
+> - **✅ four-facet-verified = 11**：UC-2.1（2026-06-25 实跑全绿·读族 ②③·①④ N/A·im_query_messages_by_channel 命令 + store applyMessagesQueryResult 渲染 50 行 + onSelectChannel 切群接线·corr_key=ch=15gcgoyf1jfcur614qydhs69ha·issue #20）、UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-1.4（2026-06-25 实跑全绿·onResend→store.resend 复用 tmp upsert + debug 桥注入失败前置·corr_key=ch=15gcgoyf;tmp=pfuneqqp;sid=c58zkjqn;seq=68）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）、UC-5.1（2026-06-25 实跑全绿·im_create_channel 命令 + create-outbound fallback·corr_key=ch=hkcs5xdupty69bg9oztxbmc9th）、UC-5.2（2026-06-25 实跑全绿·im_make_topic 命令 + create-outbound fallback 复用·posts/makeTopic type=T·corr_key=ch=1k47mhtxhf8988y8x7646y4xey）、UC-1.9（2026-06-25 实跑全绿·im_urgent_post/confirm 命令 + diffOutboundPhases 两阶段 + msg_id→sid 归一 + 关窗前等 post_update in-window·corr_key=sid=tasdeqxtubbrzbigoic5iya77o）、UC-1.10（2026-06-25 实跑全绿·im_create_schedule 命令 + create-outbound fallback 复用·posts/createSchedule + im:channel:schedule-created·storage op 草拟纠正 update→batch_update·corr_key=ch=15gcgoyf1jfcur614qydhs69ha）、UC-3.3（2026-06-25 实跑全绿·im_template_received 命令 camelCase {postId} + 前置发 TEMPLATE 类型消息 + store extractTemplateReceived + storage op 草拟纠正 update→batch_update + dom _note 移出 dataAttrs·post_update 广播含发起连接故单账号即绿·corr_key=sid=1ouh77refibz8j4ujz4aiy1m8a）。
 > - **🟡 partial = 7**：UC-4.4 心跳 / UC-4.5 陌生 channel / UC-5.3 关群 / UC-5.5 置顶 / UC-6.1 拉踢 / UC-6.2 管理员 / UC-8.x 投票平均分。
 > - **🟡 ①③-verified · ②④ server-data-gap（read echo 多设备-only）= 2**：UC-3.1 会话已读 / UC-3.2 单条已读（2026-06-25 实跑·①③ 严格断言绿 + ②④ read echo 是多设备 echo·单连接结构性不可观测·带 run.jsonl 证据 + 可证伪护栏·须 L2 双账号转绿）。
-> - **⬜ pending = 13**：1.2 / 1.5 / 1.8 / 2.1 / 2.2 / 2.3 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 / UC-3.3 / UC-1.4 / UC-1.7 / UC-2.4 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
+> - **⬜ pending = 12**：1.2 / 1.5 / 1.8 / 2.2 / 2.3 / 4.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 / UC-3.3 / UC-1.4 / UC-1.7 / UC-2.4 / UC-2.1 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
 > - **⛔ unreachable = 7**（39 分母内）：UC-1.3 文件 / UC-1.6 编辑 / UC-4.3 too_long / UC-5.6 公告 / UC-5.7 在线 / UC-7.x 搜索·另 bot/agent 整域 ⛔（不计入 39 分母）。
 
 > ⚠️ **诚实声明**：全 39 UC 中唯一经真 Tauri+WKWebView 四面 oracle 跑绿的是 **UC-1.1**。`🟡 partial` 表示 helix ledger 已证服务端 wire 但 LoopForge 客户端四面尚未实跑（标 partial 是为标记「有可证主路径 + 部分子项物理够不到」，**不等于 LoopForge 已验**）。rollout 实跑前，唯一 ✅ 的就是 UC-1.1。

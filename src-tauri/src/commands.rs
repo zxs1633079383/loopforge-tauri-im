@@ -310,6 +310,35 @@ pub async fn im_query_dialog_list(state: State<'_, AppState>) -> Result<(), Stri
         .map_err(|e| format!("im_query_dialog_list: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-2.1 切群首屏（读族·纯本地 Scan·无 HTTP 出站）：前端切换频道时调一次，传 `channelId`
+/// + 可选 `limit`（首屏条数）→ 本命令转 snake_case 入泵 `im_query_messages_by_channel`
+/// （helix-im `query_dispatch` 吐 `Scan(message, filter=channel_id, order=create_at DESC)` +
+/// 注册 MessageQuery corr 上下文；PortReply 回报后 `port_reply` emit `im:messages:query_result`
+/// 投影·projection-schema §1 query::emit_message_query_result·外层 {channel_id, messages}）。
+///
+/// 薄壳纪律：只翻译入参 + 入泵；engine `build_message_query` 认 snake `channel_id`/`limit`，
+/// 本壳不臆造 body。读族纯本地 Scan，不产 HTTP 出站（facet ① 为空·本 UC 仅 ②③④ 三面）。
+#[tauri::command]
+pub async fn im_query_messages_by_channel(
+    state: State<'_, AppState>,
+    channel_id: String,
+    limit: Option<u32>,
+) -> Result<(), String> {
+    if channel_id.is_empty() {
+        return Err("im_query_messages_by_channel: channelId 为空".into());
+    }
+    let mut payload = serde_json::json!({ "channel_id": channel_id });
+    if let Some(l) = limit {
+        payload["limit"] = serde_json::json!(l);
+    }
+    let tick = command("im_query_messages_by_channel", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_query_messages_by_channel: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-2.4 一级回复列表（读族 request-response）：前端传 `replyId`（回复链根 server postId）+
 /// 可选分页 `pageNumber`/`pageSize` + 可选 `revoke` + `reqId`（前端 bridge 生成的关联 id）→
 /// 本命令转 snake_case 入泵 `im_get_replies`（helix-im `outbound/posts_read.rs` `GetRepliesCommand`

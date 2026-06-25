@@ -128,6 +128,22 @@ export interface ReadResultData {
   error?: string;
 }
 
+/**
+ * UC-2.1 切群首屏投影 channel（projection-schema §1 行 74 query::emit_message_query_result）。
+ * data 形态 = `{ channel_id, messages: [...] }`（外层 2 键·schema 行 281：直接渲染不走 {items:[]} 解包）。
+ * messages 元素 = `SELECT * FROM message` 原始 DB 行（snake 列名·schema 行 269）——关键列：
+ *  `temporary_id`（PK）· `id`（server msg id·空串表未对账）· `channel_id` · `type` · `message`
+ *  · `read_bits` · `revoke`（0/1）。读族纯本地 Scan·无 HTTP 出站·壳收到即把 messages 渲染进 ML 区
+ *  消息行（data-msg-id 直映·壳纯渲染不合成）。触发：invoke im_query_messages_by_channel（切群）。
+ */
+export const MESSAGES_QUERY_RESULT_CHANNEL = "im:messages:query_result";
+
+/** im:messages:query_result data 形态（projection-schema 行 74·{channel_id, messages}·messages 透传 DB 行）。 */
+export interface MessagesQueryResultData {
+  channel_id: string;
+  messages: unknown[];
+}
+
 /** message-row 类 channel（携 message_item_data fat 完整集） */
 export const MESSAGE_ROW_CHANNELS: ReadonlySet<string> = new Set([
   "im:post:received",
