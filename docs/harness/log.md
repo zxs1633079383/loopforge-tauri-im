@@ -116,3 +116,8 @@
   - ②④ 处置（L2-facet 标准 c·C011 不留"关了没测"账）：add/remove manger 后端 WS 已注释（仅 GrpcInvoke）+ channel_member_role_updated graceful no-op → emit_channel_member_updated/channel_member 全量落库须 channel_member_update 广播帧（须第二账号触发）。#29 留 OPEN·label ready-for-human（移除 ready-for-agent）·comment 写精确机制 + run.jsonl 证据·链 L2 #45（已 cross-link）。
   - 环境纠偏：spec 前期红根因=gRPC 隧道断（WS 广播 channel_created/channel_member_update 不到达·UC-5.1/6.1 同步红）→ tp-connect.sh 重连 telepresence + reload-app 重建 WS → UC-5.1 sanity 恢复绿。move：删 UC-6.2 spec 内无谓的预拉成员步（依赖 channel_member_update 广播=结构性 L2·会假红 ①③ 主路径）。
   - 验证：cargo check PASS(4.1s) + gate.sh PASS(reducer 125/0·harness 索引=12·helix 单版本) + runFourFacetCommandDom 可证伪对偶(dom/outbound/snake 各 brokenAt 红)。未踩 ≥3 同根新坑（复用 C003/C004/C005/C009/C011 + L2-facet 标准 c），不立新卡。
+
+✅ DONE 阶段 phase5-channel-member 收口（5 ready-for-agent UC 四面全绿·打 tag v0.1-phase5-channel-member）@2026-06-25 17:10 CST | commit 97c8f39..aabcafa | 5/5 绿 + 2 L2 留 OPEN | loopforge-tauri-im/feat/uc-rollout
+  - 绿（ready-for-agent·已 close）：UC-5.4(#23 改群名) · UC-5.5(#24 频道置顶) · UC-5.3(#25 关闭/退出群) · UC-6.3(#26 改群昵称) · UC-6.4(#27 成员快照/全量)。5 个 test/specs/uc-X.e2e.mjs + test/expect/uc-X.expect.json 均存在·e2e 真跑过。
+  - 非绿（结构性 L2·ready-for-human·不打入 tag 范围）：UC-6.1(#28 拉/踢人·① L1 绿·②③④→#43) · UC-6.2(#29 设/撤管理员·①③ 绿·②④→#45)。两者 issue 留 OPEN·已移 ready-for-agent→ready-for-human（L2-facet 标准 c·C011）。
+  - tag：v0.1-phase5-channel-member（message 含覆盖 commit 范围 + UC 列表 + 验证状态）。验证：gate.sh PASS（镜像/harness 索引 12/reducer 125 自测/expect JSON 全 valid/helix 单版本）。未踩 ≥3 同根新坑·不立新卡。
