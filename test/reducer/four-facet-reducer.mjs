@@ -175,8 +175,14 @@ function actualProjection(bundle, preferEvent) {
  *  （与 createOutbound/batchOutbound 的窗口 fallback 同模式·窗口隔离保证本 UC 内唯一）。 */
 function actualStorage(bundle, table, scanFallback) {
   const writes = bundle ? bundle.hops.filter((h) => h.facet === 'storage' && h.payload?.op) : [];
-  let hit = writes.find((h) => !table || h.payload?.table === table) ?? writes[0];
-  // 读族 Scan 回退：target 束无匹配 storage hop → 取窗口内同 uc + 同 table 的 scan 事件。
+  // table 指定时只认 table 匹配的 storage hop；不匹配则不抢答（让位给 scanFallback）。
+  // `?? writes[0]` 的 catch-all 仅在 table 未指定（通配）时启用——否则 target 束里偶现的
+  // 无关 keyed 写（如切群触发的 batch_upsert channel_member）会把读族 expect(scan message)
+  // 错配为 batch_upsert，导致环境漂移下假红（2026-06-25 UC-2.1 实测）。
+  let hit = table
+    ? writes.find((h) => h.payload?.table === table)
+    : (writes[0] ?? null);
+  // 读族 Scan 回退：target 束无匹配 table 的 storage hop → 取窗口内同 uc + 同 table 的 scan 事件。
   if (!hit && Array.isArray(scanFallback) && scanFallback.length > 0) {
     hit = scanFallback.find((h) => !table || h.payload?.table === table) ?? scanFallback[0];
   }
