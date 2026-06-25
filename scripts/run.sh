@@ -58,9 +58,15 @@ wait_http "http://localhost:$FRONTEND_PORT" "前端(ng serve)" 180
 # hello 握手发的 fromSeq = 启动时从 DB channel_event_cursor 灌入的 in-memory 值；
 # 故重置必须在 app 启动前（spec 的 before-hook 太晚·cursor 已灌入内存）。
 # 幂等可重复：每轮 run 都重置（上轮 hello 已把 cursor 推回 current）。
+BOOTSTRAP_UC=""
 if printf '%s\n' "${WDIO_ARGS[@]+"${WDIO_ARGS[@]}"}" | grep -q 'uc-4.1'; then
   info "UC-4.1：起 app 前重置 cursor 到落后态（seed-behind-cursor·决策 A·C003/C004）"
   bash "$REPO_ROOT/scripts/seed-behind-cursor.sh" || die "UC-4.1 cursor 重置失败（seed-behind-cursor）" 1
+  # bootstrap UC 归属：UC-4.1 是「就绪根」——hello 自驱增量在 app 启动即流过（早于 e2e
+  # before-hook 的 set_uc('UC-4.1')）→ 默认归 __quiescence__·reducer 按 uc_id 过滤抽空。
+  # 设 bootstrap UC=UC-4.1 使 hello hop 真正归 UC-4.1（机器件归属·非改冻结 oracle）。
+  BOOTSTRAP_UC="UC-4.1"
+  info "UC-4.1：bootstrap UC 归属 = UC-4.1（hello 自驱帧归 UC-4.1·LOOPFORGE_BOOTSTRAP_UC）"
 fi
 
 # —— 起 app：cargo run debug（边构建边起；首次构建慢，耐心等 webdriver 就绪）——
@@ -71,6 +77,7 @@ info "起 app：cargo run（src-tauri，debug，${MODE_ENV_VAR}=${MODE}，webdri
     "HELIX_RUN_JSONL=$HELIX_RUN_JSONL" \
     ${HELIX_DEVICE_ID:+"HELIX_DEVICE_ID=$HELIX_DEVICE_ID"} \
     ${HELIX_HTTP_MAX_INFLIGHT:+"HELIX_HTTP_MAX_INFLIGHT=$HELIX_HTTP_MAX_INFLIGHT"} \
+    ${BOOTSTRAP_UC:+"LOOPFORGE_BOOTSTRAP_UC=$BOOTSTRAP_UC"} \
     nohup cargo run --manifest-path src-tauri/Cargo.toml >"$APP_LOG" 2>&1 & )
 
 # cargo 首次冷构建可能数分钟 → webdriver 就绪超时给足

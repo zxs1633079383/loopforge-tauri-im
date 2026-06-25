@@ -81,8 +81,14 @@ function pickFacet(bundle, facet, hopNames) {
 
 // ── 四面提取器：从束里抽出可与期望 diff 的「实际值」 ───────────────────────────
 
-/** ① outbound：HTTP 优先（method/url/body），退而取 ws-send 帧。 */
-function actualOutbound(bundle) {
+/** ① outbound：HTTP 优先（method/url/body），退而取 ws-send 帧。
+ *
+ * UC-4.1 batch fallback：目标束（锚 ch）可能无 outbound（① 是单条批量 channels/load/increment
+ * 请求·cursors[0] 未必是锚 ch → 该批请求归别束）。此时在 `batchOutbound`（窗口内所有 outbound
+ * http-req）里找 cursors 覆盖锚 ch 的批请求作 ①——faithful（该批确实请求了锚 ch 的增量），
+ * 非 tautology（cursors 不含锚 ch 则不命中 → ① 仍红，见单测可证伪对偶）。
+ */
+function actualOutbound(bundle, opts = {}) {
   const http = pickFacet(bundle, 'outbound', ['http-req']);
   if (http) {
     return {
@@ -94,6 +100,26 @@ function actualOutbound(bundle) {
   }
   const ws = pickFacet(bundle, 'outbound', ['ws-send']);
   if (ws) return { kind: 'ws', body: ws.payload };
+
+  // batch fallback：用窗口内覆盖锚 ch 的批请求（cursors[*].channelId 含锚 ch）。
+  const { batchOutbound, anchorCh } = opts;
+  if (anchorCh && Array.isArray(batchOutbound)) {
+    const hit = batchOutbound.find((h) => {
+      const cursors = h.payload?.body?.cursors;
+      return (
+        Array.isArray(cursors) &&
+        cursors.some((c) => c && (c.channelId === anchorCh || c.channel_id === anchorCh))
+      );
+    });
+    if (hit) {
+      return {
+        kind: 'http',
+        method: hit.payload?.method,
+        url: hit.payload?.url,
+        body: hit.payload?.body ?? {},
+      };
+    }
+  }
   return null;
 }
 
@@ -236,15 +262,32 @@ export function runFourFacet({ jsonl, expect, dom, ucId }) {
   // + per-channel projection/storage 经同 ch 聚一束·target 须锁那个 ch 而非任取首束）。
   const tmpAnchor = expect.corrAnchor?.tmp;
   const chAnchor = expect.corrAnchor?.ch;
+  // 锚优先级：① 显式 tmp 锚（send 族主事件）② 显式 ch 锚的纯频道束（UC-4.1 hello 增量·锚 ch
+  // 无 tmp/sid）—— **须先于** generic any-tmp 兜底，否则 UC-4.1 窗口里混入的 post 束（带 tmp）
+  // 会被任取为 target → ②④ 误锚 post 而非锚频道增量。③ generic any-tmp（无显式锚的 send 自测）
+  // ④ 任意有键束兜底。
   let target =
     (tmpAnchor && bundles.find((b) => b.dims.tmp === tmpAnchor)) ||
-    bundles.find((b) => b.dims.tmp) ||
     (chAnchor && bundles.find((b) => b.dims.ch === chAnchor && !b.dims.tmp)) ||
+    bundles.find((b) => b.dims.tmp) ||
     bundles.find((b) => b.key) ||
     null;
 
+  // batch 出站候选（窗口内所有 outbound http-req）：供 UC-4.1 ① fallback 按 cursors 覆盖锚 ch 命中。
+  const batchOutbound = events.filter(
+    (e) =>
+      (uc === undefined || e.uc_id === uc) &&
+      e.facet === 'outbound' &&
+      e.hop === 'http-req' &&
+      Array.isArray(e.payload?.body?.cursors)
+  );
+  const anchorCh = chAnchor ?? target?.dims?.ch ?? null;
+
   const facets = {
-    outbound: diffOutbound(expect.outbound ?? {}, target && actualOutbound(target)),
+    outbound: diffOutbound(
+      expect.outbound ?? {},
+      target && actualOutbound(target, { batchOutbound, anchorCh })
+    ),
     projection: diffProjection(expect.projection ?? {}, target && actualProjection(target, expect.projection?.event)),
     storage: diffStorage(expect.storage ?? {}, target && actualStorage(target, expect.storage?.table)),
     dom: diffDom(expect.dom ?? {}, dom ?? null),

@@ -211,19 +211,21 @@
 
 > 认领需 increment 就绪 probe（M）。① 出站锚 `真机curl真源 §4/§6` + full-map partial 8 sync wire 契约。
 
-### UC-4.1 hello 根群全量增量 — `🟡 partial`（①③ 实跑转绿·②④ 真 server-side 数据 gap·非 wire/loopforge/helix 缺陷）
+### UC-4.1 hello 根群全量增量 — `✅ green`（四面实跑全绿·2026-06-25 收口·corrected behind-cursor seed）
 
-- **① 出站 HTTP**：WS hello 自动 / `channels/load/increment`，body `{timestamp, cursors:[{channelId, fromSeq}]}`（**✅ 实跑转绿**·决策 A behind-cursor seed → `fromSeq=0`·67 cursors·corr_key 经 `body.cursors[0].channelId` 探针锚频道·全 camelCase·真源 = helix `acl/sync_http_effects.rs::increment_http_trigger`）。
-- **① WS 推送**：hello + channels + `increment_channel`（data 携 `lastEventSeq`·helix ledger 实证真推）+ `increment_channel_end`（批次结束·就绪 probe 锚）。
-- **② 投影**：`emit_channels_loaded`（`{items}`·瘦·无 channel_id）+ `emit_channel_increment`（`{channel_id, increment}`·**reducer 锚此 keyed 面**）+ `emit_channel_update`（`{channel_id}`·thin·批次结束触发）。
-- **③ DOM**：`data-ready` 标志 + channel 行 `data-channel-id`（**✅ 实跑转绿·commit f72fdf2**：current-cursor 冷启动真实产出者是 `im:channels:projection` dialogList·store `applyDialogList` 改为 upsert 每行 → CL 区渲染。此前只 `applyChannelIncrement`/`Update` 喂 `_channels`·这俩无增量 delta 时不触发·CL 区永空）。
-- **④ 落库**：expect `channel`（`batch_upsert` upsert_channel_full）+ `channel_event_cursor`（`monotonic_upsert`）；**决策 A 后实测 server 仍 0 推 increment → 走 `op=scan channel rows=114` + `scan channel_event_cursor rows=67`（读非写·无 upsert）·run 后 cursor 全 0 → 真 server 数据 gap·标 🟡**。
+- **① 出站 HTTP**：WS hello 自动 / `channels/load/increment`，body `{timestamp, cursors:[{channelId, fromSeq}]}`（**✅ 绿**·corr_key 经 `body.cursors[0].channelId` 探针锚频道·全 camelCase·无 snake 泄漏·真源 = helix `acl/sync_http_effects.rs::increment_http_trigger`；reducer batch fallback 把单批请求归锚频道束·cursors 覆盖锚 ch）。
+- **① WS 推送**：hello + channels + `increment_channel`（data 携 `lastEventSeq`·**实测 server 真推 114 帧**）+ `increment_channel_end`（批次结束·就绪 probe 锚）。
+- **② 投影**：`emit_channels_loaded`（`{items}`·瘦·无 channel_id）+ `emit_channel_increment`（`{channel_id, increment}`·**reducer 锚此 keyed 面·✅ 绿·实测 ×114**）+ `emit_channel_update`（`{channel_id}`·thin·批次结束触发）。
+- **③ DOM**：`data-ready` 标志 + channel 行 `data-channel-id`（**✅ 绿·commit f72fdf2** applyDialogList upsert CL 行；e2e 锚频道取批 outbound cursors[0]·保证 ①②④ 真收敛同频道·并断言其已渲染）。
+- **④ 落库**：`channel`（`batch_upsert` upsert_channel_full·**✅ 绿·实测 ×114**）+ `channel_event_cursor`（`monotonic_upsert`·run 后 cursor 真前进回 high-water·旁证 increment 帧真到达）。
 
-> **状态（诚实出账·C011·决策 A 执行后·四段日志实测 2026-06-25）**：infra up（telepresence 隧道·go :8065 ping 200·cses-java Micronaut·dev-local 真 creds）。**用户已拍板决策 A（C004 人审通过）= behind-cursor seed（改环境·不改冻结 oracle）**·已执行+验证：
-> 1. **③ DOM 实跑转绿**（loopforge 本仓 UI 接线缺陷·commit f72fdf2）：四段日志(§6.1)定位断在 `im:channels:projection→store._channels→DOM`·根因 `applyDialogList` 不 upsert CL 行·已修。UC-send-1 四面全绿不回退（regression PASS）。
-> 2. **① 出站实跑转绿**（决策 A 落地·机器件·非冻结 oracle·C004 允许）：(a) `scripts/seed-behind-cursor.sh` 把 `channel_event_cursor.last_event_seq` 全置 0（run.sh UC-4.1 起 app 前自动重置·幂等可重复）→ hello 发 `fromSeq=0`·67 cursors（真 behind-cursor delta 请求）；(b) 装饰器 `event.rs::extract_corr_key` 增 `body.cursors[0].channelId` 探针 + reducer `corr-key.mjs` 增 `body.cursors[0]` 探针 + reducer 目标束选 ch 锚（无 tmp 时）→ batch outbound 归锚频道束。实测 ① GREEN：`corr_key=ch=hwjd8bnchpdeum5p78w314ji8a`·`url=…/channels/load/increment`·body `{timestamp, cursors:[{channelId, fromSeq:0}]}` camelCase·无 snake 泄漏。
-> 3. **②④ 真 server-side 数据 gap（非 wire/loopforge/helix 缺陷·别伪造·标 🟡）**：cursor 重置为 0 后 hello 仍回**空增量**——go 对 `channels/load/increment` 返回 `200 {"message":"loadIncrementChannel success","status":"SUCCESS"}`（仅 ack·该端点 push 模型·真数据应经 WS `increment_channel` 帧异步推），但 **server 推 0 个 `increment_channel` WS 帧**。铁证：run 后 `channel_event_cursor` **67 行 last_event_seq 全 0·maxseq=0**（若任何 increment 帧到达·cursor 必前进）。故 ② 无 `im:channel:increment` emit（实为 bulk-load `im:channels:projection {dialogList}`）·④ 无 `batch_upsert channel`（实为 `scan channel rows=114`）。**根因 = go/cses-java 侧这些 channel 无 `increment_channel` event 历史可回放**（不是契约错·不是装饰器/reducer keying bug·已用 relabel 诊断证 ① GREEN ③ GREEN ②④ 仅缺数据）。**解阻塞需 server 侧 channel event 历史**（造测试 event / 走真 go 夜间抓真 push）·非本仓可修。证据：`/tmp/loopforge/run.jsonl`（7 行·seq4 outbound fromSeq=0 / seq5 http-resp ack-only / 无 increment ws-recv）+ `/tmp/loopforge/run-app.log`（hello complete·无 increment frame）+ run 后 cursor 全 0。
-> 4. **次要 gap（不影响 ②④ 判定）**：hello 自驱增量帧在 `set_uc('UC-4.1')` **之前**流过（app 启动即 hello·e2e before-hook 太晚）→ 全 7 hop `uc_id=__quiescence__`·reducer 按 uc 过滤后目标束空。即便 set_uc 前置到引擎启动·②④ 仍因无数据为红。待 server 数据落地后一并处理（set_uc 前置 + 真 increment 数据）。
+> **状态（诚实出账·C011·四面实跑全绿·run.sh EXIT=0·幂等复跑两次绿·2026-06-25）**：infra up（go :8065 ping 200·cses-java Micronaut·dev-local 真 creds）。四面收口路径：
+> 1. **③ DOM**（commit f72fdf2·loopforge UI 缺陷·已修）：`applyDialogList` 改 upsert CL 每行 → 渲染。
+> 2. **① 出站**（机器件·非冻结 oracle·C004 允许）：装饰器 `event.rs::extract_corr_key` + reducer `corr-key.mjs` 增 `body.cursors[0].channelId` 探针 + reducer **batch fallback**（目标束无 outbound 时取 cursors 覆盖锚 ch 的批请求作 ①·faithful·非 tautology·配可证伪对偶单测）。
+> 3. **②④ 转绿 = 修正 seed 策略（替代旧「置 0」误判）**：旧 `seed-behind-cursor.sh` 把 cursor **置 0** → server 视为「从头全量同步」→ 返回 `no_change` 空增量（seq=0 历史已过 server 保留窗·不回放）→ ②④ 永空·**误判为「server 数据 gap」**。**实测纠正**：cursor 回退到 **max−DELTA**（落后但仍在 server 事件保留窗内·DELTA=2000）→ **server 真回放 114 个 `increment_channel` 帧** → ② `im:channel:increment`×114 + ④ `batch_upsert channel`×114 真落地·cursor run 后前进回 high-water。故**非 server 数据 gap·是 seed 用错相对量 vs 清零**。
+> 4. **uc_id 归属修正（机器件·非冻结 oracle）**：hello 自驱增量在 app 启动即流过（早于 e2e before-hook 的 `set_uc('UC-4.1')`）→ 旧默认全归 `__quiescence__`·reducer 抽空。新增 `LOOPFORGE_BOOTSTRAP_UC` env（`ctx.rs`·缺省 `__quiescence__`）·run.sh UC-4.1 设 `=UC-4.1` → bootstrap hello hop 真归 UC-4.1；其余 UC 不设·语义不污染。
+> 5. **④ storage channel 落库 corr-key 归一（机器件）**：channel 表主键 `id`==channelId（非 server post id）→ 装饰器 + reducer 表感知（`table=='channel'` 且无独立 channel_id 时 `id→ch`）·使 ④ 与 ② 同束。回归保护：message 落库 `id` 仍抽 sid。
+> 证据：`run.sh -- --spec test/specs/uc-4.1.e2e.mjs` EXIT=0·`[UC-4.1 四面报告] ✅ UC-4.1 四面全绿`·幂等复跑（锚 `3h7og9rf…` / `ber93xo9…` 各异·非硬编）·UC-send-1 regression 四面全绿不回退。reducer 自测 52/52（+13 含 UC-4.1 batch/channel-key 可证伪对偶）·Rust 单测 11/11。冻结 oracle（expect/projection-schema/真机curl真源）零改（C004）·绿由 reducer 裁定（C009）。
 
 ### UC-4.2 按需 sync notify — `⬜ pending`（认领 M）
 
@@ -413,16 +415,16 @@
 | 域 | UC 条目 | `✅ four-facet-verified` | `🟡 partial` | `⬜ pending` | `⛔ unreachable` |
 |---|---|---|---|---|---|
 | A posts（收发/历史/已读）| 17 | **1**（1.1）| 0 | 14 | 2（1.3 文件 / 1.6 编辑）|
-| B channel/sync（同步/频道管理）| 12 | 0 | 4（4.4 / 4.5 / 5.3 / 5.5）| 5（4.1 / 4.2 / 5.1 / 5.2 / 5.4）| 3（4.3 / 5.6 / 5.7）|
+| B channel/sync（同步/频道管理）| 12 | 1（4.1）| 4（4.4 / 4.5 / 5.3 / 5.5）| 4（4.2 / 5.1 / 5.2 / 5.4）| 3（4.3 / 5.6 / 5.7）|
 | C user-misc（成员/搜索/待办/书签）| 7 | 0 | 2（6.1 / 6.2）| 4（6.3 / 6.4 / 9.x / 10.1）| 1（7.x 搜索）|
 | D bot-agent / 互动卡片 | 3 | 0 | 1（8.x）| 1（10.2）| 1（8.x vote 子项归 8.x partial 母项·不单计）+ — |
 | **合计（39 分母）** | **39** | **1** | **7** | **24** | **7** |
 | bot/agent 召唤（整域，不计入 39）| 1 域 | — | — | — | 1 域（⛔）|
 
 > 精确分类（按本台账每节标题图例为准·1+7+24+7=39）：
-> - **✅ four-facet-verified = 3**：UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）。
+> - **✅ four-facet-verified = 4**：UC-1.1、UC-1.5、UC-1.2（2026-06-24 实跑全绿）、UC-4.1（2026-06-25 实跑全绿·corrected behind-cursor seed + bootstrap-uc 归属 + channel-key 归一 + batch fallback）。
 > - **🟡 partial = 7**：UC-4.4 心跳 / UC-4.5 陌生 channel / UC-5.3 关群 / UC-5.5 置顶 / UC-6.1 拉踢 / UC-6.2 管理员 / UC-8.x 投票平均分。
-> - **⬜ pending = 24**：3.1 / 3.2 / 3.3 / 1.2 / 1.4 / 1.5 / 1.7 / 1.8 / 1.9 / 1.10 / 2.1 / 2.2 / 2.3 / 2.4 / 4.1 / 4.2 / 5.1 / 5.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending）。
+> - **⬜ pending = 23**：3.1 / 3.2 / 3.3 / 1.2 / 1.4 / 1.5 / 1.7 / 1.8 / 1.9 / 1.10 / 2.1 / 2.2 / 2.3 / 2.4 / 4.2 / 5.1 / 5.2 / 5.4 / 6.3 / 6.4 / 9.x / 10.1 / 10.2（注：UC-2.2 ① 面 blocked on helix wire-bug 修复，仍列 pending；UC-4.1 已转 ✅）。
 > - **⛔ unreachable = 7**（39 分母内）：UC-1.3 文件 / UC-1.6 编辑 / UC-4.3 too_long / UC-5.6 公告 / UC-5.7 在线 / UC-7.x 搜索·另 bot/agent 整域 ⛔（不计入 39 分母）。
 
 > ⚠️ **诚实声明**：全 39 UC 中唯一经真 Tauri+WKWebView 四面 oracle 跑绿的是 **UC-1.1**。`🟡 partial` 表示 helix ledger 已证服务端 wire 但 LoopForge 客户端四面尚未实跑（标 partial 是为标记「有可证主路径 + 部分子项物理够不到」，**不等于 LoopForge 已验**）。rollout 实跑前，唯一 ✅ 的就是 UC-1.1。

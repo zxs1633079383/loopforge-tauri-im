@@ -13,7 +13,7 @@
 ## 阶段 0 · 就绪根
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
 |---|---|---|---|---|---|---|---|
-| [ ] | 4.1 hello 全量增量 | (WS hello 自动)/`channels/load/increment` | `partials/8 http.rs:25`{timestamp,cursors:[{channelId,fromSeq}]} | `emit_channels_loaded`+`emit_channel_increment`+`emit_channel_update` | data-ready + channel 行 | `channel`+`channel_event_cursor` | M |
+| [x] | 4.1 hello 全量增量 | (WS hello 自动)/`channels/load/increment` | `partials/8 http.rs:25`{timestamp,cursors:[{channelId,fromSeq}]} | `emit_channels_loaded`+`emit_channel_increment`+`emit_channel_update` | data-ready + channel 行 | `channel`+`channel_event_cursor` | M |
 
 ## 阶段 1 · 建频道（产出可发消息容器）
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |

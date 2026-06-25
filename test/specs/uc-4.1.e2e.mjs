@@ -95,12 +95,41 @@ describe('UC-4.1 · hello 全量增量（四面契约·就绪根）', () => {
       },
       { timeout: 15000, interval: 200, timeoutMsg: 'CL 区无 channel 行（断在 im:channel:increment→store.channels→DOM）' }
     );
-    CHANNEL_ID = await browser.execute(
-      () =>
-        document.querySelector('[data-channel-id]')?.getAttribute('data-channel-id') ?? null
+
+    // —— 锚频道选取：优先取批量 channels/load/increment 出站 cursors[0].channelId（保证 ①②④ 都覆盖该
+    //    频道·该批请求确实请求了它的增量），并要求它已在 DOM 渲染（③）。批请求覆盖 67 个有 cursor 行的
+    //    频道，全部有 ② increment + ④ upsert + DOM 渲染——锚到它使四面真收敛于一个真实频道。
+    //    无批请求 / 锚频道未渲染时回退 DOM 首行（诚实退化·非放水）。
+    const jsonlEarly = readFileSync(RUN_JSONL, 'utf8');
+    let anchorFromBatch = null;
+    for (const line of jsonlEarly.split('\n')) {
+      if (!line.trim()) continue;
+      let ev;
+      try { ev = JSON.parse(line); } catch { continue; }
+      if (ev.uc_id !== EXPECT.ucId) continue;
+      if (ev.facet !== 'outbound' || ev.hop !== 'http-req') continue;
+      const url = String(ev.payload?.url ?? '');
+      const cursors = ev.payload?.body?.cursors;
+      if (url.endsWith('channels/load/increment') && Array.isArray(cursors) && cursors[0]) {
+        anchorFromBatch = cursors[0].channelId ?? cursors[0].channel_id ?? null;
+        if (anchorFromBatch) break;
+      }
+    }
+    const renderedFirst = await browser.execute(
+      () => document.querySelector('[data-channel-id]')?.getAttribute('data-channel-id') ?? null
     );
+    // 锚频道必须已在 DOM 渲染（③ 真有行）；批锚未渲染则退 DOM 首行。
+    if (anchorFromBatch) {
+      const rendered = await browser.execute(
+        (id) => !!document.querySelector(`[data-channel-id="${id}"]`),
+        anchorFromBatch
+      );
+      CHANNEL_ID = rendered ? anchorFromBatch : renderedFirst;
+    } else {
+      CHANNEL_ID = renderedFirst;
+    }
     expect(CHANNEL_ID).toBeTruthy();
-    console.log(`[UC-4.1 DOM] 目标 channelId=${CHANNEL_ID}`);
+    console.log(`[UC-4.1 DOM] 目标 channelId=${CHANNEL_ID}（批锚=${anchorFromBatch ?? 'n/a'}·DOM 首行=${renderedFirst}）`);
 
     const domFacet = await readChannelDom(CHANNEL_ID);
 
@@ -128,9 +157,7 @@ describe('UC-4.1 · hello 全量增量（四面契约·就绪根）', () => {
     // ③ DOM：data-ready=true + channel 行 data-channel-id 非空。
     expect(report.facets.dom.ok).toBe(true);
     // ① 出站：channels/load/increment body 形态（camelCase·cursors）。
-    //    ⚠️ batch-outbound 无单 channel corr_key → 当前 reducer 抽不到 ch、不进目标束 → 预期红
-    //    （见 expect.outbound._note）。断言保留以诚实暴露结构 gap（C011 出账·非 tautology 放水）；
-    //    人审落地 reducer batch 面 / 装饰器 cursors 探针后转绿。
+    //    batch-outbound 经 reducer batch fallback 归锚 ch 束（cursors 覆盖锚 ch → 命中），转绿。
     expect(report.facets.outbound.ok).toBe(true);
   });
 });

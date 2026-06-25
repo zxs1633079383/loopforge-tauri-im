@@ -61,6 +61,26 @@ console.log('· corr-key 领域规则');
   const d = extractDims({ channelId: 'c', temporaryId: 't', id: '' });
   eq(d.sid, undefined, 'send body id:"" 不抽成 sid');
   eq(keyOf({ foo: 1 }), null, '无领域维 → null');
+  // UC-4.1 ④ storage channel 落库：payload {id, op:batch_upsert, table:'channel', rows}。
+  // channel 表主键 id == channelId（非 server post id）→ 必抽成 ch，使 ④ 与 ② im:channel:increment
+  // （ch=...）同束。若仍抽 sid 则 ②(ch) 与 ④(sid) 异维不聚 → UC-4.1 ④ 永红（机器件归一缺陷）。
+  const chStore = extractDims({ id: 'a1rz6', op: 'batch_upsert', table: 'channel', rows: 1 });
+  eq(chStore.ch, 'a1rz6', 'table=channel 的 id 抽成 ch（非 sid）');
+  eq(chStore.sid, undefined, 'table=channel 的 id 不再抽成 sid');
+  ok(
+    sameEvent({ ch: 'a1rz6' }, extractDims({ id: 'a1rz6', table: 'channel' })),
+    'sameEvent: ② im:channel:increment(ch) 与 ④ channel 落库(id→ch) 聚同束'
+  );
+  // 回归：message/post 落库（table=message）的 id 仍是 server post id → 抽 sid（不受影响）。
+  const msgStore = extractDims({ id: 's7', op: 'batch_upsert', table: 'message', rows: 1 });
+  eq(msgStore.sid, 's7', 'table=message 的 id 仍抽 sid（回归保护）');
+  eq(msgStore.ch, undefined, 'table=message 的 id 不抽 ch');
+  // 回归：post echo（含 channel_id + id）id 仍是 sid（table 不为 channel）。
+  eq(
+    keyOf({ action: 'post', data: { channel_id: 'c2', id: 's7' } }),
+    'ch=c2;sid=s7',
+    'post echo {channel_id,id} 不受 channel-table 规则影响'
+  );
   // sameEvent：tmp 贯穿乐观→echo。
   ok(sameEvent({ tmp: 't', ch: 'c' }, { tmp: 't', sid: 's' }), 'sameEvent: 同 tmp 聚束');
   ok(!sameEvent({ tmp: 't1' }, { tmp: 't2' }), 'sameEvent: 异 tmp 不聚');
@@ -225,6 +245,66 @@ function mutateLine(jsonl, predicate, mutate) {
   );
   const rep = runFourFacet({ jsonl: broken, expect: EXPECT, dom: { ...DOM_GOOD, 'msg-id': 't-abc123' } });
   eq(rep.brokenAt, 'outbound', '断点取链路最早面（outbound 先于 dom）');
+}
+
+// ── UC-4.1 batch 出站归束（① 单批 channels/load/increment 覆盖 N 个 channel）─────────
+// UC-4.1 ① 是单条批量 sync 请求（body.cursors 带 N 个 channel），无单 channel corr_key。
+// 锚频道（DOM 渲染的 ch）的 ②④ 在自己束，但 ① 批请求 cursors[0] 可能是别的 channel →
+// reducer actualOutbound 须 fallback：目标束无 outbound 时，取窗口内 url=channels/load/increment
+// 且 cursors 含目标 ch 的批请求作 ①（faithful·该批请求确实请求了目标 ch 的增量）。
+console.log('· UC-4.1 batch 出站归束（① 批请求覆盖锚频道）');
+{
+  const CH = 'chTarget';
+  const OTHER = 'chOther';
+  const lines = [
+    // ① 批 sync 出站：cursors[0] 是 OTHER（≠ 锚），但 cursors 含锚 CH。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.1', facet: 'outbound', hop: 'http-req', seq: 1,
+      corr_key: `ch=${OTHER}`,
+      payload: { method: 'POST', url: 'http://x/api/cses/channels/load/increment',
+        body: { timestamp: 0, cursors: [{ channelId: OTHER, fromSeq: 0 }, { channelId: CH, fromSeq: 0 }] } } }),
+    // ② 锚频道增量投影。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.1', facet: 'projection', hop: 'projection', seq: 2,
+      corr_key: `ch=${CH}`,
+      payload: { event: 'im:channel:increment', data: { channel_id: CH, increment: { lastEventSeq: 5 } } } }),
+    // ④ 锚频道落库（id==ch·table=channel）。
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.1', facet: 'storage', hop: 'storage', seq: 3,
+      corr_key: `ch=${CH}`,
+      payload: { id: CH, op: 'batch_upsert', table: 'channel', rows: 1 } }),
+  ].join('\n');
+  const expect41 = {
+    ucId: 'UC-4.1',
+    corrAnchor: { ch: CH },
+    outbound: { method: 'POST', urlEndsWith: 'channels/load/increment',
+      bodyFields: { timestamp: '*', cursors: '*' }, bodyForbidden: ['channel_id', 'from_seq'] },
+    projection: { event: 'im:channel:increment', dataKeys: ['channel_id', 'increment'] },
+    storage: { op: 'batch_upsert', table: 'channel', minRows: 1 },
+    dom: { dataAttrs: { ready: 'true', 'channel-id': '*' } },
+  };
+  const dom = { ready: 'true', 'channel-id': CH };
+  const rep = runFourFacet({ jsonl: lines, expect: expect41, dom });
+  ok(rep.facets.projection.ok, '② 锚 ch 增量投影绿');
+  ok(rep.facets.storage.ok, '④ 锚 ch 落库（id→ch）绿');
+  ok(rep.facets.dom.ok, '③ DOM 绿');
+  ok(rep.facets.outbound.ok, '① 批请求 fallback：cursors 含锚 ch → 归 ① 绿');
+  ok(rep.green, `UC-4.1 四面全绿（实 brokenAt=${rep.brokenAt} :: ${rep.summary}）`);
+
+  // 可证伪：批请求 cursors 不含锚 ch（且无单束 outbound）→ ① 红。
+  const lines2 = lines.replace(`{"channelId":"${CH}","fromSeq":0}`, '');
+  // 上面 replace 形态可能因 JSON.stringify 空格不命中——用对象级构造保证证伪有效。
+  const noCover = [
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.1', facet: 'outbound', hop: 'http-req', seq: 1,
+      corr_key: `ch=${OTHER}`,
+      payload: { method: 'POST', url: 'http://x/api/cses/channels/load/increment',
+        body: { timestamp: 0, cursors: [{ channelId: OTHER, fromSeq: 0 }] } } }),
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.1', facet: 'projection', hop: 'projection', seq: 2,
+      corr_key: `ch=${CH}`,
+      payload: { event: 'im:channel:increment', data: { channel_id: CH, increment: {} } } }),
+    JSON.stringify({ run_id: 'r', uc_id: 'UC-4.1', facet: 'storage', hop: 'storage', seq: 3,
+      corr_key: `ch=${CH}`, payload: { id: CH, op: 'batch_upsert', table: 'channel', rows: 1 } }),
+  ].join('\n');
+  const rep2 = runFourFacet({ jsonl: noCover, expect: expect41, dom });
+  eq(rep2.facets.outbound.ok, false, '可证伪：批请求 cursors 不含锚 ch → ① 红');
+  eq(rep2.brokenAt, 'outbound', '① 断点定位 outbound');
 }
 
 // ── 收尾 ─────────────────────────────────────────────────────────────────────

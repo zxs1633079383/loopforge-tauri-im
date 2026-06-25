@@ -15,6 +15,21 @@ use crate::tape::Tape;
 /// 静默/就绪期的伪 UC id（CLAUDE.md §3：窗口外帧不归任何真 UC）。
 pub const QUIESCENCE_UC: &str = "__quiescence__";
 
+/// bootstrap UC 环境变量名。UC-4.1（hello 全量增量「就绪根」）的自驱增量在 app 启动即流过——
+/// 早于 e2e before-hook 的 `set_uc('UC-4.1')` → 默认全归 `__quiescence__`，reducer 按 uc_id 过滤
+/// 抽空 → ②④ 永红（非数据缺陷·是 set_uc 时序晚于 hello 的机器件归属问题）。
+/// run.sh 跑 UC-4.1 spec 时 export `LOOPFORGE_BOOTSTRAP_UC=UC-4.1`，使 bootstrap hello hop 归 UC-4.1；
+/// 其余 UC 不设此 env → 仍默认 `__quiescence__`（不污染发送族窗口语义）。
+pub const BOOTSTRAP_UC_ENV: &str = "LOOPFORGE_BOOTSTRAP_UC";
+
+/// 读 bootstrap UC（env `LOOPFORGE_BOOTSTRAP_UC`，缺省 [`QUIESCENCE_UC`]）。
+fn bootstrap_uc() -> String {
+    std::env::var(BOOTSTRAP_UC_ENV)
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| QUIESCENCE_UC.to_string())
+}
+
 #[derive(Clone)]
 pub struct InstrumentCtx {
     inner: Arc<CtxInner>,
@@ -33,7 +48,7 @@ impl InstrumentCtx {
         Self {
             inner: Arc::new(CtxInner {
                 run_id: run_id.into(),
-                uc: Mutex::new(QUIESCENCE_UC.to_string()),
+                uc: Mutex::new(bootstrap_uc()),
                 mode,
                 log,
                 tape: Mutex::new(tape),

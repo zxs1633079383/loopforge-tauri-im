@@ -41,6 +41,21 @@ function pickFrom(obj, keys) {
  * `sid` 的空串特殊处理：outbound send body 的 `id:""` 不算 server_id（发送时 server 未分配）。
  */
 export function extractDims(payload) {
+  // 表感知归一（UC-4.1 ④ storage channel 落库）：channel 表主键 `id` == channelId（非 server
+  // post id）→ 必抽成 ch 而非 sid，使 ④ 与 ② im:channel:increment（ch 锚）同束。
+  // 判据：payload.table === 'channel' 且无独立 channel_id（落库 payload {id,op,table,rows} 形态）。
+  // 不影响 post echo（{channel_id,id} → id 仍 sid）与 message 落库（table=message → id 仍 sid）。
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    payload.table === 'channel' &&
+    typeof payload.id === 'string' &&
+    payload.id.length > 0 &&
+    payload.channel_id === undefined &&
+    payload.channelId === undefined
+  ) {
+    return { ch: payload.id };
+  }
   const probes = [
     payload,
     payload?.data,
@@ -108,6 +123,11 @@ export function sameEvent(a, b) {
   if (a.tmp && b.tmp) return a.tmp === b.tmp;
   if (a.sid && b.sid) return a.sid === b.sid;
   if (a.ch && b.ch && a.seq && b.seq) return a.ch === b.ch && a.seq === b.seq;
+  // UC-4.1 纯频道事件（hello 增量）：②投影 + ④落库都只有 ch（无 tmp/sid/seq）→ 按 ch 聚。
+  // 仅当**两侧都无 tmp/sid/seq**（纯频道范围）才走 ch-only，避免把同频道多条 post（带 tmp/sid）误并。
+  const aScoped = !a.tmp && !a.sid && !a.seq;
+  const bScoped = !b.tmp && !b.sid && !b.seq;
+  if (a.ch && b.ch && aScoped && bScoped) return a.ch === b.ch;
   return false;
 }
 

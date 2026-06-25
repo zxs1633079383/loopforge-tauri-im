@@ -101,6 +101,21 @@ pub fn extract_corr_key(payload: &Value) -> Option<String> {
         Some(parts.join(";"))
     };
 
+    // 表感知归一（UC-4.1 ④ storage channel 落库）：channel 表主键 `id` == channelId（非 server
+    // post id）→ 必抽成 ch 而非 sid，使 ④ 与 ② im:channel:increment（ch 锚）同束。
+    // 判据：payload.table == "channel" 且无独立 channel_id（落库 payload {id,op,table,rows} 形态）。
+    // 与 reducer corr-key.mjs::extractDims 表感知规则对齐（spec §2 抽键须两侧同步）。
+    if payload.get("table").and_then(|t| t.as_str()) == Some("channel")
+        && payload.get("channel_id").is_none()
+        && payload.get("channelId").is_none()
+    {
+        if let Some(id) = payload.get("id").and_then(|v| v.as_str()) {
+            if !id.is_empty() {
+                return Some(format!("ch={id}"));
+            }
+        }
+    }
+
     if let Some(k) = probe(payload) {
         return Some(k);
     }
@@ -147,6 +162,21 @@ mod tests {
     #[test]
     fn none_when_no_keys() {
         assert_eq!(extract_corr_key(&json!({"foo": 1})), None);
+    }
+
+    #[test]
+    fn channel_storage_id_extracts_as_ch_not_sid() {
+        // UC-4.1 ④：channel 落库 payload {id, op, table:'channel', rows}。
+        // id == channelId（非 server post id）→ 抽 ch，使 ④ 与 ② im:channel:increment(ch) 同束。
+        let p = json!({"id": "a1rz6", "op": "batch_upsert", "table": "channel", "rows": 1});
+        assert_eq!(extract_corr_key(&p).as_deref(), Some("ch=a1rz6"));
+    }
+
+    #[test]
+    fn message_storage_id_still_sid() {
+        // 回归：message 落库 id 仍是 server post id → 抽 sid（table != channel）。
+        let p = json!({"id": "s7", "op": "batch_upsert", "table": "message", "rows": 1});
+        assert_eq!(extract_corr_key(&p).as_deref(), Some("sid=s7"));
     }
 
     #[test]
