@@ -819,9 +819,17 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // ═══ MB 成员区交互件（占位骨架）═══
 
-  /** UC-6.4 成员快照/全量。占位 → 接成员快照投影。 */
+  /**
+   * UC-6.4 成员快照/全量（读族·按 channelIds 拉成员·自愈）：channelId=当前活动频道 →
+   * store.loadMembersByIds（invoke im_members_by_ids → 出站 channels/member/byIds
+   * {channelIds:[活动频道]}）。读族无 WS 回声·成员靠 helix `im:read:result{req_id, body}` 透传回灌
+   * （body=map[channelId][]IdWithCompanyExt）驱动 MB 区渲染（data-member-count）。无活动频道 → 不发。
+   * e2e 走 bridge 直 invoke 注入真实 channelIds/reqId 覆盖此 UI 便捷路径。
+   */
   onLoadMembers(): void {
-    /* UC-6.4 接通 */
+    const channelId = this.store.activeChannel();
+    if (!channelId) return;
+    void this.store.loadMembersByIds([channelId]);
   }
 
   /** UC-6.1 拉/踢人。占位 → 接 add/remove member。 */

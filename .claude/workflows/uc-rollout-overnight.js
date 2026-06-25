@@ -39,6 +39,9 @@ const DISCIPLINE = `
 2. **改测试机器件**(reducer/装饰器/seed·非冻结 oracle·允许改)：如 ① batch 出站无单 channel corr_key → 装饰器 \`crates/helix-driver-instrument/src/event.rs\` extract_corr_key 加 \`body.cursors[0].channelId\` 探针归束(契约 URL+body-shape 没变=不算改契约)。
 3. **改冻结契约**(最后手段·需确凿证据该 expect 本身错)：可改但 commit body 必写「契约变更提案+证据(run.jsonl)」。
 
+## 暖栈常驻（red→green 内循环秒级·别每轮 down/cold-boot）
+ng(1420)+app(4445) 一次起常驻·跨多次 wdio 复用：\`bash scripts/harness.sh up\`(幂等·已健康复用)。**暖 spec ~3s**(vs 冷启 run.sh 10-16min)。规矩：仅改 spec/expect/reducer → \`harness.sh spec <uc-id>\`(不 reload·秒级)；改了 Rust/Angular → \`harness.sh reload-app\`(只重起 app·ng 不动·~30-60s)再 \`spec\`；UC-4.1 cursor 重置 → \`reload-app --uc4.1\`。**别 \`harness.sh down\`**(留给级联续跑)；run.sh 仅留作单次冷启 CI 兜底。run.jsonl 末行残缺(常驻并发追加产物)已由 reducer torn-line 容忍放过(不否决绿·守 C008 仅放末行)。
+
 ## 铁律
 - **冻结 oracle 永不为绿而改**：\`test/expect/*.expect.json\` / projection-schema / 真机curl真源 / golden tape。**可改机器件**：reducer four-facet-reducer.mjs / 装饰器 extract_corr_key / seed·cursor 脚本 / 渲染壳 / helix 引擎实现。绿由 reducer 裁定(C009)。
 - **确认即修+验证**：红→四段日志(${RUNBOOK} §6.1)定位哪一端→loopforge/helix/reducer/装饰器/环境缺陷就**改+复跑验证**(helix 在 /Users/mac28/workspace/rustWorkspace/helix 改+commit·不 merge 主线)。go-server 默认对。
@@ -61,8 +64,8 @@ function ucPrompt(uc) {
 1. \`gh issue view ${uc.n} --comments\` 读四面锚点 + Angular 需求 + Blocked by（blocker 未绿先做 blocker 再回本 UC；blocker 已 CLOSED 视为绿可直接推进·别再标 blocked 退路）。
 2. **若无** test/expect/uc-${uc.id}.expect.json + test/specs/uc-${uc.id}.e2e.mjs → 照 test/expect/uc-send-1.* 模板从冻结真源(helix 真机curl真源.md ① / projection-schema.md ②④)派生 author（契约只读·找不到 endpoint 标 ambiguity 别臆造）。
 3. 接最简 Angular UI：按 angular-ui-plan 往 #46 骨架绑数据/加交互件（加法式·事件配方法 C007）。
-4. \`for p in 1420 4445; do pid=$(lsof -ti tcp:$p); [ -n "$pid" ] && kill -9 $pid; done; pkill -f loopforge-tauri-im; sleep 1\`；改了 Rust 才 \`cargo build --manifest-path src-tauri/Cargo.toml\`。
-5. \`bash scripts/run.sh -- --spec test/specs/uc-${uc.id}.e2e.mjs\`（默认 seeded db）。
+4. **暖栈常驻**（别每轮 down/cold-boot·见 DISCIPLINE「暖栈」节）：\`bash scripts/harness.sh up\`（幂等·已健康则复用·不重起 ng+app）确保 1420+4445 常驻。**改了 Rust/Angular** → \`bash scripts/harness.sh reload-app\`（只重起 app·cargo run 增量~秒级 boot~30-60s·ng 不动；UC-4.1 用 \`reload-app --uc4.1\` 重置 cursor）。仅改 spec/expect/reducer → **不 reload·直接下一步**。
+5. \`bash scripts/harness.sh spec ${uc.id}\`（暖跑·app 不重起·仅 wdio·~3s·默认 seeded db）。**红→改完机器件/壳后**：仅改 spec/expect/reducer 重跑 \`harness.sh spec ${uc.id}\`（秒级内循环）；改了 Rust/Angular 先 \`harness.sh reload-app\` 再 \`spec\`。
 6. 四面 reducer：**绿**→翻 docs/uc-coverage-ledger.md ✅ + 勾 docs/uc-rollout/rollout-checklist.md + \`gh issue close ${uc.n} --comment "四面全绿 corr_key=..."\` + \`bash scripts/gate.sh\` + commit → status=green。**红**→§6.1 四段日志定位 + 套「契约 vs 环境决策范式」**自决修到绿**(改环境/机器件/helix 实现·迭代复跑)。**禁 blocked/yellow 退路**——只有确凿 server-side 数据 gap(带 run.jsonl 证据)才 yellow，其余必修到四面真绿。覆盖核对：本 UC 的 HTTP/WS 都在 spec 里被实跑覆盖(对 coverage-crossmap.md)。
 ${uc.notes && uc.notes.includes('预期红') ? '   注：本 UC ① 预期红(acl fix 在 helix round3 不在 pin 的 round6)——可在 helix 仓 cherry-pick/移植该 fix 到 round6 后验证；移植不动则标 🟡 出 bug 报告。' : ''}
 7. 返回 UC_RESULT 结构。`

@@ -421,6 +421,74 @@ pub async fn im_get_reply_branch(
         .map_err(|e| format!("im_get_reply_branch: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-6.4 成员快照/全量·分支 A（按 channelIds 拉成员·自愈）：前端传 `channelIds`（≥1·≤200）+
+/// `reqId` → 本命令转 snake_case 入泵 `im_channels_members_by_ids`（helix-im `MembersByIdsCommand`
+/// 兑现出站 `POST channels/member/byIds {channelIds:[]}`·全 camelCase·真源 partial 2 §5 内联
+/// `{channelIds:[]string}`）。读族无 WS 回声：HTTP 200 响应体（map[channelId][]IdWithCompanyExt）经
+/// helix `read_relay::emit_read_result` 透传回灌 `im:read:result{req_id, body}`（projection-schema §1.2）。
+///
+/// 薄壳纪律：只翻译入参 + 入泵（channelIds 透传·body camelCase 化在 helix-im build）·本壳不臆造
+/// wire body；`req_id` 经 payload 透传（helix `module::read_req_id` 抠出注册回灌上下文）。
+#[tauri::command]
+pub async fn im_members_by_ids(
+    state: State<'_, AppState>,
+    channel_ids: Vec<String>,
+    req_id: String,
+) -> Result<(), String> {
+    if channel_ids.iter().all(|c| c.is_empty()) {
+        return Err("im_members_by_ids: channelIds 为空（非空字符串数组·1..200）".into());
+    }
+    if channel_ids.len() > 200 {
+        return Err("im_members_by_ids: channelIds 超 200（后端校验 len≤200）".into());
+    }
+    if req_id.is_empty() {
+        return Err("im_members_by_ids: reqId 为空（前端 bridge 须生成·回灌关联）".into());
+    }
+    let payload = serde_json::json!({
+        "channel_ids": channel_ids,
+        "req_id": req_id,
+    });
+    let tick = command("im_channels_members_by_ids", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_members_by_ids: 入泵失败（泵已退出？）：{e}"))
+}
+
+/// UC-6.4 成员快照/全量·分支 B（时间范围成员快照）：前端传 `channelId` + `startTime`/`endTime`
+/// （int64 毫秒·必填）+ `reqId` → 本命令转 snake_case 入泵 `im_channel_member_snapshot`（helix-im
+/// `MemberSnapshotCommand` 兑现出站 `POST channel/member/snapshot {channelId, startTime, endTime}`·
+/// 全 camelCase·真源 partial 2 §6 `entity.GetMembersSnapshotParam`·startTime/endTime int64）。同
+/// byIds 走 `im:read:result{req_id, body}` 透传回灌（body=[]GetMembersSnapshotDto·透传不冻结）。
+#[tauri::command]
+pub async fn im_member_snapshot(
+    state: State<'_, AppState>,
+    channel_id: String,
+    start_time: i64,
+    end_time: i64,
+    req_id: String,
+) -> Result<(), String> {
+    if channel_id.is_empty() {
+        return Err("im_member_snapshot: channelId 为空".into());
+    }
+    if req_id.is_empty() {
+        return Err("im_member_snapshot: reqId 为空（前端 bridge 须生成·回灌关联）".into());
+    }
+    let payload = serde_json::json!({
+        "channel_id": channel_id,
+        "start_time": start_time,
+        "end_time": end_time,
+        "req_id": req_id,
+    });
+    let tick = command("im_channel_member_snapshot", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_member_snapshot: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-5.1 创建群聊：前端传 `displayName` + `memberIds`（其他成员真实 userId 列表）→ 本命令按
 /// 真机curl真源 §4 拼 `channel/create` raw body 入泵 `im_create_channel`（helix-im
 /// `CreateChannelCommand` 透传 args 到 `POST /api/cses/channel/create`）。

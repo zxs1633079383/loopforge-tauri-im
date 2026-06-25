@@ -721,6 +721,63 @@ export class ImStoreService {
     return rid;
   }
 
+  /**
+   * UC-6.4 成员快照/全量·分支 A（按 channelIds 拉成员·自愈）：invoke('im_members_by_ids',
+   * {channelIds, reqId}）。
+   *
+   * **读族 request-response**：HTTP 200 响应体（map[channelId][]IdWithCompanyExt）即数据 → helix
+   * `read_relay::emit_read_result` 透传回灌 `im:read:result{req_id, body}`。endpoint
+   * channels/member/byIds + wire body camelCase 化（channelIds）全在 helix-im（MembersByIdsCommand）。
+   * 壳只供 channelIds（≥1·≤200）+ reqId（前端 bridge 生成·回灌关联）。返 reqId 供 e2e 等回灌关联。
+   */
+  async loadMembersByIds(
+    channelIds: string[],
+    reqId?: string,
+  ): Promise<string> {
+    const rid = (reqId ?? this.genReqId()).trim();
+    const ids = channelIds.filter((c) => !!c && c.trim());
+    if (ids.length === 0) return rid;
+    try {
+      await this.bridge.invoke<void>("im_members_by_ids", {
+        channelIds: ids,
+        reqId: rid,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（成员靠 im:read:result 投影驱动·无乐观合成）。
+    }
+    return rid;
+  }
+
+  /**
+   * UC-6.4 成员快照/全量·分支 B（时间范围成员快照）：invoke('im_member_snapshot',
+   * {channelId, startTime, endTime, reqId}）。
+   *
+   * 同 loadMembersByIds 走 `im:read:result{req_id, body}` 透传回灌（body=[]GetMembersSnapshotDto）。
+   * endpoint channel/member/snapshot + wire body camelCase 化（channelId/startTime/endTime·int64
+   * 毫秒）全在 helix-im（MemberSnapshotCommand）。壳只供 channelId + 时间窗 + reqId。
+   */
+  async loadMemberSnapshot(
+    channelId: string,
+    startTime: number,
+    endTime: number,
+    reqId?: string,
+  ): Promise<string> {
+    const rid = (reqId ?? this.genReqId()).trim();
+    const ch = channelId.trim();
+    if (!ch) return rid;
+    try {
+      await this.bridge.invoke<void>("im_member_snapshot", {
+        channelId: ch,
+        startTime,
+        endTime,
+        reqId: rid,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（快照靠 im:read:result 投影驱动·无乐观合成）。
+    }
+    return rid;
+  }
+
   /** 读族关联 id（req_id）生成器（非 wire 字段·仅前端 bridge↔回灌关联用·z-base-32 短 id）。 */
   private genReqId(): string {
     return `req-${Math.random().toString(36).slice(2, 12)}`;

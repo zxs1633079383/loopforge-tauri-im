@@ -19,23 +19,56 @@
 
 import { extractDims, dimsToKey, sameEvent, mergeDims, parseKey } from './corr-key.mjs';
 
-/** 解析 JSONL 文本 → HopEvent[]（跳空行；坏行收集进 parseErrors）。 */
+/**
+ * 解析 JSONL 文本 → HopEvent[]（跳空行；坏行收集进 parseErrors）。
+ *
+ * **torn-line 容忍（暖栈常驻并发产物·非放水）**：常驻 app 持续往 run.jsonl 追加（背景
+ * __quiescence__ hops），spec 读取时可能撞上「最后一行只写了一半」的并发产物（最后一个
+ * `\n` 还没落盘）。这类**末行残缺**是 append-only 文件 + 并发读的经典工件，不是真损坏 →
+ * 不计入 parseErrors 否决（否则四面全绿也会被「JSONL 解析 1 行坏」一票否决·假红）。
+ *
+ * 守可证伪（C008）：仅放过**最后一条非空行**且其后无任何可解析的非空行（即真·末尾）的坏行；
+ * 任何**非末行**的坏行（其后还有合法行 = 文件中段损坏，绝非并发末行）仍硬失败计入 parseErrors。
+ * torn 末行被放过时记入返回的 `tornLastLine`（透明可审·非静默吞）。
+ *
+ * @param {string} text run.jsonl 全文
+ * @returns {{events:Array<object>, parseErrors:Array<{line:number,raw:string,error:string}>, tornLastLine:({line:number,raw:string,error:string}|null)}}
+ */
 export function parseJsonl(text) {
   /** @type {Array<object>} */
   const events = [];
   /** @type {Array<{line:number,raw:string,error:string}>} */
-  const parseErrors = [];
+  const rawErrors = [];
   const lines = text.split('\n');
+  // 最后一条非空行的下标（torn 末行只可能是它）。无非空行则为 -1。
+  let lastNonEmptyIdx = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i] && lines[i].trim()) { lastNonEmptyIdx = i; break; }
+  }
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
     if (!raw || !raw.trim()) continue;
     try {
       events.push(JSON.parse(raw));
     } catch (e) {
-      parseErrors.push({ line: i + 1, raw, error: String(e?.message ?? e) });
+      rawErrors.push({ line: i + 1, raw, error: String(e?.message ?? e), _idx: i });
     }
   }
-  return { events, parseErrors };
+  // torn 末行甄别：坏行恰是最后一条非空行（其后只有空行/EOF）→ 并发末行残缺·放过。
+  /** @type {({line:number,raw:string,error:string}|null)} */
+  let tornLastLine = null;
+  /** @type {Array<{line:number,raw:string,error:string}>} */
+  const parseErrors = [];
+  for (const err of rawErrors) {
+    if (err._idx === lastNonEmptyIdx) {
+      // 末行残缺：剥掉内部 _idx，记入 tornLastLine（不否决绿）。
+      tornLastLine = { line: err.line, raw: err.raw, error: err.error };
+    } else {
+      const { _idx, ...clean } = err;
+      parseErrors.push(clean);
+    }
+  }
+  return { events, parseErrors, tornLastLine };
 }
 
 /**

@@ -793,6 +793,51 @@ console.log('· UC-5.3 关闭/退出群（channel/close 出站·im:channel:close
   eq(repNoOut.facets.outbound.ok, false, '可证伪：无 channel/close 出站 → ① 红');
 }
 
+// ── torn-line 容忍（暖栈常驻并发产物·守可证伪 C008）───────────────────────────
+//
+// 命题：常驻 app 持续往 run.jsonl append（背景 __quiescence__ hops），spec 读时可能撞「末行只写一半」
+// 的并发产物。parseJsonl 须**只**放过末行残缺（不否决绿），中段坏行仍硬失败（真损坏·非并发末行）。
+
+console.log('· torn-line 容忍（暖栈并发末行）');
+{
+  const GOOD = SAMPLE.trimEnd();            // 完整金标束（末行完整）
+  const goodLines = GOOD.split('\n');
+
+  // 绿对偶 1：完整束之后追一条**半截**末行（并发写到一半·无法 parse·真·末尾）。
+  const HALF_LINE = '{"run_id":"r","uc_id":"UC-x","facet":"outbound","hop":"http-req","payl';
+  const tornTail = GOOD + '\n' + HALF_LINE;
+  const pTorn = parseJsonl(tornTail);
+  ok(pTorn.parseErrors.length === 0, 'torn 末行：parseErrors 空（不否决绿）');
+  ok(pTorn.tornLastLine != null, 'torn 末行：记入 tornLastLine（透明可审·非静默吞）');
+  eq(pTorn.events.length, goodLines.length, 'torn 末行：前面合法行全部保留（events 不丢）');
+
+  // 绿对偶 2：完整四面束 + 一条 torn 末行 → runFourFacet 仍判全绿（torn 不再一票否决）。
+  const tornAnchor = { ...EXPECT, corrAnchor: { tmp: 't-abc123' } };
+  const repTorn = runFourFacet({ jsonl: tornTail, expect: tornAnchor, dom: DOM_GOOD });
+  ok(repTorn.green, `torn 末行：四面束仍全绿（brokenAt=${repTorn.brokenAt} :: ${repTorn.summary}）`);
+  ok(repTorn.parseErrors.length === 0, 'torn 末行：runFourFacet.parseErrors 空');
+
+  // 可证伪对偶 a：中段坏行（坏行后还有合法非空行）→ 真损坏·必计入 parseErrors·否决绿。
+  const midCorrupt = [
+    goodLines[0],
+    '{"run_id":"r","uc_id":"UC-x" BROKEN HALF LINE',   // 中段坏行（其后有合法行）
+    ...goodLines.slice(1),
+  ].join('\n');
+  const pMid = parseJsonl(midCorrupt);
+  ok(pMid.parseErrors.length === 1, '可证伪：中段坏行计入 parseErrors（非末行·不放过）');
+  ok(pMid.tornLastLine == null, '可证伪：中段坏行不误判为 torn 末行');
+  const repMid = runFourFacet({ jsonl: midCorrupt, expect: tornAnchor, dom: DOM_GOOD });
+  eq(repMid.green, false, '可证伪：中段坏行 → runFourFacet 否决绿（parse 红·守 C008）');
+
+  // 可证伪对偶 b：末行后若再追一条合法行 → 原「末行」不再是末行 → 它若坏则计入 parseErrors。
+  const tornThenGood = midCorrupt;          // 已覆盖（坏行非末行）；显式再断一次末行甄别边界：
+  const lastIsGood = GOOD + '\n' + goodLines[0];   // 两条合法行·无坏行
+  const pClean = parseJsonl(lastIsGood);
+  ok(pClean.parseErrors.length === 0 && pClean.tornLastLine == null,
+    '边界：全合法（含合法末行）→ parseErrors 空 + 无 torn 误报');
+  void tornThenGood;
+}
+
 // ── 收尾 ─────────────────────────────────────────────────────────────────────
 
 console.log('');

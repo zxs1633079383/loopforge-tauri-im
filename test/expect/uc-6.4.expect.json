@@ -1,0 +1,61 @@
+{
+  "$schema-note": "四面期望文件 (UC-6.4 成员快照/全量) — 读族 oracle（只读契约·contract-readonly-autofix.md §1）。读族 (request-response 传输·HTTP 体即数据·无 WS 回声) 断面退化为 ①②：① outbound HTTP wire body（channels/member/byIds · channel/member/snapshot）逐字检（urlEndsWith + bodyFields camelCase + bodyForbidden 禁 snake 泄漏）；② projection envelope（im:read:result {req_id, body} 外层键集 + req_id 锚本次 invoke）。③ DOM / ④ storage = N/A（读路径无 write 驱动 DOM·成员自愈落库由 helix 内部按 body 兑现·装饰器不暴露·reducer runFourFacetRead 不裁定）。两 endpoint 各一份 flat 子期望（e2e 每个 it 块在独立 set_uc 窗口跑一个·reducer runFourFacetRead 裁定）。",
+  "ucId": "UC-6.4",
+  "title": "成员快照/全量（读族 request-response·断面 ①②）",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/full-map/partials/2--backend-http-channel-sync.md §5 channels/member/byIds (内联 {channelIds:[]string}·len≤200) · §6 channel/member/snapshot (entity.GetMembersSnapshotParam {channelId, startTime:int64, endTime:int64})；helix outbound/channel_read.rs MembersByIdsCommand / MemberSnapshotCommand 实证 wire body 全 camelCase（channelIds / channelId+startTime+endTime）",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1.2 read_relay::emit_read_result (im:read:result {req_id, body})",
+    "dom": "N/A (读族无 write 驱动 DOM 契约面·data-member-count 由前端从透传 body 抽成员渲染·非冻结契约面)",
+    "storage": "N/A (成员自愈落库 channel_member 由 helix 按 byIds 响应体内部兑现·装饰器 facet④ 不暴露读路径 self-heal·reducer 不裁定 ④)"
+  },
+
+  "corrAnchor": {
+    "note": "读族无四维领域键（byIds outbound wire body 携 channelIds[]·snapshot 携 channelId+时间窗·非 ch/tmp/sid 别名抽键；projection req_id 由 e2e invoke 时生成·经 bridge 透传·helix module::read_req_id 抠出注册回灌上下文）。reducer runFourFacetRead 在 set_uc 窗口内按 endpoint 找 ① 出站·按 req_id 锚 ② 投影。req_id 由 e2e 注入到 runFourFacetRead({reqId})。",
+    "req_id": null
+  },
+
+  "membersByIds": {
+    "_note": "① channels/member/byIds endpoint 子期望（flat·reducer diffOutbound 直消费）。wire body 真源 partial 2 §5：内联 {channelIds:[]string}（len 1..200）→ data=map[channelId][]IdWithCompanyExt。helix outbound/channel_read.rs MembersByIdsCommand 实证 json!({\"channelIds\": channel_ids})·全 camelCase。bodyForbidden 锚 snake 泄漏（channel_ids）+ 单数误写（channelId）。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "channels/member/byIds",
+      "bodyFields": {
+        "channelIds": "*"
+      },
+      "bodyForbidden": ["channel_ids", "channelId", "channel_id"]
+    },
+    "projection": {
+      "event": "im:read:result",
+      "dataKeys": ["req_id", "body"],
+      "_note": "projection-schema §1.2：读族回灌外层恒 {req_id, body}（成功）。body = 后端 byIds 响应体原样透传（map[channelId][]IdWithCompanyExt）·inner 不冻结（前端直消费抽成员）。键集 = 2 键严格对齐（多/缺即红）。"
+    }
+  },
+
+  "memberSnapshot": {
+    "_note": "① channel/member/snapshot endpoint 子期望。wire body 真源 partial 2 §6：entity.GetMembersSnapshotParam {channelId, startTime:int64, endTime:int64}（startTime/endTime *int64 Validate 非 nil·前端传毫秒数）。helix outbound/channel_read.rs MemberSnapshotCommand 实证 json!({\"channelId\":..., \"startTime\":int, \"endTime\":int})·全 camelCase。bodyForbidden 锚 snake 泄漏（channel_id/start_time/end_time）。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "channel/member/snapshot",
+      "bodyFields": {
+        "channelId": "*",
+        "startTime": "*",
+        "endTime": "*"
+      },
+      "bodyForbidden": ["channel_id", "start_time", "end_time", "channelIds"]
+    },
+    "projection": {
+      "event": "im:read:result",
+      "dataKeys": ["req_id", "body"],
+      "_note": "同 membersByIds·读族回灌外层恒 {req_id, body}。body = getMembersSnapshot 响应体透传（[]GetMembersSnapshotDto {userIds, startTime, endTime}）·inner 不冻结。"
+    }
+  },
+
+  "storage": {
+    "_note": "N/A (读路径)。成员自愈落库 channel_member 由 helix 按 byIds 响应体内部兑现·装饰器 facet④ 不暴露读路径 self-heal write。reducer runFourFacetRead 不裁定 ④ 面。"
+  },
+
+  "dom": {
+    "_note": "N/A (读族无 write 驱动 DOM 契约面)。MB 区 data-member-count 由前端从透传 body 抽成员后渲染（store.members().length）·属前端渲染非冻结契约面·reducer 不裁定 ③ 面。"
+  }
+}
