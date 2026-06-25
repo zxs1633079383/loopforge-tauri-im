@@ -68,15 +68,15 @@
 - **③ DOM**：`<div data-msg-id data-temporary-id data-channel-id data-event-seq data-send-status data-read-bits>`；乐观插入 `data-msg-id=temporaryId` + `data-send-status=sending` → echo 覆写 `data-msg-id=server_id` + `data-send-status=sent` + 补 `data-event-seq`。
 - **④ 落库**：`message` 表 1 行（PK=`temporary_id`，id=server_id，`read_bits` 预置）+ `channel_event_cursor` 推进（单调不回退）。
 
-### UC-3.1 会话已读 — `🟡 ①③ four-facet-verified · ②④ server-data-gap（多设备 echo）`（2026-06-25 实跑·认领 S/M）
+### UC-3.1 会话已读 — `🟡 ①③ four-facet-verified · ②④ L2-facet（post_read 推发送者·须 L2 #47）`（2026-06-25 实跑·认领 S/M）
 
 > 实证：`run.sh -- --spec test/specs/uc-3.1.e2e.mjs` → `✅ 四面报告全绿`（spec pass·①③ 严格断言绿 + ②④ 确认 server-data-gap·带 run.jsonl 证据 + 可证伪护栏断缺席）。接线：壳 `im_read_channel`（channelId → 包 `channels:[{id}]` 入泵 `im_channels_view`·会话级·非 UC-3.2 的 posts 单条）+ 前端 `store.readChannel` + header `已读` 按钮（C007 配 `onReadChannel`）+ 消息行 `data-read-bits`（既有渲染路径·复用 fat 集）。装饰器 `extract_corr_key` 增 `body.channels[0].id→ch` 探针（channels/view 出站经 ch 与 ②④ 聚束·契约 URL+body-shape 不变·机器件归一）。
 
 - **① 出站 HTTP**：`POST /api/cses/channels/view`，body `{channels:[{id}]}`（fire-and-forget·真源 full-map/partials/6:139 `onChannelRead`）。✅ **实跑绿**（Go 返 `viewChannel success`·已写 channelmembers.last_read_seq·corr_key `ch=…` 经 channels[0].id 探针归束）。曾误判为 `post/read{channelId}`（区间模式）被 Go 拒 `post read is empty`·回正 channels/view。
 - **① WS 推送（read echo）**：action=`post_read`（type=6）·data.postId + readMap/readBits + seq。
-- **② 投影**：`im:post:read`（**fat**·同 `emit_post_received` 完整集）。🟡 **server-data-gap（多设备 echo）**：read echo `event_type=6` 是**多设备 echo**（partials/6:140）——server 写 last_read_seq 后只广播给该用户**其他**设备，**不回灌发起读的本连接**。L1 单账号单连接夹具无 `im:post:read` 产出。run.jsonl 证据：channels/view 返 200 `viewChannel success`·但全 run（UC-3.1 + send + quiescence 窗口）**零** post_read/type6/readMap 帧。须 **L2 双账号/多设备**（A 在设备1 读 → 设备2/账号B 收 echo）复跑转绿。
+- **② 投影**：`im:post:read`（**fat**·同 `emit_post_received` 完整集）。🟡 **L2-facet（结构性单账号造不出·须 L2 #47）**：read echo `post_read`(event_type=6) 推给**消息的发送者**——当**别人已读了发送者的消息**时（partials/6:140·非自读回执·非多设备 echo）。L1 单账号单连接无第二账号去读本账号消息 → 结构上无 `im:post:read` 产出。run.jsonl 证据：channels/view 返 200 `viewChannel success`·但全 run（UC-3.1 + send + quiescence 窗口）**零** post_read/type6/readMap 帧。须 **L2 双账号**（B 读 A 消息 → A 收 post_read·追踪 issue #47）复跑转绿。
 - **③ DOM**：`data-read-bits`（self 位）。✅ **实跑绿**（壳纯渲染·send echo `im:post:received` fat 集已置 self read bit·无前端算·projection-schema §3）。
-- **④ 落库**：`message.read_bits` 单调覆盖。🟡 **server-data-gap（同 ②·待 L2·依赖 post_read echo 落 read_bits）**。
+- **④ 落库**：`message.read_bits` 单调覆盖。🟡 **L2-facet（同 ②·依赖 post_read echo 落 read_bits·须 L2 #47）**。
 
 ### UC-3.2 单条已读 — `🟡 ①③ four-facet-verified · ②④ L2-facet（post_read 推发送者·须 L2 #47）`（2026-06-25 实跑·认领 S）
 

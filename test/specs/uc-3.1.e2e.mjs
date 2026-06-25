@@ -194,14 +194,15 @@ describe('UC-3.1 · 会话已读回执 round-trip（四面契约）', () => {
     // ③ DOM：目标行 data-read-bits 非空（self 位·send echo fat 集驱动·壳纯渲染）。
     expect(report.facets.dom.ok).toBe(true);
 
-    // —— ②④ = L2 多设备面（单连接结构性不可观测·非 bug·run.jsonl 证据见下）——
-    // 真源 partials/6:140：read echo `event_type=6` 是**多设备 echo**——server 写 last_read_seq 后只
-    // 广播给该用户**其他**设备/连接，**不回灌发起读的本连接**。L1 单账号单连接 e2e：channels/view
-    // 成功（① 绿）但本连接收不到 post_read 回声 → 无 im:post:read 投影（②）→ 无 read echo 落库（④）。
-    // 这是 server 多设备语义，非 helix/loopforge 缺陷。②④ 的真绿须 L2 双账号/多设备（CLAUDE.md §8.7）。
+    // —— ②④ = L2-facet（单账号结构性不可观测·非 bug·run.jsonl 证据见下）——
+    // 真源 partials/6:140（用户权威 2026-06-25）：read echo `post_read`(event_type=6) 推给**消息的
+    // 发送者**——当**别人已读了发送者的消息**时（非自读回执·非多设备 echo）。L1 单账号单连接 e2e
+    // 没有第二账号去读本账号消息 → channels/view 成功（① 绿）但本连接收不到 post_read（无第二人读它）
+    // → 无 im:post:read 投影（②）→ 无 read echo 落库（④）。这是 read-receipt 语义的结构性 L2 面，
+    // 非 helix/loopforge 缺陷。②④ 的真绿须 L2 双账号（B 读 A 消息 → A 收 post_read·追踪 issue #47）。
     //
     // 可证伪护栏（C008/C011·不橡皮章）：显式断言 read echo 确实缺席（projection/storage 红）——
-    // 证明 ②④ 是**真实 server 多设备 gap**而非被掩盖。若未来 server 改为回灌本连接（②④ 转绿），
+    // 证明 ②④ 是**真实 L2-facet**而非被掩盖。若未来 L1 夹具能造出 post_read（②④ 转绿），
     // 本断言会**翻红**，强制复核把 ②④ 升级为硬绿断言（gap 自愈即暴露·不留橡皮章假阴性）。
     expect(report.facets.projection.ok).toBe(false); // ② read echo 投影缺席（L2-pending·见上）
     expect(report.facets.storage.ok).toBe(false); // ④ read echo 落库缺席（L2-pending·见上）
