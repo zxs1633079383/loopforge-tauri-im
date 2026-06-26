@@ -29,10 +29,10 @@ loopforge 的 TS **只能做四件事**：
 
 | 禁区 | 现有违例 |
 |---|---|
-| 解析/重组 payload | `extractReplyIds` `extractReactions` `extractTemplateReceived` `applyMembersSnapshot` |
-| 合并/对账状态（tmp→server·upsert·dedup） | `applyMessageItem` `applyMemberUpdated` `applyMessagesQueryResult` `applyOlderLoaded` |
+| 解析/重组 payload | `extractReplyIds` `extractReactions` `extractTemplateReceived` ~~`applyMembersSnapshot`~~（S7 消灭） |
+| 合并/对账状态（tmp→server·upsert·dedup） | `applyMessageItem` ~~`applyMemberUpdated`~~（S7 消灭·extractMemberIds/memberChangeField 删） `applyMessagesQueryResult` `applyOlderLoaded` |
 | 归一 wire 格式 | `normalizeNotice` `normalizeIsTop` `toReadBits` |
-| 编码业务规则 | `role→admin`（CREATOR/MANGER→admin）· `isSystemNotice`(NOTICE 分类)· `unread++` |
+| 编码业务规则 | ~~`role→admin`（CREATOR/MANGER→admin）~~（S7 消灭·下沉 helix role_is_admin）· `isSystemNotice`(NOTICE 分类)· `unread++` |
 
 **试金石（逐行 TS 自问）**：「**如果 helix 已经把它整形好吐出来，这行还需要存在吗？**」答「不需要」→ 就是该搬进 helix 的债。
 
@@ -49,6 +49,7 @@ loopforge 的 TS **只能做四件事**：
 - **进度（S4 后·2026-06-26）**：精确闸门 grep（C013 §4 模式）**31 → 22 命中**（applyMessageItem 迁移·降 9·props-extract.ts 删除）；BOUND_GREEN 🟩 **1/19**（applyMessageItem）；纯绑定（含〜近纯）≈ 5/19 ≈ **26%**。剩余 2 个 `_rows().findIndex` 在 applyMessagesQueryResult/applyOlderLoaded（S6 行）。
 - **进度（S5 后·2026-06-26·issue #54）**：精确闸门 grep **22 → 17 命中**（applyDialogList 迁移·删 normalizeNotice/normalizeIsTop def+call 共 4 + 清 1 处陈旧注释）；helix dialogList 升 render-ready（8 终态键·helix 834af2a）；applyDialogList 退纯绑定（直绑 displayName/notice/isTop/createAt/unread/mention/lastMessage/urgent）+ applyChannelUpdateByPost 删 unread++（改触发 dialogList 重查·未读累加下沉 helix）+ CL 模板加 data-last-message/data-urgent/data-mention。BOUND_GREEN 🟩 **2/19**（+applyDialogList·UC-5.1/5.2/5.3/5.4/1.10 四面绿 + UC-4.1 CL render-ready DOM 实测 last-message/unread 直绑·真 HTTP+WS 零 mock）。UC-5.5 isTop 绑定经探针实证正确（top→'1'）但 auto im:channel:update 这会话未到达（后端 WS echo·非 S5 回归·见 NEED_HELIX.log）；UC-4.1/4.2 增量/gap 面需冷启 run.sh 种子（set_uc/hello 时序·orthogonal）。
 - **进度（S6 后·2026-06-26·issue #55）**：精确闸门 grep **17 → 15 命中**（消灭 applyMessagesQueryResult/applyOlderLoaded 的 2 个 `_rows().findIndex` 全表扫）；helix 升 render-ready（新 `render_ready::shape_message_rows`·读族 DB snake / wire camel 统一整形 + 批内去重保序·下沉 helix；`emit_post_sending` +text/type render-ready 乐观终态行·helix 255aeb1）；applyMessagesQueryResult/applyOlderLoaded/applyPostSending 三条退纯绑定（`bindRenderReadyRow` 1:1 + `upsertHistoryRow` **O(1) 锚 upsert** 替代 findIndex）。BOUND_GREEN 🟩 **3→6/19**（+applyMessagesQueryResult UC-2.1 四面 green×2·+applyOlderLoaded UC-2.2 ①② 读族 green×2·+applyPostSending UC-1.4 四面 green×2 + UC-send-1 六面 green×2）。UC-1.5 撤回连跑 2 次 1 绿 1 红（红在 ②投影/④落库「无投影 emit」= 后端 cses-im-server WS posts_update echo 非确定性到达·**非 S6 回归**·DOM `data-revoke=1` 两次都对·applyBatchUpdated wire 未动·见 `docs/migration/NEED_CSES_IM_SERVER_FIX.md`）。
+- **进度（S7 后·2026-06-26·issue #56）**：成员族禁区**全清零**——消灭 `applyMembersSnapshot`（byIds extract loop）+ `applyMemberUpdated`（四源 extractMemberIds/memberChangeField 合并）+ `role===CREATOR/MANGER/ADMIN`（admin 判定），三段 shaping 下沉 helix `render_ready_members`（helix 964d90d·新投影 `im:channel:members{memberId,nickname,admin,leaves}`·`role_is_admin` 统一判 raw+归一 role·byIds body 解析 + 双源 emit）。壳 `applyChannelMembers` 退**纯绑定**（keyed upsert + leaves 删行·同 S6 upsertHistoryRow）。分母 19→**18**（−applyMembersSnapshot −applyMemberUpdated +applyChannelMembers）。残留禁区 code-ref **5 条全为他 UC**（extractReplyIds=UC-2.4 replies ×3 / toReadBits=read bits ×2·成员族 0 命中）。BOUND_GREEN 🟩 **6→7/18**（+applyChannelMembers·UC-6.1/6.4 ②④ 契约面照旧绿 + ③ data-members/data-admin render-ready 直绑）。冻结契约零改：im:channel:member-updated{channel_id,channel} / im:read:result{req_id,body} / im:channel:memberNickname 三投影键集原样（额外 emit 新通道·C004 只读护栏不破）。
 - **辅助仪表（缺口版）**：本仓挂起的「helix 投影缺口」条目数 → 0（驱动去 helix 补，不是本仓补）。
 
 ---
@@ -81,9 +82,10 @@ loopforge 的 TS **只能做四件事**：
 | `applyChannelUpdate` 〜 | im:channel:update(thin) | CL 重查触发 | 〜 | upsert + 触发重查(发 IPC)·纯·依赖 backend WS echo |
 | `applyChannelUpdatePost` | im:post:received(channelUpdate) | CL displayName/notice | ❌ | UC-5.4 契约绑(props.field/content)·render-ready 路径已由 dialogList 重查覆盖·本路径留契约兼容 |
 | `applyScheduleCreated` | im:schedule:* | CL hasSchedule | ❌ | hasSchedule 终值 |
-| `applyMembersSnapshot` | im:read:result(byIds) | MB 行 | ❌ | **`im:channel:members` render-ready**（memberId/nickname/admin 成品·role→admin 在 helix 判） |
-| `applyMemberUpdated` | im:channel:member-updated | MB 行 | ❌ | render-ready 成员集（非 4 源抽 id 合并） |
-| `applyMemberNickname` | im:channel:memberNickname | MB 行 | ❌ | render-ready（本仓不 upsert 合并） |
+| ~~`applyMembersSnapshot`~~ ✅ | (删·并入 applyChannelMembers) | MB 行 | ✅ | **S7 已迁(#56)**：byIds body 解析 + role→admin 下沉 helix(render_ready_members)·壳删该函数 |
+| ~~`applyMemberUpdated`~~ ✅ | (删·并入 applyChannelMembers) | MB 行 | ✅ | **S7 已迁(#56)**：四源合并下沉 helix·壳删 extractMemberIds/memberChangeField |
+| **`applyChannelMembers`** 🟩 | im:channel:members(render-ready) | MB 行 | ✅ | **S7 新增(#56)**：helix 双源(WS member_update + byIds)吐 render-ready{memberId,nickname,admin,leaves}·壳纯绑定(keyed upsert + leaves 删行) |
+| `applyMemberNickname` | im:channel:memberNickname | MB 行 | 〜 | 已 keyed 单行 upsert·纯绑定（helix 该 WS 帧无全量名册·保留绑 memberNickname） |
 | `applyReadResult`(reply) | im:read:result(getReplies) | AX reply chip | ❌ | `im:channel:replies` render-ready id[] |
 | `applyTodoUpdated` | im:todo:updated | AX todo chip | ❌ | render-ready todo[]（本仓不 filter/抽） |
 

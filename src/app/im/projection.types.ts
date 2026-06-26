@@ -251,6 +251,24 @@ export interface MemberUpdatedData {
 }
 
 /**
+ * UC-6.1/6.4 成员族 render-ready 渲染通道（projection-schema §1.5·issue #56 S7·C013 纯渲染壳）。
+ * helix 把 `role→admin` 业务规则 + 四源/byIds 解析重组下沉后**额外**emit 的 render-ready 通道——
+ * 壳 `applyChannelMembers` 退**纯绑定**：按 `memberId` keyed upsert（直接赋 nickname/admin 成品）+
+ * `leaves` 删 MB 区成员行，零 extract / 零 role 判 / 零四源合并。双源：① WS channel_member_update
+ * （拉/踢人·members=四源+join render-ready·leaves=离场）② byIds 成员快照 HTTP 回报（载族自愈·leaves 空）。
+ * 冻结的 im:channel:member-updated{channel_id,channel} / im:read:result{req_id,body} 二投影原样保留
+ * （UC-6.1/6.4 ② 契约面照旧裁定）·本通道只供壳渲染绑定（非冻结契约面）。
+ */
+export const CHANNEL_MEMBERS_CHANNEL = "im:channel:members";
+
+/** im:channel:members data 形态（projection-schema §1.5·{channelId, members:[{memberId,nickname,admin}], leaves:[memberId]}）。 */
+export interface ChannelMembersData {
+  channelId: string;
+  members: { memberId: string; nickname?: string; admin?: boolean }[];
+  leaves: string[];
+}
+
+/**
  * UC-10.1 待办列表投影 channel（projection-schema 行 154 todo::emit_todo_updated）。
  * data 形态 = `{ items: [{ id, channel, post, type, canDel }] }`（外层 `{items}` 包裹·内层
  * channel/post = 后端 queryTodoList 返回 wire 对象原样透传·inner 不冻结·id/type/canDel 装配）。

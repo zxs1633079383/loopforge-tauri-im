@@ -23,3 +23,20 @@
 
 - 定时（UC-1.10）/ 部分 online 路径同样依赖后端 WS echo emit；echo 缺 → 投影面不可裁。loopforge 绑定逻辑
   做对即可，e2e 红归因后端 echo，不阻塞。
+
+## UC-6.1 拉/踢人（member/change → channel_member_update WS echo 不到达）
+
+- **现象（S7·issue #56·2026-06-26）**：`bash scripts/harness.sh spec 6.1` 连跑 3 次全红，断点恒为
+  `data-members 未含拉进的成员（断在 member/change→WS channel_member_update→投影→回读）`。
+  run.jsonl 仅见 ① outbound `POST channel/member/change` body `{channelId, joinUsers:[{id:445,...}]}`（正确），
+  **无** `channel_member_update` WS recv 帧、**无** `im:channel:member-updated` ② 投影、**无** `im:channel:members`
+  render-ready emit、**无** `channel_member` ④ 落库（run-app.log grep channel_member_update 全空）。
+- **归因**：拉/踢人走 `invoke im_channel_member_change → POST channel/member/change → 后端 cses-im-server
+  应广播 WS `channel_member_update` action`。该 WS echo **未到达**（与 UC-1.5 撤回 posts_update echo 同根因·
+  backend echo 非确定性/缺失）。**非 S7 渲染壳回归**——① 出站契约正确·loopforge 绑定（applyChannelMembers）+
+  helix（render_ready_members·emit_channel_members）逻辑已由 **UC-6.4 实证**（byIds 读族 → helix port_reply 解析 →
+  `im:channel:members` emit 含 memberId:444 → applyChannelMembers 渲染·run.jsonl 实帧）+ helix 5 单测验证。
+- **期望后端修**：member/change（join/leave）后 cses-im-server 必须**确定性**向频道成员广播 `channel_member_update`
+  WS 全量帧（含 memberChange.join/leave + 四源），合理时延内到达（与 update_channel_member_nickName echo 同等可靠·
+  后者 UC-6.3 reliably 到达·四面全绿）。
+- **当前状态**：loopforge/helix 侧绑定就绪（不 mock）。UC-6.1 保 `[~]`·待后端 channel_member_update echo 稳定即自动 ④③②绿。
