@@ -23,3 +23,15 @@
 # UC-4.1/4.2：增量(hello)/gap(sync) 面需冷启 run.sh + 种子(seed-behind-cursor)·set_uc 须前置引擎启动
 #   (LOOPFORGE_BOOTSTRAP_UC)·暖栈 spec 不复现该时序 → 此两 UC 的 ②①④ 面暖栈下不可裁(documented·orthogonal
 #   to S5)。CL render-ready DOM 面在 UC-4.1 已实测绿(last-message=lf-90uk02·unread=0·真 backend)。
+
+# === S6(issue #55) 收尾·quickReply cherry-pick abort 记账（best-effort·非阻塞）===
+# UC-1.8 反应（快捷回复 emoji）：fix/im-wire-body-build 的 parser.rs extract_post_fields 不读顶层
+#   quickReply → 投影 props 无反应数据。修复在 helix 别处 commit e1a9c99/bbbf809(功能：顶层 quickReply
+#   合并进 props.quickReply) + 5db0d15(结构外提 parser_post_props.rs 过行数闸)。
+# S6 试 cherry-pick 进 fix/im-wire-body-build（255aeb1 之上）：
+#   - e1a9c99 干净 apply（parser.rs 430→455）但单独留下 >430 破 structure-gate 债线
+#   - 5db0d15 **冲突**（helix-host-cli/src/main.rs 头收口与本分支状态冲突·解后 main.rs=316>300 破闸）
+#   → 按「冲突/破债线就 abort」铁律 abort 两个 cherry-pick·branch 回 255aeb1 干净。
+# 期望 B（helix 单写者）：把 quickReply 功能(e1a9c99) + 结构外提(5db0d15) 对 fix/im-wire-body-build
+#   重新 rebase 落地（host-cli main.rs 头收口须按本分支当前状态重做·别带 316 行版本）。落地后 S4 的
+#   resolve_reactions(props.quickReply) 即可吃到真数据 → UC-1.8 reactions 端到端通（消费侧已 render-ready）。

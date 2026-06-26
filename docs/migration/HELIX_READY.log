@@ -16,3 +16,6 @@
 2026-06-26T11:40:43Z	applyMessageItem	B	render-ready merged·helix 0396174 (feat/im-post-received-render-ready-rebased)·loopforge re-pin commit 1c1b4fe
 2026-06-26T13:12:15Z	applyDialogList	B	render-ready merged·helix 834af2a (fix/im-wire-body-build·dialogList 8 终态键)·loopforge re-pin feat/s5-channel-list-bind(Cargo.lock #834af2a3)
 2026-06-26T13:12:15Z	applyChannelUpdateByPost	B	render-ready merged·helix 834af2a(unread 终值下沉 unread_count)·loopforge re-pin feat/s5
+2026-06-26T13:44:27Z	applyMessagesQueryResult	B	render-ready merged·helix 255aeb1 (fix/im-wire-body-build·shape_message_rows)·loopforge re-pin feat/s6 Cargo.lock #255aeb16
+2026-06-26T13:44:27Z	applyOlderLoaded	B	render-ready merged·helix 255aeb1(顺序+批内去重下沉)·loopforge re-pin feat/s6
+2026-06-26T13:44:27Z	applyPostSending	B	render-ready merged·helix 255aeb1(emit_post_sending +text/type)·loopforge re-pin feat/s6
