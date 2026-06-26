@@ -29,12 +29,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # helix-driver-native helix-driver-host`（一次升一组），不被主 checkout 的分支切换扰动。
 # phase2 临时 repoint：指向 helix worktree branch fix/im-wire-body-build（5 命令 wire body 成形已
 # 下沉 helix-im·见 helix 仓 worktrees/im-body-build commit 3be1840）。验回归后改回 reclaim 主线。
-helix-core          = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "fix/im-wire-body-build" }
-helix-im            = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "fix/im-wire-body-build" }
-helix-driver-native = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "fix/im-wire-body-build" }
+helix-core          = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "feat/im-post-received-render-ready-rebased" }
+helix-im            = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "feat/im-post-received-render-ready-rebased" }
+helix-driver-native = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "feat/im-post-received-render-ready-rebased" }
 # 泛型引擎壳（run_engine_loop<S,H,E,Tr,C> + EngineDeps + RecordingSink）——
 # 组装根直连此泛型入口，把全 port 包上装饰器（native EngineConfig 具体类型注不进装饰器）。
-helix-driver-host   = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "fix/im-wire-body-build" }
+helix-driver-host   = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "feat/im-post-received-render-ready-rebased" }
 
 # 仪表层（本仓 · Recording<P> + InstrumentCtx + LogSink）
 helix-driver-instrument = { path = "../crates/helix-driver-instrument" }

@@ -413,12 +413,13 @@ console.log('· UC-1.9 加急两阶段 outbound（urgentPost + urgentConfirm 同
       corr_key: `ch=${CH};sid=${SID}`,
       payload: { method: 'POST', url: 'http://x/api/cses/posts/urgentConfirm',
         body: { postId: SID, channelId: CH } } }),
-    // ② 加急投影 fat 13 键。
+    // ② 加急投影 fat 完整集（issue #53·render-ready：sendStatus/reactions/templateReceived/systemNotice）。
     JSON.stringify({ run_id: 'r', uc_id: 'UC-1.9', facet: 'projection', hop: 'projection', seq: 3,
       corr_key: `ch=${CH};sid=${SID}`,
       payload: { event: 'im:post:updated', data: {
         channel_id: CH, event_seq: 9, msg_id: SID, temporaryId: '', channelId: CH, userId: '444',
-        type: 'TEXT', message: '', props: '{}', createAt: 1, updateAt: 2, readBits: '0', viewers: [] } } }),
+        type: 'TEXT', message: '', props: '{}', createAt: 1, updateAt: 2, readBits: '0', viewers: [],
+        sendStatus: 'sent', reactions: null, templateReceived: false, systemNotice: false } } }),
     // ④ 落库 message 行（加急 = type2 edit_content_op patch → batch_update·非 upsert）。
     JSON.stringify({ run_id: 'r', uc_id: 'UC-1.9', facet: 'storage', hop: 'storage', seq: 4,
       corr_key: `ch=${CH};sid=${SID}`,

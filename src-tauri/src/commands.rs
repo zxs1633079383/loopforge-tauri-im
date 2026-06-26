@@ -51,8 +51,10 @@ pub async fn im_send(
             "type": &msg_type,
         }),
     );
-    // type 缺省由 helix send_build 容错为 "TEXT"；DOCUMENT 等富媒体显式透传真值（UC-1.2）。
-    let msg_type = msg_type.unwrap_or_else(|| "TEXT".into());
+    // type 原值透传（None→null·壳零默认 shaping·issue #53 C013 纯渲染壳）：默认 "TEXT" 由
+    // helix 兜底——出站 send_build.rs（空→TEXT）+ 入站 parser.rs（空→TEXT）双端下沉。壳不补 type →
+    // 纯壳不变量 IpcIn.args ≡ Inbound.args 成立（旧「壳补 TEXT 致 ipc-in.type=null ≠ inbound」已消除）。
+    // DOCUMENT 等富媒体仍显式透传真值（UC-1.2·msg_type=Some("DOCUMENT")）。
     let tick = command(
         "im_send_message",
         serde_json::json!({
