@@ -565,8 +565,8 @@
 | UC-1.3 发图片/文件 | 物理文件选择 + 上传进度链需真上传管线·golden-tape 不录文件 IO | （物理限制）| helix ledger UC-1.3 ⬜ untested 同标 |
 | UC-1.6 编辑 | 现网消息正文不可改·无编辑端点（产品无此能力）| cses-client claude.md:299 + Go 无 posts/update 路由 | helix ledger ✅ verified-not-a-capability |
 | UC-4.3 too_long 重拉 | testbed 无注入落后 cursor 入口·触发态够不到（代码侧完整有单测）| harness-gap | helix ledger ⬜ harness-gap 同标 |
-| UC-5.6 群公告 | 读族 reply 走 HTTP 不产 WS push·testbed 不打印 HTTP status 回声不可观测 | data-dep | helix ledger ⏭ data-dep |
-| UC-5.7 在线状态 | `users/status/ids` 依赖 mattermost statusCache·后端真阻塞 | 矩阵 P1-2 | status goBlocked |
+| UC-5.6 群公告（已部分解阻·见各节标题）| **2026-06-26 核对纠正**：读族 acceptList/list/detail（5.6r）①② 已 e2e 真跑全绿（go-served·非「回声不可观测」错述）；写族 save/read/delete（5.6w）① 出站全绿·②④ post_update echo 阻于 cses-java 宕（**回声实有**·9--gap-posts §26-27） | echo=backend-down（非 data-dep）| helix gap §26-27 announcement*→post_update ✅ |
+| UC-5.7 在线状态（已部分解阻·见各节标题）| **2026-06-26 核对纠正**：`channel/onlineStatus` 读族 ①② 已 e2e 真跑全绿（已迁移返 data·go-served）；仅 `users/status/ids` 仍真阻塞（statusCache·已 ✂️ 剔除规划·与读族解耦）| 矩阵 P1-2（仅 status/ids）| status/ids goBlocked |
 | UC-7.x 搜索 | `Im/search/*` app 层空桩恒返空 + 形态偏离·后端真阻塞 | 矩阵 P2-1 | helix fullmap 排除集合七 |
 | bot/agent 召唤 | 客户端无 service 方法·`BotAgentWebhookEvent` Pulsar fanout 未接 | 矩阵 P1-3 | — |
 | 广播类子项（拉踢留存收 / close member-leave / 消息置顶 / vote 真 id / add_manger）| 单 testbed 单账号·跨账号广播需第二真实连接 / 依赖 Go 落库后投影 | 认领难度 D | helix ledger 多标 broadcast-dep / data-dep |
