@@ -101,6 +101,10 @@ export class ImStoreService {
   private readonly _membersAttr = signal<string>("");
   readonly membersAttr = computed(() => this._membersAttr());
 
+  /** UC-6.4 成员快照回灌分流：待回灌的 member byIds reqId（applyReadResult 按 req_id 认领该
+   *  im:read:result 是成员快照而非回复链·避免成员被 extractReplyIds 误塞进回复抽屉）。 */
+  private readonly pendingMemberReqs = new Set<string>();
+
   /** 健康探针（H 区 · data-health · UC-12.1）。空占位 → onHealth() 填。 */
   private readonly _health = signal<string>("");
   readonly health = computed(() => this._health());
@@ -874,6 +878,8 @@ export class ImStoreService {
     const rid = (reqId ?? this.genReqId()).trim();
     const ids = channelIds.filter((c) => !!c && c.trim());
     if (ids.length === 0) return rid;
+    // 认领回灌：applyReadResult 见此 req_id 即把 body.data 成员快照灌进 _members（自愈名册）。
+    this.pendingMemberReqs.add(rid);
     try {
       await this.bridge.invoke<void>("im_members_by_ids", {
         channelIds: ids,
@@ -1751,6 +1757,13 @@ export class ImStoreService {
    */
   private applyReadResult(data: ReadResultData | undefined): void {
     if (!data || typeof data !== "object") return;
+    // UC-6.4 成员快照回灌（按 req_id 认领·body={status,data:{channelId:[{id,role,nickName}]}}·
+    // 壳纯渲染只透传 id→data-member-id / nickName→data-nickname / role→data-admin·不解析重组业务）。
+    if (typeof data.req_id === "string" && this.pendingMemberReqs.has(data.req_id)) {
+      this.pendingMemberReqs.delete(data.req_id);
+      if (data.error === undefined) this.applyMembersSnapshot(data.body);
+      return;
+    }
     if (data.error !== undefined) {
       this._replies.set([]); // 失败回灌 → 清抽屉（前端 reject 语义·不残留旧链）
       return;
@@ -1764,6 +1777,43 @@ export class ImStoreService {
     // 读族 body 抽 reply postId 经纯函数 extractReplyIds（read-result-extract.ts·壳体积控制 <800 行）。
     const ids = extractReplyIds(data.body);
     this._replies.set(ids.map((replyId) => ({ replyId })));
+  }
+
+  /**
+   * UC-6.4 成员快照 → MB 区成员行（载族「载」自愈名册·不依赖广播·补 byIds 回灌断链）。
+   * body=`{status, data:{channelId:[{id,teamId,role,nickName}]}}`（channels/member/byIds verbatim·
+   * map[channelId][]IdWithCompanyExt）。壳纯渲染只透传 id→memberId·nickName→nickname·role→admin
+   * （CREATOR/MANGER/ADMIN 判 admin·MEMBER 否），不解析重组业务。多 channelId 扁平去重；data 空（老群
+   * 444 非成员→data:{}）→ 清空成员列表（如实反映"无成员行"·守可证伪·不残留旧群名册）。
+   */
+  private applyMembersSnapshot(body: unknown): void {
+    const rows: MemberRow[] = [];
+    const seen = new Set<string>();
+    const data =
+      body && typeof body === "object"
+        ? (body as Record<string, unknown>)["data"]
+        : undefined;
+    if (data && typeof data === "object") {
+      for (const arr of Object.values(data as Record<string, unknown>)) {
+        if (!Array.isArray(arr)) continue;
+        for (const m of arr) {
+          if (!m || typeof m !== "object") continue;
+          const rec = m as Record<string, unknown>;
+          const id = typeof rec["id"] === "string" ? (rec["id"] as string) : "";
+          if (!id || seen.has(id)) continue;
+          seen.add(id);
+          const role = typeof rec["role"] === "string" ? (rec["role"] as string) : "";
+          const nick = typeof rec["nickName"] === "string" ? (rec["nickName"] as string) : "";
+          rows.push({
+            memberId: id,
+            nickname: nick || undefined,
+            admin: role === "CREATOR" || role === "MANGER" || role === "ADMIN" || undefined,
+          });
+        }
+      }
+    }
+    this._members.set(rows);
+    this._membersAttr.set(rows.map((m) => m.memberId).sort().join(","));
   }
 
   /**
