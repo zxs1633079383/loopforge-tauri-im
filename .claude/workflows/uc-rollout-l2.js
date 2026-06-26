@@ -33,8 +33,8 @@ const DISCIPLINE = `
 ## L2 双账号 creds + 架构（用户 2026-06-26 授权·全权自决·不停下问人）
 - **账号 A = 444**（密码 444·主账号·**现成 dev-local profile cookieId=444**·跑暖栈 app webdriver 4445·UI 驱动 + run.jsonl 观测）。
 - **账号 B = 678**（密码 678·副账号·同 team）。
-- **teamId / companyId = \`64118eebd2b665246b7880eb\`**·apiBase=\`http://localhost:8065/api/cses\`·ws=\`ws://localhost:8065/api/v4/websocket\`。
-- go-mattermost :8065 健康（curl localhost:8065/api/v4/system/ping→200）·cses-java 起。
+- **teamId / companyId = \`64118eebd2b665246b7880eb\`**·apiBase=\`http://localhost:8066/api/cses\`·ws=\`ws://localhost:8066/api/v4/websocket\`（后端=cses-im-server·端口 8065→8066·路径不变·切流 spec docs/cutover/）。
+- cses-im-server :8066 健康（curl localhost:8066/api/cses/health→200）·自包含 PG/Redis（无 cses-java/gRPC）。
 
 ## L2-facet 真验证范式（这是 L2 的全部意义）
 某面"结构上只有第二账号才观测得到"——现在有了 678 就能真造出来：
@@ -45,8 +45,8 @@ const DISCIPLINE = `
 - **退公司广播（#40·tracker #48）**：A=444 退 team → 他人收 quit 广播 → B 观测。
 
 ## 双账号原语（phase0 建·后续复用·提交进仓）
-- **act-as-678**：以 678 身份发 HTTP（读/发/拉）。鉴权探明：go-mattermost 可能 login(678/678)→拿 session cookie/token；或 cookieId 桥（参记忆 cookieid_equals_userid·cookieId=userId）。写成 \`scripts/l2-act.sh <verb> <args>\`（curl 带 678 鉴权）。
-- **observe-678**：轻量 WS 客户端连 678（ws://localhost:8065/api/v4/websocket·678 鉴权握手）·捕获推送帧落 JSONL 供 reducer 读。写成 \`scripts/l2-observe-678.mjs\`（node ws·后台跑·帧写 /tmp/loopforge/l2-678.jsonl）。
+- **act-as-678**：以 678 身份发 HTTP（读/发/拉）。鉴权探明：cookieId 桥（参记忆 cookieid_equals_userid·cookieId=userId·cses-im-server 入站拿 cookieId header 当 userId 建 session·无独立 token）。写成 \`scripts/l2-act.sh <verb> <args>\`（curl 带 678 鉴权）。
+- **observe-678**：轻量 WS 客户端连 678（ws://localhost:8066/api/v4/websocket·678 鉴权握手）·捕获推送帧落 JSONL 供 reducer 读。写成 \`scripts/l2-observe-678.mjs\`（node ws·后台跑·帧写 /tmp/loopforge/l2-678.jsonl）。
 - 暖栈 A=444：\`bash scripts/harness.sh up\`（幂等·现成 cookieId=444）。
 
 ## 铁律
@@ -75,7 +75,7 @@ const harness = await agent(`${DISCIPLINE}
 
 ## 本任务：phase0 — 建 L2 双账号原语 + 首验 read-receipt（#15 UC-3.1）
 1. 暖栈 A=444 up（\`bash scripts/harness.sh up\`·现成 cookieId=444）。
-2. **探明 678 鉴权**：试 go-mattermost login（POST /api/v4/users/login 或 cses 等价·678/678）拿 session token/cookie；或 cookieId 桥（cookieId=678 header）。curl 验证能以 678 身份 GET 自己信息（确认鉴权通）。
+2. **探明 678 鉴权**：cses-im-server 用 cookieId 桥（cookieId=678 header·入站当 userId 建 session·无独立 token）。curl 验证能以 678 身份 GET 自己信息（确认鉴权通）。
 3. 建 **\`scripts/l2-act.sh\`**（act-as-678·curl 带 678 鉴权·支持 read <channelId> / send <channelId> <text> / member-add 等 verb）+ **\`scripts/l2-observe-678.mjs\`**（node ws 连 678·捕获推送帧 → /tmp/loopforge/l2-678.jsonl）。node ws 依赖若缺用 pnpm add -D ws。
 4. **首验 #15 read-receipt**：A=444 发消息(harness spec 或 im_send) → \`l2-act.sh read <channelId>\`(678 读 A 消息) → A=444 收 post_read(type6)（run.jsonl 出 im:post:read + read_bits）→ 四面 reducer 绿。
 5. 绿 → close #15 + #47（tracker·若 #14 同机制也可一并验+close #14）+ ledger ✅ + commit（含 l2-act.sh / l2-observe-678.mjs 提交进仓）。真造不出 → yellow + 证据（678 鉴权/echo 卡哪）。
