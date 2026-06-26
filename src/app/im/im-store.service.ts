@@ -1185,7 +1185,7 @@ export class ImStoreService {
    * UC-5.5b 消息置顶（写族 WS post_pin echo）：invoke('im_post_pin', {channelId, postId}）。
    * 出站 channel/add/postPinned {channelId, postId}（camelCase·helix im_set_message_top 读 snake 翻 camel）。
    * WS 回 post_pin → 实现 phase 经 emit_post_updated 投出 im:post:updated（pinned 态·post-targeted sid 锚）→
-   * patch message 行 pinned + DOM data-pinned。⛔ ②③④ 当前阻于 cses-java·① 出站经 go-mattermost 可真跑。
+   * patch message 行 pinned + DOM data-pinned。⛔ ②③④ 当前阻于后端 WS 业务广播链(切 cses-im-server 后待复验)·① 出站经 cses-im-server 可真跑。
    * 无 channelId/postId（未对账乐观消息）→ 不发。pinned 态靠投影驱动·壳纯渲染·无乐观合成。
    */
   async pinMessage(channelId: string, postId: string): Promise<void> {
