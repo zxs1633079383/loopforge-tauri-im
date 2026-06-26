@@ -12,3 +12,14 @@
 #
 # 解析规则：以 # 开头的行 = 注释；空行忽略；apply_name = 第 2 列（render-board / conductor-tick 据此聚泳道）。
 # 追加只用 `>> NEED_HELIX.log`（绝不重写整文件）→ 零 merge 冲突。
+
+# === S5(issue #54) 收尾·诚实记账（非 S5 回归·待 main/后端核验）===
+# UC-5.5 频道置顶 auto 四面：render-ready isTop 绑定经一次性探针实证正确（显式 im_query_dialog_list
+#   重查 → data-channel-top='1'）。但 auto 路径(change/top → WS update_channel → im:channel:update thin
+#   → applyChannelUpdate 重查)这会话 im:channel:update 投影未出现在 run.jsonl（outbound channel/change/top
+#   有·projection 仅 created+post:received）→ 后端 cses-im-server WS update_channel echo 未到达。
+#   applyChannelUpdate 本次 S5 未改动 → 非 render-ready 回归。UC-5.5 曾于 a310304 四面绿 → 需 main 用
+#   冷启 run.sh 或核验后端 WS echo 重测。
+# UC-4.1/4.2：增量(hello)/gap(sync) 面需冷启 run.sh + 种子(seed-behind-cursor)·set_uc 须前置引擎启动
+#   (LOOPFORGE_BOOTSTRAP_UC)·暖栈 spec 不复现该时序 → 此两 UC 的 ②①④ 面暖栈下不可裁(documented·orthogonal
+#   to S5)。CL render-ready DOM 面在 UC-4.1 已实测绿(last-message=lf-90uk02·unread=0·真 backend)。

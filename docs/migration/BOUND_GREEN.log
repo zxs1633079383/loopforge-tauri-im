@@ -14,3 +14,5 @@
 # 解析规则：以 # 开头的行 = 注释；空行忽略；apply_name = 第 2 列。
 # 追加只用 `>> BOUND_GREEN.log`（绝不重写整文件）→ 零 merge 冲突。
 2026-06-26T11:40:43Z	applyMessageItem	A2	UC-1.2/1.5/send-1 六面 reducer green·禁区 grep 归零·O(1) upsert
+2026-06-26T13:12:15Z	applyDialogList	A2	UC-5.1/5.2/5.3/5.4/1.10 四面 reducer green + UC-4.1 CL render-ready DOM(last-message/unread)直绑实证·禁区 grep 22→17·真 HTTP+WS 零 mock
+2026-06-26T13:12:15Z	applyChannelUpdateByPost	A2	unread++ 删除·改 dialogList 重查·UC-5.1/5.2/5.3 四面 green(同 dialogList 路径)·禁区零

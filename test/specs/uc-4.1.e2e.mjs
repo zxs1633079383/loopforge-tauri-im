@@ -59,6 +59,11 @@ const readChannelDom = (channelId) =>
     return {
       ready,
       'channel-id': row?.getAttribute('data-channel-id') ?? null,
+      // S5（issue #54）：CL 行 render-ready 字段（helix dialogList 直绑·壳零 normalize）。
+      'last-message': row?.getAttribute('data-last-message') ?? null,
+      'urgent': row?.getAttribute('data-urgent') ?? null,
+      'mention': row?.getAttribute('data-mention') ?? null,
+      'unread': row?.getAttribute('data-unread') ?? null,
     };
   }, channelId);
 
@@ -132,6 +137,8 @@ describe('UC-4.1 · hello 全量增量（四面契约·就绪根）', () => {
     console.log(`[UC-4.1 DOM] 目标 channelId=${CHANNEL_ID}（批锚=${anchorFromBatch ?? 'n/a'}·DOM 首行=${renderedFirst}）`);
 
     const domFacet = await readChannelDom(CHANNEL_ID);
+    // S5 render-ready CL 字段实测打印（诚实观测·决定是否纳入 reducer 断言）。
+    console.log(`[UC-4.1 CL render-ready] last-message=${domFacet['last-message']}·urgent=${domFacet['urgent']}·mention=${domFacet['mention']}·unread=${domFacet['unread']}`);
 
     // —— 关窗口 ——
     await invokeBridge('set_uc', { uc: '__quiescence__' });

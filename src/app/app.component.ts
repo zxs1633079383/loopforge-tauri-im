@@ -131,6 +131,9 @@ import { MessageRow } from "./im/message-row.model";
               [attr.data-channel-notice]="c.notice ?? null"
               [attr.data-channel-top]="c.top ? '1' : null"
               [attr.data-unread]="c.unread ?? null"
+              [attr.data-last-message]="c.lastMessage ?? null"
+              [attr.data-urgent]="c.urgent ? '1' : null"
+              [attr.data-mention]="c.mention ? '1' : null"
               [attr.data-has-schedule-post]="c.hasSchedule ? 'true' : null"
               [attr.data-active-channel]="
                 c.channelId === store.activeChannel() ? '1' : null

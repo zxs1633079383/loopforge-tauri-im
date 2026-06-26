@@ -47,6 +47,7 @@ loopforge 的 TS **只能做四件事**：
 - **背靠背机器判据**：`src/app/im/*.ts` 禁区 grep 命中数 → 单调降到 0。**覆盖率 100% ⟺ 禁区命中 0**。
 - **基线（2026-06-26·实测校正）**：分母 = 全 src `apply*` 渲染路径**实测 19**（非早先误填的 24）。
 - **进度（S4 后·2026-06-26）**：精确闸门 grep（C013 §4 模式）**31 → 22 命中**（applyMessageItem 迁移·降 9·props-extract.ts 删除）；BOUND_GREEN 🟩 **1/19**（applyMessageItem）；纯绑定（含〜近纯）≈ 5/19 ≈ **26%**。剩余 2 个 `_rows().findIndex` 在 applyMessagesQueryResult/applyOlderLoaded（S6 行）。
+- **进度（S5 后·2026-06-26·issue #54）**：精确闸门 grep **22 → 17 命中**（applyDialogList 迁移·删 normalizeNotice/normalizeIsTop def+call 共 4 + 清 1 处陈旧注释）；helix dialogList 升 render-ready（8 终态键·helix 834af2a）；applyDialogList 退纯绑定（直绑 displayName/notice/isTop/createAt/unread/mention/lastMessage/urgent）+ applyChannelUpdateByPost 删 unread++（改触发 dialogList 重查·未读累加下沉 helix）+ CL 模板加 data-last-message/data-urgent/data-mention。BOUND_GREEN 🟩 **2/19**（+applyDialogList·UC-5.1/5.2/5.3/5.4/1.10 四面绿 + UC-4.1 CL render-ready DOM 实测 last-message/unread 直绑·真 HTTP+WS 零 mock）。UC-5.5 isTop 绑定经探针实证正确（top→'1'）但 auto im:channel:update 这会话未到达（后端 WS echo·非 S5 回归·见 NEED_HELIX.log）；UC-4.1/4.2 增量/gap 面需冷启 run.sh 种子（set_uc/hello 时序·orthogonal）。
 - **辅助仪表（缺口版）**：本仓挂起的「helix 投影缺口」条目数 → 0（驱动去 helix 补，不是本仓补）。
 
 ---
@@ -74,8 +75,10 @@ loopforge 的 TS **只能做四件事**：
 | `applyMessagesQueryResult` | im:messages:query_result | ML 行 | ❌ | render-ready 消息行（非 DB snake 整形） |
 | `applyOlderLoaded` | im:messages:older_loaded | ML prepend | ❌ | render-ready 行 + 顺序（本仓不 dedup） |
 | `applyBatchUpdated` | im:post:batch-updated | ML revoke 态 | ❌ | render-ready revoke 终态 |
-| `applyDialogList` | im:channels:projection | CL 行字段 | ❌ | render-ready CL 行（notice/top/createAt 成品·非 snake 抽+归一） |
-| `applyChannelUpdate*` | im:channel:update(-by-post) | CL 属性/unread | ❌ | CL 字段终值 + unread 终值（本仓不 `++`） |
+| ~~`applyDialogList`~~ ✅ | im:channels:projection | CL 行字段 | ✅ | **S5 已迁(helix 834af2a)**：helix dialogList 吐 8 render-ready 终态键(displayName/notice 归一/isTop bool/createAt/unread 终值/mention bool/lastMessage 预览/urgent bool)·壳退纯绑定(str/bool/num 纯展示取值)·删 normalizeNotice/normalizeIsTop·UC-5.1/5.2/5.3/5.4/1.10 四面绿 |
+| `applyChannelUpdateByPost` ✅ | im:channel:update-by-post | CL unread | ✅ | **S5 已迁**：删 unread `++`·改触发 dialogList 重查(发 IPC·C013(d))·未读累加下沉 helix unread_count·壳零 ++ |
+| `applyChannelUpdate` 〜 | im:channel:update(thin) | CL 重查触发 | 〜 | upsert + 触发重查(发 IPC)·纯·依赖 backend WS echo |
+| `applyChannelUpdatePost` | im:post:received(channelUpdate) | CL displayName/notice | ❌ | UC-5.4 契约绑(props.field/content)·render-ready 路径已由 dialogList 重查覆盖·本路径留契约兼容 |
 | `applyScheduleCreated` | im:schedule:* | CL hasSchedule | ❌ | hasSchedule 终值 |
 | `applyMembersSnapshot` | im:read:result(byIds) | MB 行 | ❌ | **`im:channel:members` render-ready**（memberId/nickname/admin 成品·role→admin 在 helix 判） |
 | `applyMemberUpdated` | im:channel:member-updated | MB 行 | ❌ | render-ready 成员集（非 4 源抽 id 合并） |
