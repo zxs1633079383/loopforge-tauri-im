@@ -59,6 +59,15 @@ import { MessageRow } from "./im/message-row.model";
       </header>
 
       <div class="im__body">
+        <!-- ═══ SR 服务器栏（装饰·无 data-*·Discord 视觉）═══ -->
+        <nav class="im__rail" aria-hidden="true">
+          <div class="im__rail-home">L</div>
+          <div class="im__rail-div"></div>
+          @for (s of serverIcons; track s) {
+            <div class="im__rail-srv">{{ s }}</div>
+          }
+          <div class="im__rail-add">+</div>
+        </nav>
         <!-- ═══ CL 频道列表区 ═══ -->
         <aside class="im__col im__channels" data-testid="channel-list">
           <div class="im__col-hd">
@@ -230,8 +239,18 @@ import { MessageRow } from "./im/message-row.model";
               [attr.data-vote]="m.vote ?? null"
               [attr.data-average]="m.average ?? null"
             >
-              <span class="msg__text">{{ m.text }}</span>
-              <span class="msg__ops">
+              <div
+                class="msg__avatar"
+                [style.background]="avatarColor(m.userId)"
+                [attr.data-user-id]="m.userId ?? null"
+              >{{ avatarInitial(m.userId) }}</div>
+              <div class="msg__body">
+                <div class="msg__head">
+                  <span class="msg__author">{{ authorName(m.userId) }}</span>
+                  <span class="msg__time">{{ shortTime(m.createAt) }}</span>
+                </div>
+                <span class="msg__text">{{ m.text }}</span>
+                <span class="msg__ops">
                 <button
                   class="im__mini"
                   type="button"
@@ -412,6 +431,7 @@ import { MessageRow } from "./im/message-row.model";
                   >重发</button>
                 }
               </span>
+              </div>
             </div>
           }
         </section>
@@ -581,8 +601,8 @@ import { MessageRow } from "./im/message-row.model";
   `,
   styles: [
     `
-      /* ═══ Discord 深色皮肤（Pencil design/loopforge-im.pen 视觉规格）═══
-         纯 CSS reskin·键到既有 class·零 markup 改动→data-*/data-testid 契约不动 */
+      /* Discord 深色皮肤（Pencil loopforge-im.pen 视觉规格）·纯 CSS reskin·键到既有
+         class·零 markup 改动→data-attr 与 data-testid 契约不动（注：注释内禁出现星号加斜杠） */
       .im {
         --bg-deepest: #1e1f22; --bg-darker: #2b2d31; --bg-base: #313338;
         --bg-input: #383a40; --bg-hover: #35373c; --bg-active: #404249;
@@ -627,11 +647,22 @@ import { MessageRow } from "./im/message-row.model";
       }
       .ch__name::before { content: "# "; color: var(--muted); font-weight: 400; }
       /* ops 始终在常规流·始终可点（不 hover-hide→不破坏 WebdriverIO 点击）·仅淡入强调 */
+      /* ops 浮层：绝对定位移出常规流（行收紧到只剩名/文本）·默认 opacity:0·hover 浮现。
+         仍 pointer-events:auto + 不 display/visibility-hide → WebdriverIO 按 testid 仍可点。
+         （若 uc-2.3 因遮挡掉绿则回退常规流·见提交说明） */
       .ch__ops, .mem__ops, .msg__ops {
-        display: inline-flex; gap: 3px; flex-wrap: wrap; align-items: center;
-        opacity: 0.45; transition: opacity 0.12s;
+        position: absolute; opacity: 0; transition: opacity 0.1s;
+        display: flex; flex-wrap: wrap; align-items: center; gap: 3px;
+        background: var(--bg-active); border-radius: 6px; padding: 4px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45); z-index: 3;
       }
-      .ch:hover .ch__ops, .mem:hover .mem__ops, .msg:hover .msg__ops { opacity: 1; }
+      .ch__ops, .mem__ops {
+        right: 6px; top: 50%; transform: translateY(-50%); flex-wrap: nowrap;
+      }
+      .msg__ops { right: 12px; top: 2px; max-width: 60%; justify-content: flex-end; }
+      .ch:hover .ch__ops, .mem:hover .mem__ops, .msg:hover .msg__ops {
+        opacity: 1; z-index: 6;
+      }
       .msg {
         position: relative; display: flex; gap: 10px; align-items: flex-start;
         padding: 5px 16px; word-break: break-word; white-space: pre-wrap;
@@ -681,11 +712,71 @@ import { MessageRow } from "./im/message-row.model";
         width: 72px; padding: 5px 8px; border-radius: 6px; border: none;
         background: var(--bg-deepest); color: var(--txt-2); font-size: 12px;
       }
+      /* ═══ Discord 1:1：服务器栏 + 消息头像/作者头 ═══ */
+      .im__rail {
+        width: 72px; background: var(--bg-deepest); display: flex;
+        flex-direction: column; align-items: center; gap: 8px; padding: 12px 0;
+        overflow-y: auto;
+      }
+      .im__rail-home, .im__rail-srv, .im__rail-add {
+        width: 48px; height: 48px; border-radius: 24px; flex: none;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer; font-weight: 700; font-size: 15px; color: #fff;
+        transition: border-radius 0.15s;
+      }
+      .im__rail-home { background: var(--accent); border-radius: 16px; }
+      .im__rail-srv { background: #3a3c43; }
+      .im__rail-home:hover, .im__rail-srv:hover { border-radius: 16px; }
+      .im__rail-add { background: var(--bg-darker); color: var(--green); font-size: 22px; }
+      .im__rail-div {
+        width: 32px; height: 2px; border-radius: 1px; flex: none;
+        background: var(--divider);
+      }
+      .msg { padding-top: 8px; padding-bottom: 4px; }
+      .msg__avatar {
+        width: 40px; height: 40px; border-radius: 20px; flex: none;
+        display: flex; align-items: center; justify-content: center;
+        color: #fff; font-weight: 600; font-size: 16px; margin-top: 2px;
+      }
+      .msg__body { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+      .msg__body .msg__text { flex: none; }
+      .msg__head { display: flex; align-items: baseline; gap: 8px; }
+      .msg__author { color: var(--txt); font-weight: 600; font-size: 15px; }
+      .msg__time { color: var(--txt-3); font-size: 12px; }
     `,
   ],
 })
 export class AppComponent implements OnInit, OnDestroy {
   readonly store = inject(ImStoreService);
+
+  // ——— Discord 1:1 渲染辅助（纯展示·从已有 userId/createAt 派生·不碰契约/投影）———
+  readonly serverIcons = ["CS", "设", "运"];
+  private readonly avatarPalette = [
+    "#5865f2", "#23a55a", "#eb459e", "#f0b232",
+    "#e67e22", "#3498db", "#9b59b6", "#1abc9c",
+  ];
+  avatarColor(userId?: string): string {
+    const s = userId || "";
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return this.avatarPalette[h % this.avatarPalette.length];
+  }
+  avatarInitial(userId?: string): string {
+    const s = (userId || "").trim();
+    return s ? s[0].toUpperCase() : "·";
+  }
+  authorName(userId?: string): string {
+    const s = (userId || "").trim();
+    if (!s) return "（我）";
+    return s.length > 10 ? s.slice(0, 8) + "…" : s;
+  }
+  shortTime(createAt?: number): string {
+    if (!createAt || !Number.isFinite(createAt)) return "";
+    const d = new Date(createAt);
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return hh + ":" + mm;
+  }
 
   // 活动频道不再硬编码：由 store.activeChannel() 提供（stream 第一个真实频道胜出，含 increment）。
   // demo-channel 非合法 26 位频道 id，helix parse 会拒（missing/invalid channel_id）。

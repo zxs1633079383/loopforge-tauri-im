@@ -2139,6 +2139,8 @@ export class ImStoreService {
           readBits,
           text: d.message ?? prev.text,
           type: d.type || prev.type,
+          // data-user-id：fat 投影 userId 透传（头像/作者渲染·空则保留乐观行旧值·加法式）。
+          userId: d.userId || prev.userId,
           // reactions 命中则覆写（patch 只增不清·无 quickReply 的 echo 不抹既有 reactions）。
           reactions: reactions ?? prev.reactions,
           // templateReceived 命中则置位（patch 只增不清·非模板 echo 不抹既有态·UC-3.3）。
@@ -2168,6 +2170,7 @@ export class ImStoreService {
         readBits,
         text: d.message ?? "",
         type: d.type || "TEXT",
+        userId: d.userId || undefined,
         reactions: reactions ?? undefined,
         templateReceived: templateReceived || undefined,
         systemNotice: systemNotice || undefined,
@@ -2209,6 +2212,11 @@ export class ImStoreService {
       const readBits = this.toReadBits(m["read_bits"] as string | number | undefined);
       const ch = (typeof m["channel_id"] === "string" && m["channel_id"]) || channelId;
       const revoked = m["revoke"] === 1 || m["revoke"] === true;
+      // data-user-id：DB message.user_id（snake）/ 兼容 userId（camel）透传·头像/作者渲染用。
+      const userId =
+        (typeof m["user_id"] === "string" && m["user_id"]) ||
+        (typeof m["userId"] === "string" && (m["userId"] as string)) ||
+        "";
       // create_at（int64 毫秒·UC-2.2 上拉锚选取用·DB snake 列）；缺/坏 → undefined（不参与最旧锚）。
       const createAt =
         typeof m["create_at"] === "number" && Number.isFinite(m["create_at"])
@@ -2234,6 +2242,7 @@ export class ImStoreService {
             readBits: readBits || prev.readBits,
             revoked: revoked || prev.revoked,
             createAt: createAt ?? prev.createAt,
+            userId: userId || prev.userId,
           };
           return next;
         });
@@ -2254,6 +2263,7 @@ export class ImStoreService {
           type,
           revoked: revoked || undefined,
           createAt,
+          userId: userId || undefined,
         },
       ]);
     }
@@ -2296,6 +2306,7 @@ export class ImStoreService {
           ? (m["createAt"] as number)
           : undefined;
       const readBits = this.toReadBits(m["readBits"] as string | number | undefined);
+      const userId = (typeof m["userId"] === "string" && (m["userId"] as string)) || "";
 
       // 去重 upsert：命中既有行（首屏已加载 / 多轮重叠）→ 覆写关键 data-*（不抹已对账链态）。
       const idx = this._rows().findIndex(
@@ -2314,6 +2325,7 @@ export class ImStoreService {
             text: text || prev.text,
             type: type || prev.type,
             createAt: createAt ?? prev.createAt,
+            userId: userId || prev.userId,
           };
           return next;
         });
@@ -2332,6 +2344,7 @@ export class ImStoreService {
           text,
           type,
           createAt,
+          userId: userId || undefined,
         },
         ...rows,
       ]);

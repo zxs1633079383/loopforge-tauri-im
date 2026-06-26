@@ -93,6 +93,9 @@ export interface MessageRow {
    *  rows computed 据定位锚打此标 → 渲染 [data-highlighted="true"]（壳纯渲染·非投影字段·客户端定位高亮）。
    *  未定位时不渲染该属性（e2e 读 [data-msg-id=target][data-highlighted="true"] 验定位命中）。 */
   highlighted?: boolean;
+  /** data-user-id：发送者 userId（投影 emit_post_received fat.userId / DB message.user_id /
+   *  wire Post.userId 透传·壳纯渲染只透传·头像首字母+作者名渲染用·非 e2e 契约属性·加法式·空不渲染）。 */
+  userId?: string;
 
   // ——— 待加集（spec §2.2 · 逐 UC 加法式扩展 · 模板 [attr.data-*] 占位 · 空不渲染）———
   // 这些字段当前**只占位**：MessageRow 一次扩到位 + 模板 [attr.*] 挂载位就绪，
