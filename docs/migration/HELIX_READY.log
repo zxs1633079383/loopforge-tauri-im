@@ -1,0 +1,15 @@
+# HELIX_READY.log —— 单写者 append-only 解锁 log（B → A2）
+#
+# 契约真源：docs/orchestration/README.md §4 + §3 解锁状态机（🟦 HELIX_READY）。
+# 单写者：B（helix 纯渲染壳迁移 · 长 loop-Engineer）。A2 只读不写本文件。
+# 语义：B 把某条渲染路径的 render-ready 投影 + loopforge re-pin **已 merge 进 main** 后追加一行
+#       → A2 grep 命中即可对该行 `git merge main` 抢绑（信号 = 真 merge，命中即保证 helix 字段已在 main）。
+# 方向：B → A2（解锁）。
+#
+# 列格式（TAB 分隔·4 列）：
+#   <ts ISO8601>\t<apply_name>\t<writer=B>\t<note re-pin commit/sha>
+# 例：
+#   2026-06-26T12:00:00Z\tapplyMessageItem\tB\tre-pin merged main@abc1234
+#
+# 解析规则：以 # 开头的行 = 注释；空行忽略；apply_name = 第 2 列。
+# 追加只用 `>> HELIX_READY.log`（绝不重写整文件）→ 零 merge 冲突。
