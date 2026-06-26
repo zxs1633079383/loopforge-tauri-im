@@ -106,6 +106,27 @@ describe('UC-5.3 · 关闭/退出群（四面契约）', () => {
     expect(TARGET_CHANNEL_ID).toBeTruthy();
     console.log(`[UC-5.3] 关闭锚频道（本人新建·有 admin 权限）channelId=${TARGET_CHANNEL_ID}`);
 
+    // —— settle 前置（C014·intra-spec 竞态根治·跑序无关）——
+    // 建群 server 会异步推一条 type:join 系统 post（操作者 444 入群）。若该 im:post:received 在
+    // close 投影**之后**才到，post-received 会把已关频道重新加回列表 → DOM 行复现 → 关闭行移除
+    // 断言超时假红（与跑序无关·纯 create→close intra-spec 时序竞态·reload 隔离修不到）。
+    // 故关闭前先等 join 回声在 run.jsonl 落定（仍归 __quiescence__ 窗口·set_uc 之前·不混入
+    // UC-5.3 束），令 close 成为该频道**终态事件**——其后无更多 post 可复现行。
+    await browser.waitUntil(
+      () => {
+        let jsonl;
+        try { jsonl = readFileSync(RUN_JSONL, 'utf8'); } catch { return false; }
+        return jsonl.split('\n').some((ln) => {
+          if (!ln.includes(TARGET_CHANNEL_ID)) return false;
+          let o; try { o = JSON.parse(ln); } catch { return false; }
+          const p = o?.payload;
+          return p?.event === 'im:post:received' && p?.data?.channelId === TARGET_CHANNEL_ID;
+        });
+      },
+      { timeout: 15000, interval: 200, timeoutMsg: '建群 join 系统 post 回声未落定（settle 前置·C014·确保 close 为终态事件）' }
+    );
+    console.log(`[UC-5.3] 建群 join 回声已落定 → close 将为终态事件（settle·C014）`);
+
     // 开 UC 窗口（窗口内帧/投影归 UC-5.3·建群已在窗口外完成）。
     await invokeBridge('set_uc', { uc: 'UC-5.3' });
   });
