@@ -581,66 +581,105 @@ import { MessageRow } from "./im/message-row.model";
   `,
   styles: [
     `
-      .im { display: flex; flex-direction: column; height: 100vh; }
-      .im__hd {
-        display: flex; gap: 12px; justify-content: flex-start; align-items: center;
-        padding: 8px 12px; background: #1d1d22; border-bottom: 1px solid #2a2a30;
-        font-weight: 600;
+      /* ═══ Discord 深色皮肤（Pencil design/loopforge-im.pen 视觉规格）═══
+         纯 CSS reskin·键到既有 class·零 markup 改动→data-*/data-testid 契约不动 */
+      .im {
+        --bg-deepest: #1e1f22; --bg-darker: #2b2d31; --bg-base: #313338;
+        --bg-input: #383a40; --bg-hover: #35373c; --bg-active: #404249;
+        --txt: #f2f3f5; --txt-2: #b5bac1; --txt-3: #949ba4; --muted: #80848e;
+        --accent: #5865f2; --green: #23a55a; --red: #f23f43; --yellow: #f0b232;
+        --divider: #1f2023;
+        display: flex; flex-direction: column; height: 100vh;
+        background: var(--bg-base); color: var(--txt);
+        font-family: Inter, "gg sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+        font-size: 15px;
       }
-      .im__ready { font-size: 12px; opacity: 0.6; font-weight: 400; }
-      .im__ready[data-ready="true"] { color: #5ad27a; opacity: 1; }
+      .im__hd {
+        display: flex; gap: 12px; align-items: center;
+        padding: 11px 16px; background: var(--bg-darker);
+        border-bottom: 1px solid var(--divider);
+        font-weight: 700; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+      }
+      .im__ready { font-size: 12px; color: var(--txt-3); font-weight: 600; }
+      .im__ready[data-ready="true"] { color: var(--green); }
       .im__body { flex: 1; display: flex; min-height: 0; }
       .im__col { overflow-y: auto; }
-      .im__channels { width: 180px; border-right: 1px solid #2a2a30; padding: 4px; }
-      .im__members { width: 160px; border-left: 1px solid #2a2a30; padding: 4px; }
-      .im__list { flex: 1; padding: 8px 12px; }
+      .im__col::-webkit-scrollbar { width: 8px; }
+      .im__col::-webkit-scrollbar-thumb { background: #1a1b1e; border-radius: 4px; }
+      .im__channels { width: 232px; background: var(--bg-darker); padding: 8px; }
+      .im__members { width: 232px; background: var(--bg-darker); padding: 8px; }
+      .im__list { flex: 1; background: var(--bg-base); padding: 12px 0; }
       .im__col-hd {
         display: flex; gap: 4px; align-items: center; flex-wrap: wrap;
-        font-size: 12px; opacity: 0.7; margin-bottom: 6px;
+        font-size: 11px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.02em; color: var(--txt-3); padding: 6px 8px; margin-bottom: 4px;
       }
       .ch, .mem {
-        display: flex; justify-content: space-between; align-items: center;
-        padding: 4px 6px; border-radius: 6px; cursor: pointer; font-size: 13px;
+        position: relative; display: flex; justify-content: space-between;
+        align-items: center; gap: 8px; padding: 7px 8px; margin: 1px 0;
+        border-radius: 4px; cursor: pointer; color: var(--txt-3);
+        font-size: 15px; font-weight: 500;
       }
-      .ch--active { background: #2a3550; }
-      .ch__ops, .mem__ops, .msg__ops { display: inline-flex; gap: 2px; }
+      .ch:hover, .mem:hover { background: var(--bg-hover); color: var(--txt-2); }
+      .ch--active { background: var(--bg-active); color: var(--txt); }
+      .ch__name, .mem__name {
+        flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .ch__name::before { content: "# "; color: var(--muted); font-weight: 400; }
+      /* ops 始终在常规流·始终可点（不 hover-hide→不破坏 WebdriverIO 点击）·仅淡入强调 */
+      .ch__ops, .mem__ops, .msg__ops {
+        display: inline-flex; gap: 3px; flex-wrap: wrap; align-items: center;
+        opacity: 0.45; transition: opacity 0.12s;
+      }
+      .ch:hover .ch__ops, .mem:hover .mem__ops, .msg:hover .msg__ops { opacity: 1; }
       .msg {
-        margin: 4px 0; padding: 6px 10px; border-radius: 8px;
-        background: #23232a; max-width: 70%; word-break: break-word;
-        white-space: pre-wrap; display: flex; gap: 6px; align-items: center;
+        position: relative; display: flex; gap: 10px; align-items: flex-start;
+        padding: 5px 16px; word-break: break-word; white-space: pre-wrap;
       }
-      .msg--sending { opacity: 0.55; }
-      .msg--failed { background: #3a1d1d; color: #ff9b9b; }
-      .msg--revoked { opacity: 0.4; font-style: italic; text-decoration: line-through; }
+      .msg:hover { background: #2e3035; }
+      .msg__text { flex: 1; color: var(--txt-2); font-size: 16px; line-height: 1.375; }
+      .msg--sending { opacity: 0.6; }
+      .msg--failed .msg__text { color: var(--red); }
+      .msg--revoked .msg__text {
+        opacity: 0.5; font-style: italic; text-decoration: line-through;
+      }
+      .msg--highlighted { background: #4a3f1e; box-shadow: inset 2px 0 0 var(--yellow); }
       .im__aux {
-        display: flex; gap: 8px; padding: 4px 12px;
-        border-top: 1px solid #2a2a30; background: #18181c; min-height: 0;
+        display: flex; gap: 12px; padding: 6px 16px; align-items: center;
+        border-top: 1px solid var(--divider); background: var(--bg-darker);
       }
-      .im__panel { display: inline-flex; gap: 4px; align-items: center; }
-      .aux-chip { width: 8px; height: 8px; border-radius: 50%; background: #3b6ef5; }
-      .im__load-older { display: block; margin: 0 auto 8px; }
+      .im__panel { display: inline-flex; gap: 5px; align-items: center; }
+      .aux-chip { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+      .im__load-older {
+        display: block; margin: 4px auto 10px; color: var(--txt-2);
+        background: transparent; border: none; font-size: 13px; cursor: pointer;
+      }
       .im__compose {
-        display: flex; gap: 8px; padding: 8px 12px; flex-wrap: wrap;
-        border-top: 1px solid #2a2a30; background: #1d1d22;
+        display: flex; gap: 8px; padding: 12px 16px 20px; flex-wrap: wrap;
+        align-items: center; background: var(--bg-base);
       }
       .im__input {
-        flex: 1; min-width: 120px; padding: 8px 10px; border-radius: 6px;
-        border: 1px solid #2a2a30; background: #141417; color: #eee;
+        flex: 1; min-width: 160px; padding: 11px 16px; border-radius: 8px;
+        border: none; background: var(--bg-input); color: var(--txt); font-size: 15px;
       }
+      .im__input::placeholder { color: var(--txt-3); }
       .im__send {
-        padding: 8px 16px; border-radius: 6px; border: none;
-        background: #3b6ef5; color: #fff; cursor: pointer; font-weight: 600;
+        padding: 10px 18px; border-radius: 8px; border: none;
+        background: var(--accent); color: #fff; cursor: pointer;
+        font-weight: 600; font-size: 14px;
       }
-      .im__send:active { background: #2f59c9; }
+      .im__send:hover { background: #4752c4; }
       .im__send:disabled, .im__mini:disabled { opacity: 0.4; cursor: not-allowed; }
       .im__mini {
-        padding: 2px 6px; border-radius: 4px; border: 1px solid #2a2a30;
-        background: #23232a; color: #ccc; cursor: pointer; font-size: 11px;
+        padding: 4px 9px; border-radius: 6px; border: none;
+        background: var(--bg-input); color: var(--txt-2); cursor: pointer;
+        font-size: 12px; font-weight: 500;
       }
-      .im__mini:active { background: #2f59c9; }
+      .im__mini:hover { background: #4e5058; color: var(--txt); }
+      .im__mini:active { background: var(--accent); color: #fff; }
       .im__mini-input {
-        width: 56px; padding: 2px 4px; border-radius: 4px;
-        border: 1px solid #2a2a30; background: #1a1a1f; color: #ccc; font-size: 11px;
+        width: 72px; padding: 5px 8px; border-radius: 6px; border: none;
+        background: var(--bg-deepest); color: var(--txt-2); font-size: 12px;
       }
     `,
   ],
