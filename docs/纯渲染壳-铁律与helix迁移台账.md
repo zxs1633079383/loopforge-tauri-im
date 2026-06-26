@@ -48,6 +48,7 @@ loopforge 的 TS **只能做四件事**：
 - **基线（2026-06-26·实测校正）**：分母 = 全 src `apply*` 渲染路径**实测 19**（非早先误填的 24）。
 - **进度（S4 后·2026-06-26）**：精确闸门 grep（C013 §4 模式）**31 → 22 命中**（applyMessageItem 迁移·降 9·props-extract.ts 删除）；BOUND_GREEN 🟩 **1/19**（applyMessageItem）；纯绑定（含〜近纯）≈ 5/19 ≈ **26%**。剩余 2 个 `_rows().findIndex` 在 applyMessagesQueryResult/applyOlderLoaded（S6 行）。
 - **进度（S5 后·2026-06-26·issue #54）**：精确闸门 grep **22 → 17 命中**（applyDialogList 迁移·删 normalizeNotice/normalizeIsTop def+call 共 4 + 清 1 处陈旧注释）；helix dialogList 升 render-ready（8 终态键·helix 834af2a）；applyDialogList 退纯绑定（直绑 displayName/notice/isTop/createAt/unread/mention/lastMessage/urgent）+ applyChannelUpdateByPost 删 unread++（改触发 dialogList 重查·未读累加下沉 helix）+ CL 模板加 data-last-message/data-urgent/data-mention。BOUND_GREEN 🟩 **2/19**（+applyDialogList·UC-5.1/5.2/5.3/5.4/1.10 四面绿 + UC-4.1 CL render-ready DOM 实测 last-message/unread 直绑·真 HTTP+WS 零 mock）。UC-5.5 isTop 绑定经探针实证正确（top→'1'）但 auto im:channel:update 这会话未到达（后端 WS echo·非 S5 回归·见 NEED_HELIX.log）；UC-4.1/4.2 增量/gap 面需冷启 run.sh 种子（set_uc/hello 时序·orthogonal）。
+- **进度（S6 后·2026-06-26·issue #55）**：精确闸门 grep **17 → 15 命中**（消灭 applyMessagesQueryResult/applyOlderLoaded 的 2 个 `_rows().findIndex` 全表扫）；helix 升 render-ready（新 `render_ready::shape_message_rows`·读族 DB snake / wire camel 统一整形 + 批内去重保序·下沉 helix；`emit_post_sending` +text/type render-ready 乐观终态行·helix 255aeb1）；applyMessagesQueryResult/applyOlderLoaded/applyPostSending 三条退纯绑定（`bindRenderReadyRow` 1:1 + `upsertHistoryRow` **O(1) 锚 upsert** 替代 findIndex）。BOUND_GREEN 🟩 **3→6/19**（+applyMessagesQueryResult UC-2.1 四面 green×2·+applyOlderLoaded UC-2.2 ①② 读族 green×2·+applyPostSending UC-1.4 四面 green×2 + UC-send-1 六面 green×2）。UC-1.5 撤回连跑 2 次 1 绿 1 红（红在 ②投影/④落库「无投影 emit」= 后端 cses-im-server WS posts_update echo 非确定性到达·**非 S6 回归**·DOM `data-revoke=1` 两次都对·applyBatchUpdated wire 未动·见 `docs/migration/NEED_CSES_IM_SERVER_FIX.md`）。
 - **辅助仪表（缺口版）**：本仓挂起的「helix 投影缺口」条目数 → 0（驱动去 helix 补，不是本仓补）。
 
 ---
@@ -71,10 +72,10 @@ loopforge 的 TS **只能做四件事**：
 | `applyChannelClosed` | im:channel:closed | CL 删行 | 〜 | — |
 | `applyPostDeleted` | im:post:deleted | ML 删行 | 〜 | — |
 | ~~**`applyMessageItem`**~~ ✅ | im:post:received(fat) | ML 行 | ✅ | **S4 已迁(6abe5df)**：helix 吐 render-ready 终态行(sendStatus/reactions/templateReceived/systemNotice + type 默认下沉)·壳退纯绑定 + O(1) upsert·六面绿·禁区归零 |
-| `applyPostSending` | im:post:sending | ML 乐观行 | ❌ | helix 吐 sending 终态（本仓不造乐观） |
-| `applyMessagesQueryResult` | im:messages:query_result | ML 行 | ❌ | render-ready 消息行（非 DB snake 整形） |
-| `applyOlderLoaded` | im:messages:older_loaded | ML prepend | ❌ | render-ready 行 + 顺序（本仓不 dedup） |
-| `applyBatchUpdated` | im:post:batch-updated | ML revoke 态 | ❌ | render-ready revoke 终态 |
+| `applyPostSending` ✅ | im:post:sending | ML 乐观行 | ✅ | **S6 已迁(helix 255aeb1)**：emit_post_sending 吐 render-ready 乐观终态行(text/type/sendStatus/readBits)·壳退纯绑定(不再取 pendingText/pendingType)·UC-1.4 四面 green×2 + UC-send-1 六面 green×2 |
+| `applyMessagesQueryResult` ✅ | im:messages:query_result | ML 行 | ✅ | **S6 已迁(helix 255aeb1)**：shape_message_rows 吐 render-ready 终态行(非 DB snake)·壳 bindRenderReadyRow 1:1 + upsertHistoryRow O(1)·消灭 `_rows().findIndex`·UC-2.1 四面 green×2 |
+| `applyOlderLoaded` ✅ | im:messages:older_loaded | ML prepend | ✅ | **S6 已迁(helix 255aeb1)**：render-ready 终态行 + 顺序/批内去重下沉 helix·壳 O(1) prepend upsert·消灭 `_rows().findIndex`·UC-2.2 ①② 读族 green×2 |
+| `applyBatchUpdated` | im:post:batch-updated | ML revoke 态 | ❌ | render-ready revoke 终态（wire `{channel_id,posts}` 冻结·绑定已对·UC-1.5 红卡后端 WS echo·见 NEED_CSES_IM_SERVER_FIX.md） |
 | ~~`applyDialogList`~~ ✅ | im:channels:projection | CL 行字段 | ✅ | **S5 已迁(helix 834af2a)**：helix dialogList 吐 8 render-ready 终态键(displayName/notice 归一/isTop bool/createAt/unread 终值/mention bool/lastMessage 预览/urgent bool)·壳退纯绑定(str/bool/num 纯展示取值)·删 normalizeNotice/normalizeIsTop·UC-5.1/5.2/5.3/5.4/1.10 四面绿 |
 | `applyChannelUpdateByPost` ✅ | im:channel:update-by-post | CL unread | ✅ | **S5 已迁**：删 unread `++`·改触发 dialogList 重查(发 IPC·C013(d))·未读累加下沉 helix unread_count·壳零 ++ |
 | `applyChannelUpdate` 〜 | im:channel:update(thin) | CL 重查触发 | 〜 | upsert + 触发重查(发 IPC)·纯·依赖 backend WS echo |

@@ -66,8 +66,21 @@ export interface MessageItemData {
  * text 取本地 pendingText[temporary_id]（瘦投影不带 text）。不在 JS 合成乐观态。
  */
 export interface PostSendingData {
+  // —— 信号锚（snake·历史兼容）——
   channel_id: string;
   temporary_id: string;
+  // —— render-ready 乐观终态行（S6·issue #55·helix emit_post_sending 派生·壳直绑·不再取 pendingText/pendingType）——
+  /** 乐观时 msgId = temporaryId（echo 后由 applyMessageItem 迁 server id）。 */
+  msgId?: string;
+  temporaryId?: string;
+  channelId?: string;
+  /** 乐观态恒 "sending"（壳直绑·不再壳内硬编）。 */
+  sendStatus?: string;
+  readBits?: string;
+  /** 消息正文（helix 吐·瘦投影时代取本地 pendingText 的债已消除）。 */
+  text?: string;
+  /** 消息类型（helix 吐·空容错 TEXT·不再取 pendingType）。 */
+  type?: string;
 }
 
 /** im:post:sending 单列 channel（瘦形态，单独分支，非 message-row fat 集） */
