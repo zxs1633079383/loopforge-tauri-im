@@ -1,0 +1,15 @@
+# BOUND_GREEN.log —— 单写者 append-only 收口 log（A2 收尾）
+#
+# 契约真源：docs/orchestration/README.md §4 + §3 解锁状态机（🟩 BOUND_GREEN）。
+# 单写者：A2（解锁批绑定 workflow）。B 只读不写本文件。
+# 语义：A2 把某行绑到 render-ready（[attr.data-*] 绑定 + 真 Router route + 删本仓该 apply* shaping 段）
+#       且禁区 grep 该行归零 + 四面 reducer 裁绿后追加一行 → 第二北极星覆盖率 +1。
+# 方向：收口（终态）。
+#
+# 列格式（TAB 分隔·4 列）：
+#   <ts ISO8601>\t<apply_name>\t<writer=A2>\t<note UC 编号 + reducer 裁绿凭据>
+# 例：
+#   2026-06-26T14:00:00Z\tapplyMessageItem\tA2\tUC-1.1 四面 reducer green
+#
+# 解析规则：以 # 开头的行 = 注释；空行忽略；apply_name = 第 2 列。
+# 追加只用 `>> BOUND_GREEN.log`（绝不重写整文件）→ 零 merge 冲突。
