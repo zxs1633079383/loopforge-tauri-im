@@ -478,7 +478,14 @@ import { MessageRow } from "./im/message-row.model";
               [attr.data-admin]="mem.admin ? '1' : null"
               [attr.data-nickname]="mem.nickname ?? null"
             >
+              <div
+                class="mem__avatar"
+                [style.background]="avatarColor(mem.memberId)"
+              >{{ avatarInitial(mem.memberId) }}</div>
               <span class="mem__name">{{ mem.nickname || mem.memberId }}</span>
+              @if (mem.admin) {
+                <span class="mem__crown" title="管理员">♛</span>
+              }
               <span class="mem__ops">
                 <input
                   class="im__mini-input"
@@ -743,6 +750,12 @@ import { MessageRow } from "./im/message-row.model";
       .msg__head { display: flex; align-items: baseline; gap: 8px; }
       .msg__author { color: var(--txt); font-weight: 600; font-size: 15px; }
       .msg__time { color: var(--txt-3); font-size: 12px; }
+      .mem__avatar {
+        width: 32px; height: 32px; border-radius: 16px; flex: none;
+        display: flex; align-items: center; justify-content: center;
+        color: #fff; font-weight: 600; font-size: 13px;
+      }
+      .mem__crown { color: var(--yellow); font-size: 13px; flex: none; }
     `,
   ],
 })
