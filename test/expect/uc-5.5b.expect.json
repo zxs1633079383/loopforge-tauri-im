@@ -9,12 +9,10 @@
     "dom": "uc-coverage-ledger.md UC-5.5b §3 data-pinned（消息行置顶态·Phase2 接线时确认选择器/属性形态；壳纯渲染 props/pinned 态·无前端算）。",
     "storage": "full-map/partials/2--backend-http-channel-sync.md §21 DB 表 postpinned(写)+post(读) · 客户端落库：post_pin 帧经 im:post:updated 应用 → patch 本地 post 行 pinned 态（UPDATE WHERE id·保留本地 read_bits/send_status）· uc-coverage-ledger.md UC-5.5b §4。"
   },
-
   "corrAnchor": {
     "note": "领域锚：post_pin 命令 body 的 postId 由 e2e 运行时填实值后覆写本字段（占位 null·匹配已发出消息的 server_id）；reducer 经 sid 维度锁定目标束（无 tmp·操作既有 server post）。出站 body {channelId,postId}→extractDims {ch,sid=postId}·② im:post:updated 携 msg_id(=sid)+channel_id·④ message 行 id(=sid)→三面经 sid=postId 聚同一束（与 uc-3.3 同范式·见 corr-key.mjs sid 别名含 postId/msg_id）。",
     "postId": null
   },
-
   "outbound": {
     "method": "POST",
     "urlEndsWith": "channel/add/postPinned",
@@ -22,10 +20,13 @@
       "channelId": "*",
       "postId": "*"
     },
-    "bodyForbidden": ["channel_id", "post_id", "channel/remove/postPinned"],
+    "bodyForbidden": [
+      "channel_id",
+      "post_id",
+      "channel/remove/postPinned"
+    ],
     "_note": "channel_pinned.rs::SetMessageTopCommand.build → endpoint 'channel/add/postPinned'（子路由前缀 channel=BaseRoutes.Channel /api/cses/channel）+ body camelCase {channelId,postId}（passthrough 域键形状须对齐 cses params·非 snake）。Go command.ChannelPostPinnedCommand 含 Id/ChannelId/PostId·但 helix 出站仅发 channelId+postId 两键（Id 由 handler channel.go:670 侧覆盖·不在客户端出站体）。bodyForbidden 锚 snake_case channel_id/post_id 泄漏（bridge 字节透传不转 snake·builder 读 camel·发 snake 即 require_str 失败）+ 锚 unpin 路由 channel/remove/postPinned 误混（置顶 vs 取消置顶两套 endpoint·urlEndsWith 'channel/add/postPinned' 已隐含 /add 守护·remove 不匹配即 fail）。**本面 ① 经 go-mattermost 可真跑·与 ②③④ 的 cses-java WS 阻塞解耦**。"
   },
-
   "projection": {
     "event": "im:post:updated",
     "dataKeys": [
@@ -41,18 +42,20 @@
       "createAt",
       "updateAt",
       "readBits",
-      "viewers"
+      "viewers",
+      "sendStatus",
+      "reactions",
+      "templateReceived",
+      "systemNotice"
     ],
     "_note": "projection-schema §1 emit_post_updated → im:post:updated·data 键集 == fat 完整 13 键（同 emit_post_received·缺/多即 fail）。在线主路径：WS post_pin action（payload=pinned post 信息）→ 实现 phase 经 emit_post_updated 投出（pinned 态落 props·post-targeted sid 锚）。oracle 锁键集到顶层 13 键（props 作单字段·内部 pinned 子结构由 DB/④ 面核·避免把后端可变 props 子结构硬编进冻结契约）。**⛔ backend-down (2026-06-26)**：post_pin WS 帧依赖 cses-java 业务广播链（7091/3391=000·JDWP suspend）→ 当前不可观测·② 待 cses-java 恢复后真跑裁定·禁伪造绿。**当前 helix 真源**：ws/handlers/post_pin.rs 为 graceful no-op（待实现 phase 按用户拍板接 emit_post_updated·C004 红转绿改实现不改本 oracle）。"
   },
-
   "storage": {
     "op": "batch_update",
     "table": "message",
     "minRows": 1,
     "_note": "客户端落库（装饰器 facet④ {op,table,rows}）：post_pin 帧经 im:post:updated 应用 → patch 本地 message 行 pinned 态（UPDATE WHERE id·仅覆盖内容/props 列·保留本地 read_bits/send_status·C2 不擦已读位）。op 草拟 batch_update（仿 uc-3.3 / UC-1.9 同走 PostEdit→edit_content_op gate·实跑 run.jsonl 证据确认后如偏 update 走 C004 契约更正+证据人审）。后端真源表：postpinned(写)+post(读)（partials/2 §21·服务端·非客户端 facet④ 面）。**⛔ backend-down (2026-06-26)**：客户端落库由 WS 回声驱动·阻于 cses-java 业务广播链断 → ④ 待恢复后真跑·禁伪造绿。"
   },
-
   "dom": {
     "dataAttrs": {
       "pinned": "*"

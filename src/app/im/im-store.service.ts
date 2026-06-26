@@ -1,6 +1,5 @@
 import { Injectable, computed, inject, signal } from "@angular/core";
 import { TauriBridgeService } from "./tauri-bridge.service";
-import { extractReactions, extractTemplateReceived, isSystemNotice } from "./props-extract";
 import { extractReplyIds } from "./read-result-extract";
 import {
   BookmarkRow,
@@ -8,6 +7,7 @@ import {
   MemberRow,
   MessageRow,
   ReplyRow,
+  SendStatus,
   TodoRow,
 } from "./message-row.model";
 import {
@@ -133,6 +133,19 @@ export class ImStoreService {
 
   /** 本地暂存：temporaryId → 消息类型（瘦投影 im:post:sending 不带 type，乐观 sending 行 data-type 需要）。 */
   private readonly pendingType = new Map<string, string>();
+
+  /**
+   * 消息行 O(1) 定位索引（anchorKey → 行稳定 msgId）—— issue #53·C013 纯渲染壳。
+   *
+   * applyMessageItem 据此 O(1) 定位 echo/patch 目标行，**替代** 全表线性扫
+   * （对账块下沉 helix·reconcile_post_echo 已在引擎做 tmp→server·status=sent，壳只需定位行渲染）。
+   * 锚 key 形态：
+   *  - `t:<temporaryId>|<channelId>`：发送对账（带频道·UC-1.7 转发同 tmp 多频道不互相覆写）。
+   *  - `t:<temporaryId>|`：纯 tmp 锚（echo 不带 channelId 的罕见回退）。
+   *  - `s:<serverId>`：server id 锚（UC-1.8 quickReply 等无 tmp 的纯 props patch·复用既有消息）。
+   * 值随 echo 迁移（tmp→serverId）即时重锚（O(1)）。
+   */
+  private readonly rowAnchorIdx = new Map<string, string>();
 
   /** 订阅单总线 + 启动就绪 probe 轮询。组件 ngOnInit 调一次。 */
   async start(): Promise<void> {
@@ -1468,8 +1481,8 @@ export class ImStoreService {
    * outbound/template_received.rs TemplateReceivedCommand）。壳只供 postId（模板消息 server id）。
    * fire-and-forget（响应 CommonRes 无 data）；data-template-received 由 helix `im:post:updated`
    * （fat·WS post_update EventKind::PostEdit·props.template.userIds 含 self）投影驱动·壳纯渲染·
-   * 无乐观合成（applyMessageItem 既有路径按 server id 锚命中既有行·extractTemplateReceived 抽
-   * props.template patch）。非 Tauri / 命令缺失 → 静默（dev 浏览器单独调 UI 不卡）。
+   * 无乐观合成（applyMessageItem 既有路径按 server id 锚命中既有行·helix 已 render-ready 吐
+   * templateReceived bool·壳直绑·issue #53）。非 Tauri / 命令缺失 → 静默（dev 浏览器单独调 UI 不卡）。
    */
   async templateReceived(postId: string): Promise<void> {
     const post = postId.trim();
@@ -1654,7 +1667,7 @@ export class ImStoreService {
     // （data-channel-display-name/-notice）。注：channelUpdate post 本身 type=NOTICE/userId=SYS =
     // **系统通知消息**（NOTICE_TYPES·full-map partials/7 §3）→ 现网前端既刷群头属性又在消息列表
     // 渲染系统提示行（"X 改了群名"）。故**不早退**：先刷频道属性·再落 applyMessageItem 渲染系统
-    // 消息行（UC-10.2 data-system-notice·isSystemNotice 判 NOTICE）。两行为共存·不互斥（UC-5.4
+    // 消息行（UC-10.2 data-system-notice·helix render-ready 判 NOTICE→systemNotice·壳直绑·issue #53）。两行为共存·不互斥（UC-5.4
     // 仍读频道行属性·UC-10.2 读消息行系统标·加法式不回退）。
     this.applyChannelUpdatePost(data);
     this.applyMessageItem(data);
@@ -2136,81 +2149,107 @@ export class ImStoreService {
     if (!temporaryId) return;
     if (this._rows().some((r) => r.temporaryId === temporaryId)) return;
 
-    this._rows.update((rows) => [
-      ...rows,
-      {
-        msgId: temporaryId,
-        temporaryId,
-        channelId: d.channel_id ?? "",
-        eventSeq: null,
-        sendStatus: "sending",
-        readBits: "",
-        text: this.pendingText.get(temporaryId) ?? "",
-        type: this.pendingType.get(temporaryId) ?? "TEXT",
-      },
-    ]);
+    const row: MessageRow = {
+      msgId: temporaryId,
+      temporaryId,
+      channelId: d.channel_id ?? "",
+      eventSeq: null,
+      sendStatus: "sending",
+      readBits: "",
+      text: this.pendingText.get(temporaryId) ?? "",
+      type: this.pendingType.get(temporaryId) ?? "TEXT",
+    };
+    this._rows.update((rows) => [...rows, row]);
+    // O(1) 定位锚登记（echo 据此找乐观行·issue #53·替代 findIndex 全表扫）。
+    this.rememberRowAnchors(row);
   }
 
   /**
-   * echo 覆写：按 temporaryId 找乐观行 → data-msg-id 改 server id、status=sent、补 event-seq。
-   * 找不到（别的设备消息 / 非本壳发的）→ 作为新行追加（server 已知形态）。
+   * 登记/刷新某行的 O(1) 定位锚（anchorKey → 行稳定 msgId·issue #53·C013）。
+   * 锚：`t:<tmp>|<ch>` / `t:<tmp>|`（纯 tmp 回退）/ `s:<serverId>`。幂等·加法式。
+   */
+  private rememberRowAnchors(row: MessageRow): void {
+    const ch = row.channelId ?? "";
+    if (row.temporaryId) {
+      this.rowAnchorIdx.set(`t:${row.temporaryId}|${ch}`, row.msgId);
+      this.rowAnchorIdx.set(`t:${row.temporaryId}|`, row.msgId);
+    }
+    if (row.msgId) this.rowAnchorIdx.set(`s:${row.msgId}`, row.msgId);
+  }
+
+  /** 按锚 key 顺序 O(1) 探目标行稳定 msgId（命中首个·找不到 null）。 */
+  private locateRowMsgId(keys: string[]): string | null {
+    for (const k of keys) {
+      const id = this.rowAnchorIdx.get(k);
+      if (id) return id;
+    }
+    return null;
+  }
+
+  /**
+   * echo/patch 覆写：按 (tmp, ch)/server id 锚 **O(1) 定位** 乐观行 → 替换 data-* 终态。
+   * 找不到（别的设备消息 / 非本壳发的 / UC-10.2 系统帧）→ 追加新行（server 已知形态）。
+   *
+   * issue #53·C013 纯渲染壳：对账（tmp→server·status=sent）已在 helix reconcile_post_echo 做，
+   * reactions/templateReceived/systemNotice/type 已由 helix message_item_data render-ready 吐出 →
+   * 本仓**只做 1:1 绑定 + O(1) 行定位**，删除壳内 shaping 与全表线性扫定位。
+   * 「helix 入库成功 = 消息收到」→ 收到 render-ready 即直接渲染（sendStatus 取 helix 终态·不判 echo 来没来）。
+   *
+   * 锚优先级（与 reconcile 语义一致）：带 channelId 的 echo 按 `t:<tmp>|<ch>`（UC-1.7 转发同 tmp 多频道
+   *   不互相覆写）；不带 channelId 退 `t:<tmp>|`；无 tmp（UC-1.8 quickReply 纯 props patch）退 `s:<serverId>`。
    */
   private applyMessageItem(d: MessageItemData): void {
     const temporaryId = d.temporaryId ?? "";
     const serverId = d.msg_id ?? "";
     const eventSeq = typeof d.event_seq === "number" ? d.event_seq : null;
     const readBits = this.toReadBits(d.readBits);
-    // UC-1.8：从 fat 投影 props 抽快捷回复 emoji 串（命中 → data-reactions·壳纯渲染·无乐观合成）。
-    const reactions = extractReactions(d.props);
-    // UC-3.3：从 fat 投影 props 抽模板已收到态（props.template.userIds 非空 → data-template-received=1·
-    //   壳纯渲染·无乐观合成）。post_update echo（EventKind::PostEdit）携 template patch 进 props。
-    const templateReceived = extractTemplateReceived(d.props);
-    // UC-10.2：从 fat 投影 type 判系统通知（SYSTEM/SYSTEN 拼写陷阱保真透传·data-system-notice）。
-    //   壳纯渲染·无乐观合成（系统通知由 WS 帧驱动的 im:post:received 透传 type 投影）。
-    const systemNotice = isSystemNotice(d.type);
-
-    // UC-1.8 post_update echo 复用既有消息（无 temporaryId 乐观行）→ 按 server id 命中行覆写
-    //   reactions（emoji patch）。先试 temporaryId 锚（发送对账），再退 server id 锚（quickReply
-    //   等纯 props patch 路径·复用消息无 tmp）。
-    //
-    // UC-1.7 转发：单出站 createPosts 的 posts[0] 携同一 temporaryId 应用到 N 目标频道 →
-    //   N 条 echo 共享同 temporaryId 但 channelId 各异。若仅按 temporaryId 锚，第 2 条 echo 会
-    //   覆写第 1 条（频道 A）的行 → 只剩 1 行（丢频道）。故 temporaryId 锚**须叠加 channelId 同频道**
-    //   约束（消息归属特定频道·跨频道同 tmp 不应互相覆写）。echo 带 channelId 时按 (tmp, ch) 锚；
-    //   不带 channelId（罕见）退回纯 tmp 锚（保持 send 既有行为·乐观行 channelId 已由 sending 投影置）。
     const echoCh = d.channelId ?? d.channel_id ?? "";
-    const idx = temporaryId
-      ? this._rows().findIndex(
-          (r) => r.temporaryId === temporaryId && (!echoCh || !r.channelId || r.channelId === echoCh),
-        )
-      : serverId
-        ? this._rows().findIndex((r) => r.msgId === serverId)
-        : -1;
 
-    if (idx >= 0) {
-      // 覆写既有行（temporaryId 不变；quickReply patch 走 server id 锚命中既有行）
-      this._rows.update((rows) => {
-        const next = rows.slice();
-        const prev = next[idx];
-        next[idx] = {
-          ...prev,
-          msgId: serverId || prev.msgId,
-          eventSeq,
-          sendStatus: "sent",
-          readBits,
-          text: d.message ?? prev.text,
-          type: d.type || prev.type,
-          // data-user-id：fat 投影 userId 透传（头像/作者渲染·空则保留乐观行旧值·加法式）。
-          userId: d.userId || prev.userId,
-          // reactions 命中则覆写（patch 只增不清·无 quickReply 的 echo 不抹既有 reactions）。
-          reactions: reactions ?? prev.reactions,
-          // templateReceived 命中则置位（patch 只增不清·非模板 echo 不抹既有态·UC-3.3）。
-          templateReceived: templateReceived ? true : prev.templateReceived,
-          // systemNotice 命中则置位（type=SYSTEM/SYSTEN 透传·非系统 echo 不抹既有态·UC-10.2）。
-          systemNotice: systemNotice ? true : prev.systemNotice,
-        };
-        return next;
-      });
+    // O(1) 锚定位：带 ch → 严格 (tmp,ch)；不带 ch → 纯 tmp；无 tmp → server id。
+    const keys = temporaryId
+      ? echoCh
+        ? [`t:${temporaryId}|${echoCh}`]
+        : [`t:${temporaryId}|`]
+      : serverId
+        ? [`s:${serverId}`]
+        : [];
+    const targetMsgId = this.locateRowMsgId(keys);
+
+    if (targetMsgId !== null) {
+      // 覆写既有行（按稳定 msgId 命中·壳纯绑定 render-ready 字段·不再壳内合成）。
+      this._rows.update((rows) =>
+        rows.map((r) =>
+          r.msgId === targetMsgId
+            ? {
+                ...r,
+                msgId: serverId || r.msgId,
+                eventSeq,
+                // sendStatus：helix render-ready 终态（恒 "sent"·入库成功=消息收到·取消转圈）。
+                sendStatus: this.toSendStatus(d.sendStatus),
+                readBits,
+                text: d.message ?? r.text,
+                // type：helix render-ready（空串已容错 TEXT·壳不再 `|| "TEXT"` 兜底）。
+                type: d.type ?? r.type,
+                // data-user-id：fat 投影 userId 透传（空则保留旧值·加法式）。
+                userId: d.userId || r.userId,
+                // reactions：helix 预解串直绑（patch 只增不清·null echo 不抹既有 reactions）。
+                reactions: d.reactions ?? r.reactions,
+                // templateReceived：helix 判定直绑（命中置位·非模板 echo 不抹既有态）。
+                templateReceived: d.templateReceived ? true : r.templateReceived,
+                // systemNotice：helix 判定直绑（命中置位·非系统 echo 不抹既有态）。
+                systemNotice: d.systemNotice ? true : r.systemNotice,
+              }
+            : r,
+        ),
+      );
+      // 行 msgId 可能 tmp→serverId 迁移 → O(1) 重锚（后续 quickReply 等 server id patch 命中）。
+      if (serverId) {
+        if (temporaryId) {
+          this.rowAnchorIdx.set(`t:${temporaryId}|${echoCh}`, serverId);
+          this.rowAnchorIdx.set(`t:${temporaryId}|`, serverId);
+        }
+        this.rowAnchorIdx.set(`s:${serverId}`, serverId);
+      }
       // echo 已对账 → 清本地暂存（pendingText/pendingType 仅用于 sending 行渲染）。
       if (temporaryId) {
         this.pendingText.delete(temporaryId);
@@ -2219,24 +2258,28 @@ export class ImStoreService {
       return;
     }
 
-    // 非本壳乐观行 → 追加新行（用 server 视角）
-    this._rows.update((rows) => [
-      ...rows,
-      {
-        msgId: serverId || temporaryId,
-        temporaryId,
-        channelId: d.channelId ?? d.channel_id ?? "",
-        eventSeq,
-        sendStatus: "sent",
-        readBits,
-        text: d.message ?? "",
-        type: d.type || "TEXT",
-        userId: d.userId || undefined,
-        reactions: reactions ?? undefined,
-        templateReceived: templateReceived || undefined,
-        systemNotice: systemNotice || undefined,
-      },
-    ]);
+    // 非本壳乐观行 → 追加新行（用 server 视角·render-ready 直绑）。
+    const row: MessageRow = {
+      msgId: serverId || temporaryId,
+      temporaryId,
+      channelId: d.channelId ?? d.channel_id ?? "",
+      eventSeq,
+      sendStatus: this.toSendStatus(d.sendStatus),
+      readBits,
+      text: d.message ?? "",
+      type: d.type ?? "TEXT",
+      userId: d.userId || undefined,
+      reactions: d.reactions ?? undefined,
+      templateReceived: d.templateReceived || undefined,
+      systemNotice: d.systemNotice || undefined,
+    };
+    this._rows.update((rows) => [...rows, row]);
+    this.rememberRowAnchors(row);
+  }
+
+  /** helix render-ready sendStatus 归一为壳 SendStatus（缺省/异常 → "sent"·入库成功终态）。 */
+  private toSendStatus(s: string | undefined): SendStatus {
+    return s === "sending" || s === "failed" ? s : "sent";
   }
 
   /**
@@ -2311,22 +2354,22 @@ export class ImStoreService {
       }
 
       // 新行（Scan 出的已落库历史·非乐观）→ 追加（server 视角·sendStatus=sent）。
-      this._rows.update((rows) => [
-        ...rows,
-        {
-          msgId,
-          temporaryId,
-          channelId: ch,
-          eventSeq: null, // message 表无 event_seq 列（读族·渲染空串）
-          sendStatus: "sent",
-          readBits,
-          text,
-          type,
-          revoked: revoked || undefined,
-          createAt,
-          userId: userId || undefined,
-        },
-      ]);
+      const row: MessageRow = {
+        msgId,
+        temporaryId,
+        channelId: ch,
+        eventSeq: null, // message 表无 event_seq 列（读族·渲染空串）
+        sendStatus: "sent",
+        readBits,
+        text,
+        type,
+        revoked: revoked || undefined,
+        createAt,
+        userId: userId || undefined,
+      };
+      this._rows.update((rows) => [...rows, row]);
+      // O(1) 定位锚登记（后续 quickReply/系统帧 echo 据 server id 找历史行·issue #53）。
+      this.rememberRowAnchors(row);
     }
   }
 
@@ -2394,21 +2437,21 @@ export class ImStoreService {
       }
 
       // 新的更早行 → prepend 到头部（history 方向·更早在上方）。
-      this._rows.update((rows) => [
-        {
-          msgId,
-          temporaryId,
-          channelId: ch,
-          eventSeq: null, // wire Post 无 event_seq（读族·渲染空串）
-          sendStatus: "sent" as const,
-          readBits,
-          text,
-          type,
-          createAt,
-          userId: userId || undefined,
-        },
-        ...rows,
-      ]);
+      const row: MessageRow = {
+        msgId,
+        temporaryId,
+        channelId: ch,
+        eventSeq: null, // wire Post 无 event_seq（读族·渲染空串）
+        sendStatus: "sent",
+        readBits,
+        text,
+        type,
+        createAt,
+        userId: userId || undefined,
+      };
+      this._rows.update((rows) => [row, ...rows]);
+      // O(1) 定位锚登记（issue #53·与首屏 query_result 同口径）。
+      this.rememberRowAnchors(row);
     }
   }
 

@@ -27,6 +27,8 @@ export interface BusPayload {
  * 信号锚（snake_case）：channel_id / event_seq / msg_id
  * 渲染核（camelCase）：temporaryId / channelId / userId / type / message /
  *                      props / createAt / updateAt / readBits / viewers
+ * render-ready 终态（issue #53·C013 业务下沉 helix·壳纯绑定）：
+ *   sendStatus / reactions / templateReceived / systemNotice
  */
 export interface MessageItemData {
   // —— 信号锚（snake_case，helix 自造）——
@@ -45,6 +47,15 @@ export interface MessageItemData {
   updateAt: number;
   readBits: string | number;
   viewers: unknown;
+  // —— render-ready 终态字段（issue #53·helix message_item_data 派生·壳直绑·不再壳内 shaping）——
+  /** 已对账态：helix 入库成功即 "sent"（消息收到=入库成功·壳收到即取消转圈·不判 echo 来没来）。 */
+  sendStatus: string;
+  /** 快捷回复 emoji 串（helix 预解 props.quickReply·无→null）。data-reactions 渲染源。 */
+  reactions: string | null;
+  /** 模板已收到（helix 判 props.template.userIds 非空）。data-template-received 渲染源。 */
+  templateReceived: boolean;
+  /** 系统通知行（helix 判 type∈NOTICE_TYPES）。data-system-notice 渲染源。 */
+  systemNotice: boolean;
 }
 
 /**

@@ -10,18 +10,15 @@
     "dom": "docs/spec/angular-ui-plan.md ML 消息行 + app.component.ts:205 [attr.data-system-notice]=\"m.systemNotice ? '1' : null\"。store applyMessageItem 经 props-extract.isSystemNotice(d.type)（NOTICE_TYPES 命中·真源 full-map partials/7 §3）→ systemNotice=true → data-system-notice='1'（壳纯渲染·无乐观合成·type 透传判定）。注：channelUpdate post（props.type=channelUpdate）被 applyChannelUpdatePost 拦截刷频道属性·不进消息列表；本 UC 走**非 channelUpdate** 系统 NOTICE（建群 post）→ applyMessageItem 渲染消息行。",
     "storage": "spec send-message-vertical-slice.md §5 / §2 facet④：系统 NOTICE post echo 经 echo 落库链落 message 行（batch_upsert·id=server_id, type=NOTICE）。装饰器 facet④ payload 只暴露 {op,table,rows}（不含行内容）。"
   },
-
   "corrAnchor": {
     "note": "领域锚：建群派生系统 NOTICE post 由 server 生成（无客户端 temporaryId）→ 用新群 channelId 作 ch 锚；reducer chPerPostTarget 在锚 ch 束内挑含 im:post:received(type=NOTICE) 那束（与 UC-5.4 同机制）。ch 由 e2e 运行时填实值覆写（占位 null）。",
     "ch": null
   },
-
   "outbound": {
     "method": "*",
     "urlEndsWith": "*",
     "_note": "① N/A（WS 帧触发·无客户端独立 HTTP 出站）：method=* url=* 空 body → isOutboundOptional 放行·不约束出站·不参与裁定。守可证伪边界：本 UC 真断面是 ②③④（投影/DOM/落库），① 显式标 optional 即声明 WS-frame-triggered 语义（与 send 族实 body 约束区分）。注：e2e 注入器 im_send 产生的 posts/create 出站不在本 UC 断面（仅作系统消息注入机制·同 UC-3.3 发 TEMPLATE 作设置）。"
   },
-
   "projection": {
     "event": "im:post:received",
     "dataKeys": [
@@ -37,7 +34,11 @@
       "createAt",
       "updateAt",
       "readBits",
-      "viewers"
+      "viewers",
+      "sendStatus",
+      "reactions",
+      "templateReceived",
+      "systemNotice"
     ],
     "dataValues": {
       "type": "NOTICE",
@@ -49,14 +50,12 @@
     },
     "_note": "projection-schema §1 emit_post_received fat 完整集（13 键·缺/多即 fail·channelId/channel_id 双写同 UC-5.4 系统 post 透传形态）。系统通知 post 走同 emit_post_received → data.type=NOTICE·userId=SYS·props{type:channelUpdate,field:displayName,content:新名}（改群名系统帧透传·helix 不改写·UC-5.4 channelUpdate post 真机 wire 实证同源 seq19/514）。dataValues type=NOTICE+userId=SYS + propsMatch type=channelUpdate+field=displayName 精确锚 channelUpdate 系统帧·守可证伪：普通消息 echo（type=TEXT/userId≠SYS）或错 props 锚不上 → ② 红·非 tautology。content=新名由 e2e 运行时注入 propsMatch.content（动态值·同 UC-5.4 ch 锚同理）。"
   },
-
   "storage": {
     "op": "batch_upsert",
     "table": "message",
     "minRows": 1,
     "_note": "spec §2 facet④：系统 NOTICE post echo 落 message 行（id=server_id, type=NOTICE）。装饰器 facet④ payload 只暴露 {op,table,rows}（不含行内容·避隐私/体积）。复用 echo 落库链（建群尾随 post→im:post:received→reconcile→Storage）。"
   },
-
   "dom": {
     "dataAttrs": {
       "system-notice": "1",

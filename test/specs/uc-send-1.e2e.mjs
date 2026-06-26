@@ -20,7 +20,7 @@
 
 import { browser, $, expect } from '@wdio/globals';
 import { readFileSync } from 'node:fs';
-import { runFourFacet } from '../reducer/four-facet-reducer.mjs';
+import { runSixFacet } from '../reducer/four-facet-reducer.mjs';
 
 const EXPECT = JSON.parse(
   readFileSync(new URL('../expect/uc-send-1.expect.json', import.meta.url), 'utf8')
@@ -155,19 +155,22 @@ describe('UC-send-1 · 发消息 round-trip（四面契约）', () => {
       corrAnchor: { ...EXPECT.corrAnchor, tmp: TMP },
     };
     const jsonl = readFileSync(RUN_JSONL, 'utf8');
-    const report = runFourFacet({ jsonl, expect: expectWithAnchor, dom: settled });
+    // 六面 reducer（issue #53·P0b）：四面 + ⓪纯壳不变量（IpcIn≡Inbound·expect.pureShell）+ WsRecv（optional）。
+    const report = runSixFacet({ jsonl, expect: expectWithAnchor, dom: settled });
 
-    // 「断在哪一跳」报告（①④ rewire 已接通 → 四面全断言，无放水）。
-    console.log('[UC-send-1 四面报告] ' + report.summary);
-    for (const f of ['outbound', 'projection', 'storage', 'dom']) {
-      if (!report.facets[f].ok) console.log(`  ✖ ${f}: ${report.facets[f].issues.join('; ')}`);
+    // 「断在哪一跳」报告（六面全断言·链路顺序 pure-shell→outbound→ws-recv→projection→storage→dom）。
+    console.log('[UC-send-1 六面报告] ' + report.summary);
+    for (const f of ['pure-shell', 'outbound', 'ws-recv', 'projection', 'storage', 'dom']) {
+      if (report.facets[f] && !report.facets[f].ok) console.log(`  ✖ ${f}: ${report.facets[f].issues.join('; ')}`);
     }
 
-    // 四面严格断言（reducer 的 diffOutbound/diffStorage 已是严格比对，照用，不放水）。
+    // 六面严格断言（reducer 的 diffOutbound/diffStorage 已是严格比对，照用，不放水）。
     expect(report.parseErrors.length).toBe(0);
+    // ⓪ 纯壳不变量：IpcIn.args ≡ Inbound.args（TEXT 默认下沉 helix 后·壳零中间 shaping·C013）。
+    expect(report.facets['pure-shell'].ok).toBe(true);
     // ① 出站 body：严格对齐 expect.outbound（camelCase 必填集 + bodyForbidden snake_case 泄漏）。
     expect(report.facets.outbound.ok).toBe(true);
-    // ② 投影字段集 == projection-schema message_item_data（fat 13 键，缺/多即 fail）。
+    // ② 投影字段集 == projection-schema message_item_data（fat render-ready 集，缺/多即 fail）。
     expect(report.facets.projection.ok).toBe(true);
     // ④ 落库：batch_upsert message 表 ≥1 行。
     expect(report.facets.storage.ok).toBe(true);

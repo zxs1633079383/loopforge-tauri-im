@@ -9,12 +9,10 @@
     "dom": "docs/spec/send-message-vertical-slice.md §4 DOM 契约",
     "storage": "docs/spec/send-message-vertical-slice.md §5 / §2 facet④"
   },
-
   "corrAnchor": {
     "note": "领域锚：发送 body 的 temporaryId 由 e2e 在运行时填实值后覆写本字段（占位 *，匹配任一含 tmp 的束）；reducer 用它锁定目标束。",
     "tmp": null
   },
-
   "outbound": {
     "method": "POST",
     "urlEndsWith": "posts/create",
@@ -34,10 +32,12 @@
       "revoke": "*",
       "id": "*"
     },
-    "bodyForbidden": ["channel_id", "temporary_id"],
+    "bodyForbidden": [
+      "channel_id",
+      "temporary_id"
+    ],
     "_note": "真机curl真源 §1：全 camelCase + 必填集。bodyForbidden 锚 send-无回声真因（snake_case 旧形态泄漏即 fail）。值用 * = 仅校验键存在（具体值随 run 变）；type 固定 TEXT。"
   },
-
   "projection": {
     "event": "im:post:received",
     "dataKeys": [
@@ -53,18 +53,20 @@
       "createAt",
       "updateAt",
       "readBits",
-      "viewers"
+      "viewers",
+      "sendStatus",
+      "reactions",
+      "templateReceived",
+      "systemNotice"
     ],
     "_note": "projection-schema §1 emit_post_received fat 完整集（13 键）。缺/多即 fail（FixB 反转：少一字段=漂移）。命名陷阱 createAt 非 createdAt 已由键集锁定。"
   },
-
   "storage": {
     "op": "batch_upsert",
     "table": "message",
     "minRows": 1,
     "_note": "spec §2 facet④：echo 落 message 行（id=server_id, temporary_id=tmp, read_bits 预置）。装饰器 facet④ payload 只暴露 {op,table,rows}（不含行内容，避隐私/体积）；行内容由 harness 直接查库二选一（four-facet-oracle §1 ④）。"
   },
-
   "dom": {
     "dataAttrs": {
       "msg-id": "!tmp",
@@ -73,5 +75,9 @@
       "event-seq": "*"
     },
     "_note": "spec §4：echo 覆写终态。msg-id=!tmp 语义=data-msg-id 必 ≠ temporaryId（tmp→server 覆写发生）；send-status=sent；补 data-event-seq。e2e 读 [data-temporary-id=t] 行的 data-* 注入 reducer。"
+  },
+  "pureShell": {
+    "injectedKeys": [],
+    "_note": "⓪ 纯壳不变量（C013·issue #53·6-facet-oracle §3）：纯文本 TEXT send → IpcIn.args(im_send {channelId,text,temporaryId}) ≡ Inbound.args（壳零中间 shaping·零注入）。**TEXT 默认下沉 helix（parser.rs type 空→TEXT + send_build.rs）后成立**：壳不再补 type（旧『壳补 TEXT 致 ipc-in.args.type=null ≠ inbound』已消除）→ injectedKeys 空集（无授权壳注入字段）。任一字段被壳篡改/丢/注入即红（守可证伪）。"
   }
 }
