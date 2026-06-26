@@ -68,6 +68,7 @@
 |---|---|---|---|---|---|---|---|
 | [x] | 9.x 书签 | `post/bookmark/{create,delete,load}` | `partials/6 集合九` | `query::emit_read_result`(读族透传) | data-bookmark | `message`(书签) | M |
 | [x] | 10.1 待办列表 | (hello 收尾自驱)`posts/queryTodoList`{postIds} | `partials/8 http.rs:67` | `todo::emit_todo_updated`{items} | data-todo-id 列表 | N/A(projection-only·无 todo 表) | M |
+| [x] | 10.3 全模块读 ✅①②全绿(读族·go-served·③④N/A) | `im_modules_get_all`→`modules/getAll`(空 body) | `partials/3 §8`+`partials/11 §8`(已迁移·空 body·data=[]*Modules) | `read_relay::emit_read_result`(读族透传·im:read:result) | N/A(读族·前端从 body 抽模块渲染) | N/A(读族只读) | S |
 | [x] | 4.2 按需 sync notify ✅四面全绿(#32·anchorCh=14jeie5y…·×2) | `im_sync_channels`→`channel/sync/notify`(gap 自驱) | `partials/8 §2.1`{cursors:[{channelId,fromSeq}]} | `emit_channel_update_by_post`(thin {channel_id,event_seq,msg_id})+`emit_post_received`(fat) | 增量行+badge(unread) | `message`+cursor 跳空洞 | M |
 | [x] | 4.5 陌生 channel 兜底 | `im_ensure_channel_loaded`→`channel/load/incrementByChannelId` | `channel_read.rs`{channelId}·is_read=true | `im:read:result`{req_id,body}（读族·C004 校正） | N/A（读路径） | N/A（不落新行·cursor 不推进） | M✅ |
 | [x] | 4.4 心跳 gap 补偿(3 面) | (Rust ping/pong piggyback 自驱) | `partials/8 §5.7`{cursors,allHash} | (补偿走 4.2 sync 投影) | **③ N/A（已移除该面）** | `channel_event_cursor` | ✅三面真绿(①②④·e2e #34) |

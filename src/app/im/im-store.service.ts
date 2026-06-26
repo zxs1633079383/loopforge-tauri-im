@@ -998,6 +998,27 @@ export class ImStoreService {
   }
 
   /**
+   * UC-10.3 获取全部功能模块（拉会话分组模块·读族 request-response）：invoke('im_modules_get_all',
+   * {reqId}）。
+   *
+   * **读族 request-response**（helix 注册 is_read=true·无 WS 回声）：出站 `POST modules/getAll`·
+   * **无请求体**（handler 不解析 body·真源 modules.go:14）。HTTP 200 响应体（dto.CommonRes 信封
+   * data=[]*ent.Modules 模块列表）经 helix `read_relay::emit_read_result` 透传回灌
+   * `im:read:result{req_id, body}`。endpoint/method（POST modules/getAll·空 body）在 helix-im
+   * （GetAllModulesCommand）兑现·壳只供 reqId（前端 bridge 生成·回灌关联）。返 reqId 供 caller/e2e
+   * 等回灌关联。本 UC 验收仅 ①② 面（出站空 body + im:read:result 投影透传）。
+   */
+  async getAllModules(reqId?: string): Promise<string> {
+    const rid = (reqId ?? this.genReqId()).trim();
+    try {
+      await this.bridge.invoke<void>("im_modules_get_all", { reqId: rid });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（模块列表靠 im:read:result 投影驱动·无乐观合成）。
+    }
+    return rid;
+  }
+
+  /**
    * UC-9.x 书签·收藏消息：invoke('im_bookmark_create', {channelId, postIds, reqId}）。
    *
    * **读族 request-response**（helix 注册 is_read=true·无 WS 回声）：HTTP 200 响应体（CommonRes 无

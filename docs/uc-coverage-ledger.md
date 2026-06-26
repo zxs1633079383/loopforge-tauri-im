@@ -478,6 +478,17 @@
 - **③ DOM**：`data-todo-id` 列表（store `applyTodoUpdated` 透传投影 items → `_todos` signal → @for 渲染·实跑首行 data-todo-id 非空）。
 - **④ 落库**：N/A（projection-only·见上注·port_reply 仅 emit 不落库）。
 
+### UC-10.3 全模块读 — `✅ 读族双面全绿`（读族 ①②·③④ N/A·暖栈实跑全绿·corr_key=req_id·go-served）
+
+> **读族 request-response 断面 ①②**（同 UC-5.8 / UC-4.5 / UC-6.4）：`modules/getAll` 是读命令（`user_misc.rs::GetAllModulesCommand` `is_read=true`·handler **不解析请求体**·HTTP 200 响应体即模块列表·**不推送**·无 WS 回声）→ helix `read_relay::emit_read_result` 透传回灌 `im:read:result{req_id, body}`（projection-schema §1.2 读族·非 21 投影集）。按 C004 以冻结源码（user_misc.rs:160-166 + read_relay.rs）裁定为读族 ①② 两面·③④=N/A。go :8065 read 端点真跑（probe 200·非 cses-java 宕机阻塞面）。
+
+- **① 出站 HTTP**：`im_modules_get_all` → `POST modules/getAll`，**空 body `{}`**（handler getAllModules 不 decode 请求体·真源 modules.go:14 + 前端 message.service.ts:828 无 body）。✅ 暖栈实证（reducer diffOutbound：`bodyFields {}` 空必填集命中 + `bodyForbidden` 锚 page_number/page_size/req_id/channel_id/user_id/condition/pageOpts 旧形态泄漏 不命中·method POST + urlEndsWith modules/getAll 命中）。真源 partial 3 §8 + partial 11 §8（已迁移·含修「channelMemberChange success」笔误·SetData 不 SetMessage）+ helix outbound/user_misc.rs GetAllModulesCommand。
+- **② 投影**：`im:read:result`（读族透传·§1.2 `{req_id, body}`·外层键集严格对齐·req_id 锚本次 invoke·body = 后端 modules/getAll 响应体原样透传 dto.CommonRes 信封 data=[]*ent.Modules·inner 不冻结）。✅ 暖栈实证（req_id=req-ix0mny2083）。
+- **③ DOM**：N/A（读族无 write 驱动 DOM 契约面·模块列表由前端从透传 body 抽模块渲染·非冻结面）。reducer runFourFacetRead 不裁定 ③。
+- **④ 落库**：N/A（查询为只读·无 `Effect::Persist`·装饰器 facet④ 不暴露读路径）。reducer runFourFacetRead 不裁定 ④。
+- **artifacts**：`test/expect/uc-10.3.expect.json` + `test/specs/uc-10.3.e2e.mjs`（暖栈真跑·1 passing·597ms·reducer 报告「✅ UC-10.3 读族双面全绿·endpoint=modules/getAll」）。
+- **机器件改动**：Rust `im_modules_get_all` 命令（commands.rs·入泵 helix-im `im_get_all_modules`·lib.rs 双 cfg 分支注册）+ 前端 `ImStore.getAllModules` + `onModulesGetAll` 接通（C007 事件配方法·空入参直触发拉全部模块）。reducer / 装饰器 / oracle 未改（读族断面复用 runFourFacetRead·无需新机件）。
+
 ### UC-7.x 搜索（全局/会话/分类）— `⛔ unreachable`（后端真阻塞·P2-1）
 
 > **后端真阻塞缺失**：`Im/search/{global,searchByChannel,…}`（走 api 非 imHttp·缺口矩阵 P2-1）app 层全空桩恒返空 + data 形态偏离源。后端裁决迁移前标 ⛔（不能红转绿·改契约才能过 = 违护栏）。helix fullmap-coverage.sh 亦排除 search 集合七。

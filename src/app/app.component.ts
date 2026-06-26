@@ -78,6 +78,12 @@ import { MessageRow } from "./im/message-row.model";
             <button
               class="im__mini"
               type="button"
+              data-testid="modules-get-all-btn"
+              (click)="onModulesGetAll()"
+            >模块</button>
+            <button
+              class="im__mini"
+              type="button"
               data-testid="sync-channels-btn"
               (click)="onSyncChannels()"
             >同步</button>
@@ -742,6 +748,16 @@ export class AppComponent implements OnInit, OnDestroy {
       ? { name: first.displayName }
       : {};
     void this.store.queryChannels(condition, 0, 20, 0);
+  }
+
+  /**
+   * UC-10.3 获取全部功能模块（读族）：store.getAllModules（invoke im_modules_get_all → 出站
+   * modules/getAll·无 body）。读族无 WS 回声·模块列表靠 helix `im:read:result{req_id, body}` 透传
+   * 回灌（前端从 body 抽模块渲染·非冻结契约面）。最简 UI：无入参直触发拉全部模块。
+   * e2e 走 bridge 直 invoke 注入确定性 reqId。
+   */
+  onModulesGetAll(): void {
+    void this.store.getAllModules();
   }
 
   /** UC-4.2 按需 sync：触发引擎重连 → 重检 per-channel needSync gap → 对落后频道自驱

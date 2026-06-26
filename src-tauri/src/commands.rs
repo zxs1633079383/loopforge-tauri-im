@@ -585,6 +585,35 @@ pub async fn im_channel_query(
         .map_err(|e| format!("im_channel_query: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-10.3 获取全部功能模块（拉会话分组模块）：前端仅传 `reqId` → 本命令转 snake_case 入泵
+/// `im_get_all_modules`（helix-im `outbound/user_misc.rs` `GetAllModulesCommand` 兑现出站
+/// `POST modules/getAll`·真源 partial 3 §8 / modules.go:14 **不解析请求体** → 出站 wire body 为空
+/// `{}`·无字段·全 camelCase 约定）。读族注册（`is_read=true`）：HTTP 200 响应体经 helix
+/// `read_relay::emit_read_result` 透传回灌 `im:read:result{req_id, body}`（projection-schema §1.2·
+/// body = dto.CommonRes 信封 data=[]*ent.Modules 原样透传）。
+///
+/// 薄壳纪律：只翻译入参 + 入泵（无 body·不臆造分页/condition 等字段）·`req_id` 经 payload 透传
+/// （helix `module::read_req_id` 抠出注册回灌上下文）。
+#[tauri::command]
+pub async fn im_modules_get_all(
+    state: State<'_, AppState>,
+    req_id: String,
+) -> Result<(), String> {
+    if req_id.is_empty() {
+        return Err("im_modules_get_all: reqId 为空（前端 bridge 须生成·回灌关联）".into());
+    }
+    // modules/getAll 无请求结构（handler 不解析 body）→ 出站 wire body 为空·仅透传 req_id 锚回灌。
+    let payload = serde_json::json!({
+        "req_id": req_id,
+    });
+    let tick = command("im_get_all_modules", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_modules_get_all: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-9.x 书签·收藏消息：前端传 `channelId` + `postIds`（被收藏消息 server_id 列表）+ `reqId`
 /// → 本命令补 `userId`（取自 AppState.identity·身份单一真源·壳不臆造 creds）→ 转 snake_case
 /// 入泵 helix-im `im_bookmark_create`（`BookmarkCreateCommand` 兑现出站 `POST post/bookmark/create`
