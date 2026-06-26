@@ -365,23 +365,26 @@
 - **admin 权限真实约束**：改群名须本人 owner/admin（非 owner → server `update_cses_channel` app_error）·e2e 先建本人 CREATOR 新群再改名（真实用户流·C003）。
 - **机器件**：装饰器 `extract_corr_key` url-aware（`channel/change/`→body.id→ch）+ reducer `chPerPostTarget`（ch 匹配 + 含期望 channelUpdate 投影·`propsMatch` 子集断言）·均非冻结 oracle（C009）。
 
-### UC-5.5 置顶 — `✅ 频道置顶四面全绿`（消息置顶 ⛔ data-dep·子项不阻塞）
+### UC-5.5 置顶 — `✅ 频道置顶四面全绿` + `⚠️ 消息置顶 5.5b ① 出站全绿·②③④ ⛔backend-down`（子项不阻塞）
 
-- **e2e**：`test/specs/uc-5.5.e2e.mjs` 四面全绿（corr_key=ch=<channelId>·真 go·真 Tauri+WKWebView·建本人 CREATOR 群后置顶）。
-- **① 出站 HTTP**：频道置顶 `channel/change/top`（im_channel_change_top·body {channelId, top}·✅ 真跑覆盖）·消息置顶 `channel/add/postPinned` / `remove/postPinned` / `load/postPinned`（消息置顶子项·⛔ data-dep 不测）。
-- **① WS 推送**：频道置顶 → action=`update_channel`（per-member 定向 PATCH·channelIsTop→is_top 列）·消息置顶 → pin 回声依赖 Go 落库后投影（**host-cli/testbed 物理够不到·全 log `*pin*` action=0·⛔ data-dep**）。
-- **② 投影**：`emit_channel_update`（im:channel:update·thin·{channel_id}·✅ 实证）。helix fix（commit 4cc33c2）：独立 update_channel PATCH 落库后补 emit im:channel:update（此前漏 emit→前端不刷新）。
-- **③ DOM**：`data-channel-top`（is_top 列回读·im:channel:update thin 信号触发 dialogList 重查→applyDialogList normalizeIsTop→data-channel-top='1'·✅ 实证）。loopforge fix：applyChannelUpdate 接 im_query_dialog_list 重查（此前只保证行存在不刷属性）。
-- **④ 落库**：`channel` 表 batch_update（is_top 列·表感知归一 channel.id→ch·✅ 实证）/ 消息置顶 `message.props`（⛔ 子项）。
+- **e2e**：`test/specs/uc-5.5.e2e.mjs` 频道置顶四面全绿（corr_key=ch=<channelId>·真 go·真 Tauri+WKWebView·建本人 CREATOR 群后置顶）。**消息置顶 5.5b**：`test/specs/uc-5.5b.e2e.mjs`（拆两 it·① 出站面 + ②③④ post_pin echo 面·暖栈实跑）。
+- **① 出站 HTTP**：频道置顶 `channel/change/top`（im_channel_change_top·body {channelId, top}·✅ 真跑覆盖）·**消息置顶 `channel/add/postPinned`（im_post_pin·body {channelId, postId} camelCase·✅ 暖栈实跑绿）**——send round-trip（posts/create→WS echo 取 server_id）+ post_pin 出站均经 go-mattermost :8065·与 post_pin 业务 echo（cses-java）解耦。
+- **① WS 推送**：频道置顶 → action=`update_channel`（per-member 定向 PATCH·channelIsTop→is_top 列）·消息置顶 → `post_pin` echo（`im:post:updated`）**阻于 cses-java 宕机**（7091/3391=000·JDWP suspend·go→cses-java 业务 WS 广播链断·见 log.md #14/#42）→ ②③④ ⛔backend-down（waitUntil data-pinned 超时·真 backend-down·非掩盖·C008 可证伪）。
+- **② 投影**：`emit_channel_update`（im:channel:update·thin·{channel_id}·✅ 实证）/ 消息置顶 `emit_post_updated`（im:post:updated·fat 13 键·⛔backend-down·后端恢复后裁定）。
+- **③ DOM**：`data-channel-top`（is_top 列回读·✅ 实证）/ 消息置顶 `data-pinned`（⛔backend-down）。
+- **④ 落库**：`channel` 表 batch_update（is_top 列·✅ 实证）/ 消息置顶 `message` 表 batch_update（pinned patch·⛔backend-down）。
+- **artifacts**：`test/expect/uc-5.5b.expect.json`（冻结 oracle·只读）+ `test/specs/uc-5.5b.e2e.mjs`（① it 1 passing·②③④ it 红=⛔backend-down·禁伪造绿）。后端恢复后 `harness.sh reload-app && harness.sh spec 5.5b` 裁定 ②③④ 绿。
 
-### UC-5.6 群公告 — `⛔ unreachable`（data-dep·回声不可观测）
+### UC-5.6 群公告 — `✅ 5.6r 读族 ①② 全绿`（go-served）+ `⚠️ 5.6w 写族 ① 全绿·②④ ⛔backend-down`
 
-> **物理够不到**：`post/announcement/{list,save,delete,read}` body verbatim 出站已发·窗内仅 increment 洪泛无公告专属 WS 帧·announcement/list 读族走 HTTP sync reply 不产 WS push·testbed 不打印 HTTP status → 回声不可观测（helix ledger 同标 data-dep）。
-> **② 投影**：`query::emit_read_result`（读族透传）；**③ DOM**：`data-announcement`；**④ 落库**：`message`（公告）。读族 reply 可在 ②④ 间接证，但 ① WS 回声面够不到 → 整 UC 不计绿。
+- **5.6r 读族 acceptList/list/detail（断面 ①②·③④ N/A）**：三端点（`post/announcement/{acceptList,list,detail}`·真源 partials/1 §28/§30/§31）均纯读 announcement 表（无 post_update 回声）→ helix `read_relay::emit_read_result` 透传 `im:read:result{req_id, body}`。**经 go-mattermost :8065 ①② 双面全绿**（暖栈 `harness.sh spec 5.6r`·3 passing·corr_key=req_id·各端点独立 set_uc 窗口·reducer runFourFacetRead 裁定）。① 出站逐端点 body camelCase（acceptList {postId} / list {channelId} / detail {postIds:[]}·bodyForbidden 锚 snake 泄漏）·② im:read:result 外层键集严格对齐。artifacts：`test/expect/uc-5.6r.expect.json` + `test/specs/uc-5.6r.e2e.mjs`。
+- **5.6w 写族 save/read/delete（WS post_update echo·断面 ①②④·③ N/A）**：三写端点（`post/announcement/{save,read,delete}`·真源 partials/1 §26-29）server echo 统一 WS `post_update`（gap §69 announcement*→post_update ✅）→ `emit_post_updated` im:post:updated（fat 13 键）→ message batch_update。**① 出站经 go-mattermost :8065 三端点全绿**（save {channelId,type,message} / read {postId,channelId} / delete {postIds,postId} 两字段同值数组 camelCase）·**②④ post_update echo 阻于 cses-java 宕机**（go→cses-java 业务 WS 广播链断·见 log.md #14/#42）→ ⛔backend-down（禁伪造绿·C009/C011）。artifacts：`test/expect/uc-5.6w.expect.json` + `test/specs/uc-5.6w.e2e.mjs`（① 3 passing·②④ 3 红=backend-down）。后端恢复后 `harness.sh reload-app && harness.sh spec 5.6w` 裁定 ②④ 绿。
+> **机器件改动**：reducer `runFourFacet` outbound facet 修 `target ?? 空束`——delete 出站 body `{postIds,postId}` 两字段皆**数组** → corr-key 抽不出 sid → target 落空·此前 `target && actualOutbound` 短路 null → ① 假红；改传空束让 createOutbound（urlEndsWith）fallback 兜底取出站（守可证伪·无 URL 命中仍红·reducer 自测 167 通过）。非冻结 oracle（C009·机器件 target 选择/出站兜底）。
 
-### UC-5.7 在线状态/分组 — `⛔ unreachable`（后端真阻塞·P1-2）
+### UC-5.7 在线状态/分组 — `✅ channel/onlineStatus 读族 ①② 全绿`（users/status/ids ⛔ 后端真阻塞·P1-2）
 
-> **后端真阻塞缺失**：`users/status/ids`（缺口矩阵 P1-2）依赖 mattermost statusCache·迁移裁决前不能红转绿（改契约才能过 = 违护栏）。`channel/onlineStatus` / `modules/getAll`（待核·partial 6 UC-5.7·helix ledger status_change 真帧已观测但 status app 层 goBlocked）。后端裁决迁移前标 ⛔。
+- **channel/onlineStatus 批量查在线（断面 ①②·③④ N/A）**：`im_channel_online_status`→`POST channel/onlineStatus`·body `{channelIds:[]string}`（真源 partial 2 §28·触发 WS 无→读族 request-response）→ helix `read_relay::emit_read_result` 透传 `im:read:result{req_id, body}`。**经 go-mattermost :8065 ①② 双面全绿**（暖栈 `harness.sh spec 5.7`·1 passing·corr_key=req_id·reducer runFourFacetRead 裁定）。① 出站 body camelCase channelIds 数组（bodyForbidden 锚 snake/单数误形）·② im:read:result 外层键集严格对齐。artifacts：`test/expect/uc-5.7.expect.json` + `test/specs/uc-5.7.e2e.mjs`。
+> **users/status/ids 仍后端真阻塞**（缺口矩阵 P1-2·依赖 mattermost statusCache·迁移裁决前不能红转绿·违护栏）→ 标 ⛔（与 channel/onlineStatus 读族解耦·后者已绿）。
 
 ### UC-5.8 条件查频道 — `✅ 四面全绿`（读族 ①②·③④ N/A·暖栈实跑全绿·corr_key=req_id·issue #38）
 

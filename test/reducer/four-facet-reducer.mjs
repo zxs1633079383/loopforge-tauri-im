@@ -1242,7 +1242,12 @@ export function runFourFacet({ jsonl, expect, dom, ucId }) {
         )
       : diffOutbound(
           outboundExp,
-          target && actualOutbound(target, { batchOutbound, anchorCh, createOutbound })
+          // target 可能为 null（UC-5.6w delete：出站 body {postIds,postId} 两字段皆**数组** →
+          // corr-key 抽不出 sid → 该出站 hop 归 unkeyed·无束的 dims.sid 命中 corrAnchor.sid →
+          // target 落空）。此时仍须让 actualOutbound 的 createOutbound/batch fallback（按
+          // urlEndsWith / cursors 覆盖锚 ch）兜底取出站——故传空束而非短路 null。守可证伪：
+          // createOutbound 无 URL 命中（出站未发）→ fallback 仍返 null → ① 红（非放水）。
+          actualOutbound(target ?? { hops: [], dims: {} }, { batchOutbound, anchorCh, createOutbound })
         );
 
   // 读族 Scan storage fallback（UC-2.1/UC-2.3 定位·expect.storage.op=scan）：窗口内 uc 同 + scan op

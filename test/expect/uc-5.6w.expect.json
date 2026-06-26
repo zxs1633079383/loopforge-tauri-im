@@ -1,0 +1,141 @@
+{
+  "$schema-note": "四面期望文件 (UC-5.6w 公告写族 save/read/delete) — oracle 本体。只读契约 (contract-readonly-autofix.md §1 / C004)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现 / 本仓渲染壳 / 机器件（reducer target 选择·装饰器抽键·seed）。契约真过时 → 出『契约变更提案 + 证据』交人审。\n\n本 UC = **写族 WS post_update 回声**（仿 UC-3.3 模板）：三条公告写端点（save/read/delete）的 server echo 统一是 WS `post_update`（gap-posts §69：updatePostProps / templateReceived / **announcement*** / makeTopic → `post_update` ✅ 一致；EventKind::PostEdit gate）→ helix to_effect::emit_post_updated → 投影 `im:post:updated`（fat 13 键·同 emit_post_received）→ edit_content_op patch message 行（batch_update·保留本地 read_bits）。\n\n断面分层（2026-06-26 后端实测·docs/harness/log.md 多条 PARTIAL 先例）：\n  - **① 出站**：go-mattermost :8065 在线·HTTP 出站可真跑（reducer diffOutbound 严格裁 urlEndsWith + bodyFields camelCase + bodyForbidden 锚 snake 泄漏）。**①面真可达绿**。\n  - **② 投影 / ④ 落库**：经 WS `post_update` echo 驱动 → **阻于 cses-java 宕机**（端口 7091/3399/3391 全 000·JDWP suspend=y·go→cses-java 业务 WS 广播链全断·raw-WS 双观测连 base `post` 帧都不推·见 log.md #14/#15/#37/#42/#47）→ ②④ 当前不可观测·标 ⛔backend-down。后端恢复后重跑 `harness.sh reload-app && harness.sh spec 5.6w` 裁 ②④ 绿。**禁伪造绿**（C009/C011：绿由 reducer 裁定·后端宕机=诚实 PARTIAL）。\n  - **③ DOM**：本 UC 非冻结契约 DOM 面（公告渲染非本 fixture 主断面·task 断面列 ①②④）→ N/A（reducer 不裁定 ③·spec ②④ 块不注入 dom）。",
+  "ucId": "UC-5.6w",
+  "title": "公告写族 save/read/delete（WS post_update echo）：① POST post/announcement/{save,read,delete}（camelCase wire）+ ② 投影 im:post:updated（fat 13 键·post_update echo·⛔backend-down）+ ④ message 表 batch_update（edit_content_op·⛔backend-down）",
+  "contractReadonly": true,
+
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/src/outbound/posts_announcement.rs：AnnouncementSaveCommand（im_announcement_save → POST post/announcement/save·body = 整个 args 透传 args.clone()·不裁字段·camelCase Post 原样）/ AnnouncementReadCommand（im_announcement_read → POST post/announcement/read·body {postId, channelId}·读 snake post_id/channel_id 翻 camel）/ AnnouncementDeleteCommand（im_announcement_delete → POST post/announcement/delete·body {postIds, postId} 两字段同值数组·读 snake post_ids）。真源 partials/1--backend-http-posts.md §26（save·decode *entity.Post·校验 ChannelId/UserId/Type 非空·返 {announcementId}）/§27（read·{postId,channelId}）/§29（delete·{postIds[]}）+ 9--gap-posts.md §26-27（save 返 {announcementId} + WS post_update 按 channelId 广播·read co-tx + post_update·delete{postIds}）。",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1 to_effect::emit_post_updated → im:post:updated（fat 同 emit_post_received 完整 13 键）。触发链：WS post_update action（announcement save/read 落地后按 channelId 广播 post.ToMap·gap §69 announcement* → post_update ✅）→ ws/handlers/post_update.rs apply_post_update → gate EventKind::PostEdit → channel.rs emit_post_updated。⛔ 当前阻于 cses-java（WS 广播链断）。",
+    "dom": "N/A（公告写族非冻结契约 DOM 面·task 断面列 ①②④·reducer 不裁定 ③）。",
+    "storage": "helix ws/handlers/post_update.rs §落库注（edit_content_op：UPDATE WHERE id 覆盖内容列·保留本地 read_bits）+ partials/1 §26-29 DB 表 post/announcement/channel_event（announcement 表写在 server 侧·client storage facet 仅见 message 行 post_update echo patch·客户端无 announcement 表）。装饰器 facet④ 暴露 {op:batch_update, table:message, rows}。⛔ 当前阻于 cses-java（无 post_update echo→无落库帧）。"
+  },
+
+  "corrAnchor": {
+    "note": "三端点均为**写族 WS post_update 回声**·各自束锚不同：① 出站经 createOutbound fallback（urlEndsWith post/announcement/{save,read,delete}）+ 顶层 probe 取束（save 带 channelId→ch·read/delete 带 postId→sid）。② 投影 im:post:updated 携 channel_id/msg_id（→ sid 别名）/channelId·与 ④ message 行同 sid 聚一束。save = 新公告 post（sid server 分配·echo 后才知·锚 ch=目标频道）；read/delete = 作用既有公告 post（锚 sid=目标 postId）。e2e 在各 it 内填实 ch/sid（save 用 active channel·read/delete 用既有 rendered 行 server_id）。",
+    "ch": null,
+    "sid": null
+  },
+
+  "announcementSave": {
+    "_note": "① 公告保存子期望。endpoint post/announcement/save·body = 整个 args 透传（helix args.clone()·camelCase Post 字段原样·go 校验 ChannelId/UserId/Type 非空·返 CommonRes {announcementId}）。loopforge 壳补 userId（身份单一真源·同 relay/quickReply 模式·壳不臆造 creds·go PrePostSend 在 UserId=='' 拒并 Ack-drop）。bodyFields 锚恒在 camelCase 字段（channelId/type/message·go 校验非空字段+内容）·**不硬编 announcement 专属可变字段**（避免臆造 Post 子结构）。bodyForbidden 锚 snake 泄漏（channel_id/create_at/user_id）+ 复数 URL 守护字符串（posts/announcement/save）。",
+    "corrAnchor": { "ch": null },
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "post/announcement/save",
+      "bodyFields": {
+        "channelId": "*",
+        "type": "*",
+        "message": "*"
+      },
+      "bodyForbidden": ["channel_id", "create_at", "user_id", "posts/announcement/save"]
+    },
+    "projection": {
+      "event": "im:post:updated",
+      "dataKeys": [
+        "channel_id",
+        "event_seq",
+        "msg_id",
+        "temporaryId",
+        "channelId",
+        "userId",
+        "type",
+        "message",
+        "props",
+        "createAt",
+        "updateAt",
+        "readBits",
+        "viewers"
+      ],
+      "_note": "⛔backend-down：公告保存 server echo = WS post_update（按 channelId 广播 post.ToMap·gap §26 L1794-1795 + §69 announcement*→post_update ✅）→ emit_post_updated im:post:updated（fat 13 键·缺/多即 fail·同 emit_post_received）。当前阻于 cses-java（广播链断）·后端恢复后裁定。键集严格对齐冻结 13 键·禁伪造绿。"
+    },
+    "storage": {
+      "op": "batch_update",
+      "table": "message",
+      "minRows": 1,
+      "_note": "⛔backend-down：post_update echo → gate EventKind::PostEdit → edit_content_op（UPDATE WHERE id·保留本地 read_bits）patch message 行（client 无 announcement 表·公告表写在 server 侧·客户端 facet④ 仅见 message patch·同 UC-3.3/UC-1.10 PostEdit gate）。装饰器 facet④ {op:batch_update,table:message,rows≥1}。当前阻于 cses-java（无 echo→无落库帧）。"
+    }
+  },
+
+  "announcementRead": {
+    "_note": "① 公告确认收到子期望。endpoint post/announcement/read·body {postId, channelId}（helix AnnouncementReadCommand 读 snake post_id/channel_id → 翻 camel·真源 partial 1 §27 verbatim {PostId json:postId, ChannelId json:channelId}）。bodyFields 锚 postId/channelId（恒在·二字段全 camelCase）。bodyForbidden 锚 snake 泄漏（post_id/channel_id）+ 复数 URL 守护。",
+    "corrAnchor": { "sid": null },
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "post/announcement/read",
+      "bodyFields": {
+        "postId": "*",
+        "channelId": "*"
+      },
+      "bodyForbidden": ["post_id", "channel_id", "posts/announcement/read"]
+    },
+    "projection": {
+      "event": "im:post:updated",
+      "dataKeys": [
+        "channel_id",
+        "event_seq",
+        "msg_id",
+        "temporaryId",
+        "channelId",
+        "userId",
+        "type",
+        "message",
+        "props",
+        "createAt",
+        "updateAt",
+        "readBits",
+        "viewers"
+      ],
+      "_note": "⛔backend-down：公告 read server echo = co-tx + WS post_update（gap §27 read co-tx + post_update·§69 announcement*→post_update ✅）→ emit_post_updated im:post:updated（fat 13 键）。当前阻于 cses-java·后端恢复后裁定。禁伪造绿。"
+    },
+    "storage": {
+      "op": "batch_update",
+      "table": "message",
+      "minRows": 1,
+      "_note": "⛔backend-down：post_update echo → EventKind::PostEdit → edit_content_op patch message 行（公告已读标记落 server announcement 表·客户端 facet④ 见 message patch）。装饰器 {op:batch_update,table:message,rows≥1}。当前阻于 cses-java。"
+    }
+  },
+
+  "announcementDelete": {
+    "_note": "① 公告删除子期望。endpoint post/announcement/delete·body {postIds, postId} **两字段同值数组**（helix AnnouncementDeleteCommand：json!({postIds:post_ids, postId:post_ids})·兼容后端单/复数命名差异·读 snake post_ids·真源 partial 1 §29 verbatim {PostIds []string json:postIds}）。bodyFields 锚 postIds + postId（两者皆数组·缺任一即 ① 红·守 helix 双字段契约可证伪）。bodyForbidden 锚 snake 泄漏（post_ids）+ 复数 URL 守护。",
+    "corrAnchor": { "sid": null },
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "post/announcement/delete",
+      "bodyFields": {
+        "postIds": "*",
+        "postId": "*"
+      },
+      "bodyForbidden": ["post_ids", "posts/announcement/delete"]
+    },
+    "projection": {
+      "event": "im:post:updated",
+      "dataKeys": [
+        "channel_id",
+        "event_seq",
+        "msg_id",
+        "temporaryId",
+        "channelId",
+        "userId",
+        "type",
+        "message",
+        "props",
+        "createAt",
+        "updateAt",
+        "readBits",
+        "viewers"
+      ],
+      "_note": "⛔backend-down：公告删除 server echo = WS post_update（gap §69 announcement*→post_update ✅·删除过期公告广播）→ emit_post_updated im:post:updated（fat 13 键）。当前阻于 cses-java·后端恢复后裁定。禁伪造绿。注：若 server 删除实推 posts_update（复数批帧·gap §60 revoke 同款细分风险），后端恢复后据 run.jsonl 实测校正本投影事件名（契约变更提案交人审·禁自改）。"
+    },
+    "storage": {
+      "op": "batch_update",
+      "table": "message",
+      "minRows": 1,
+      "_note": "⛔backend-down：post_update echo → EventKind::PostEdit → edit_content_op patch message 行（announcement 表行删在 server 侧·客户端 facet④ 见 message patch）。装饰器 {op:batch_update,table:message,rows≥1}。当前阻于 cses-java。"
+    }
+  },
+
+  "dom": {
+    "_note": "N/A（公告写族非冻结契约 DOM 面·task 断面列 ①②④）。reducer 不裁定 ③·spec ②④ 块不注入 dom（diffDom 需 actualDom·本 UC 不调）。"
+  }
+}

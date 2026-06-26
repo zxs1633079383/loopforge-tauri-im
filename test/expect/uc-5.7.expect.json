@@ -1,0 +1,42 @@
+{
+  "$schema-note": "四面期望文件 (UC-5.7 频道成员在线状态) — 读族 oracle（只读契约·contract-readonly-autofix.md §1）。读族 (request-response 传输·HTTP 体即数据·无 WS 回声·同 UC-5.8/UC-6.4/UC-4.5) 断面退化为 ①②：① outbound HTTP wire body（channel/onlineStatus·内联 {channelIds:[]string}·camelCase）逐字检（urlEndsWith + bodyFields + bodyForbidden 禁 snake 泄漏）；② projection envelope（im:read:result {req_id, body} 外层键集 + req_id 锚本次 invoke）。③ DOM / ④ storage = N/A（读路径无 write 驱动 DOM·在线状态由前端从透传 body（[]ChannelOnlineStatusGroup）抽渲染·非冻结契约面·reducer runFourFacetRead 不裁定）。reducer runFourFacetRead 裁定 ①②。",
+  "ucId": "UC-5.7",
+  "title": "频道成员在线状态（读族 request-response·断面 ①②）",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/full-map/partials/2--backend-http-channel-sync.md §28 channel/onlineStatus（handler 内联匿名 struct {ChannelIds []string `json:\"channelIds\"`}·channel.go:108-110）+ 10--gap-channel-sync.md §28（已迁移·内联 {channelIds} 对齐·data=[]ChannelOnlineStatusGroup·无 WS）；helix outbound/channel_read.rs ChannelOnlineStatusCommand（im_channel_online_status·read_cmd!）实证 wire body：require_str_array(args, \"channel_ids\") → json!({\"channelIds\": channel_ids})·url 'channel/onlineStatus'·camelCase",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1.2 read_relay::emit_read_result (im:read:result {req_id, body})",
+    "dom": "N/A (读族无 write 驱动 DOM 契约面·在线状态由前端从透传 body 抽渲染·非冻结契约面)",
+    "storage": "N/A (查询为只读·无落库 write·装饰器 facet④ 不暴露读路径·reducer 不裁定 ④)"
+  },
+
+  "corrAnchor": {
+    "note": "读族无四维领域键（channel/onlineStatus outbound wire body 仅携 channelIds 数组·非 ch/tmp/sid 别名抽键；projection req_id 由 e2e invoke 时生成·经 bridge 透传·helix module::read_req_id 抠出注册回灌上下文）。reducer runFourFacetRead 在 set_uc 窗口内按 endpoint 找 ① 出站·按 req_id 锚 ② 投影。req_id 由 e2e 注入到 runFourFacetRead({reqId})。",
+    "req_id": null
+  },
+
+  "onlineStatus": {
+    "_note": "① channel/onlineStatus endpoint 子期望（flat·reducer diffOutbound 直消费）。wire body 真源 partial 2 §28：handler 内联匿名 struct 仅一字段 {ChannelIds []string `json:\"channelIds\"`}。helix outbound/channel_read.rs ChannelOnlineStatusCommand 实证：require_str_array(args,\"channel_ids\") → json!({\"channelIds\": channel_ids})（camelCase·数组透传·不臆造其它字段）。bodyFields 锚恒在字段 channelIds（'*'=校验有值/数组非空由 e2e 注入 ≥1 真频道 id 保证）。bodyForbidden 锚 snake 泄漏 channel_ids + 单数误形 channelId（body 仅 channelIds 复数数组·无其它键）。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "channel/onlineStatus",
+      "bodyFields": {
+        "channelIds": "*"
+      },
+      "bodyForbidden": ["channel_ids", "channelId"]
+    },
+    "projection": {
+      "event": "im:read:result",
+      "dataKeys": ["req_id", "body"],
+      "_note": "projection-schema §1.2：读族回灌外层恒 {req_id, body}（成功）。body = 后端 channel/onlineStatus 响应体原样透传（dto.CommonRes.data = []ChannelOnlineStatusGroup）·inner 不冻结（前端直消费抽在线状态渲染）。键集 = 2 键严格对齐（多/缺即红）。"
+    }
+  },
+
+  "storage": {
+    "_note": "N/A (读路径·查询只读无 write)。装饰器 facet④ 不暴露读路径。reducer runFourFacetRead 不裁定 ④ 面。"
+  },
+
+  "dom": {
+    "_note": "N/A (读族无 write 驱动 DOM 契约面)。在线指示由前端从透传 body（[]ChannelOnlineStatusGroup）抽后渲染·属前端渲染非冻结契约面·reducer 不裁定 ③ 面。"
+  }
+}

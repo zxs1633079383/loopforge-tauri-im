@@ -886,6 +886,35 @@ export class ImStoreService {
   }
 
   /**
+   * UC-5.7 频道成员在线状态（批量查在线·读族）：invoke('im_channel_online_status',
+   * {channelIds, reqId}）。
+   *
+   * **读族 request-response**（helix 注册 is_read=true·无 WS 回声·partial 2 §28）：HTTP 200 响应体
+   * （dto.CommonRes.data = []ChannelOnlineStatusGroup）即数据 → helix `read_relay::emit_read_result`
+   * 透传回灌 `im:read:result{req_id, body}`（前端从 body 抽在线状态渲染·非冻结契约面）。endpoint
+   * channel/onlineStatus + wire body camelCase 化（channelIds）全在 helix-im（ChannelOnlineStatusCommand·
+   * 内联匿名 struct {channelIds:[]string}）。壳只供 channelIds（≥1）+ reqId（前端 bridge 生成·回灌关联）。
+   * 返 reqId 供 e2e 等回灌关联。无非空 channelIds → 不发·仍返 rid（一致返回类型）。
+   */
+  async loadOnlineStatus(
+    channelIds: string[],
+    reqId?: string,
+  ): Promise<string> {
+    const rid = (reqId ?? this.genReqId()).trim();
+    const ids = channelIds.filter((c) => !!c && c.trim());
+    if (ids.length === 0) return rid;
+    try {
+      await this.bridge.invoke<void>("im_channel_online_status", {
+        channelIds: ids,
+        reqId: rid,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（在线状态靠 im:read:result 投影驱动·无乐观合成）。
+    }
+    return rid;
+  }
+
+  /**
    * UC-4.5 陌生 channel 兜底（进入未加载过的频道触发单频道增量同步）：invoke('im_ensure_channel_loaded',
    * {channelId, reqId}）。
    *
@@ -1016,6 +1045,161 @@ export class ImStoreService {
       // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（模块列表靠 im:read:result 投影驱动·无乐观合成）。
     }
     return rid;
+  }
+
+  // ── UC-5.6r 公告读族 acceptList/list/detail（read·is_read=true·im:read:result 透传回灌）──────
+  // 三端点纯读 announcement 表（partial 1 §28/§30/§31·WS 事件列 '—'·无 post_update 回声）→ 断面 ①②。
+  // 壳前端只组 wire 入参 + reqId；出站 endpoint/body camelCase 化全在 helix-im（posts_read_ext.rs）。
+
+  /**
+   * UC-5.6r 公告·接受列表（读族）：invoke('im_announcement_accept_list', {postId, reqId}）。
+   * 出站 post/announcement/acceptList {postId}·HTTP 200 响应体（公告接受记录列表）经 helix
+   * read_relay::emit_read_result 透传回灌 im:read:result{req_id, body}。壳只供 postId（公告 server id）
+   * + reqId（前端 bridge 生成·回灌关联·非 wire 字段·helix read_req_id 抠出）。返 reqId 供 e2e 关联。
+   */
+  async announcementAcceptList(postId: string, reqId?: string): Promise<string> {
+    const rid = (reqId ?? this.genReqId()).trim();
+    const post = postId.trim();
+    if (!post) return rid;
+    try {
+      await this.bridge.invoke<void>("im_announcement_accept_list", {
+        postId: post,
+        reqId: rid,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（结果靠 im:read:result 投影驱动·无乐观合成）。
+    }
+    return rid;
+  }
+
+  /**
+   * UC-5.6r 公告·列表查询（读族）：invoke('im_announcement_list', {channelId, postId?, reqId}）。
+   * 出站 post/announcement/list {channelId[, postId]}·响应体（公告列表）经 read_relay::emit_read_result
+   * 透传回灌 im:read:result{req_id, body}。壳只供 channelId（目标频道）+ 可选 postId（ChannelId 空时
+   * server 回退）+ reqId。返 reqId 供 e2e 关联。
+   */
+  async announcementList(
+    channelId: string,
+    postId?: string,
+    reqId?: string,
+  ): Promise<string> {
+    const rid = (reqId ?? this.genReqId()).trim();
+    const ch = channelId.trim();
+    if (!ch) return rid;
+    const args: Record<string, unknown> = { channelId: ch, reqId: rid };
+    const pid = (postId ?? "").trim();
+    if (pid) args["postId"] = pid;
+    try {
+      await this.bridge.invoke<void>("im_announcement_list", args);
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（公告列表靠 im:read:result 投影驱动·无乐观合成）。
+    }
+    return rid;
+  }
+
+  /**
+   * UC-5.6r 公告·详情（读族）：invoke('im_announcement_detail', {postIds, reqId}）。
+   * 出站 post/announcement/detail {postIds:[]}·响应体（公告表行）经 read_relay::emit_read_result 透传
+   * 回灌 im:read:result{req_id, body}。壳只供 postIds（公告 server id 数组）+ reqId。返 reqId 供 e2e 关联。
+   */
+  async announcementDetail(postIds: string[], reqId?: string): Promise<string> {
+    const rid = (reqId ?? this.genReqId()).trim();
+    const ids = postIds.filter((p) => !!p && p.trim());
+    if (ids.length === 0) return rid;
+    try {
+      await this.bridge.invoke<void>("im_announcement_detail", {
+        postIds: ids,
+        reqId: rid,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（公告详情靠 im:read:result 投影驱动·无乐观合成）。
+    }
+    return rid;
+  }
+
+  // ── UC-5.6w 公告写族 save/read/delete（write·WS post_update echo·is_read=false·fire-and-forget）──
+  // server echo = WS post_update（gap §69 announcement* → post_update ✅·EventKind::PostEdit gate）→
+  // im:post:updated（fat）→ message 行 patch。壳写族不带 reqId（无读族回灌）；出站 body / userId 补全
+  // 全在 helix-im / 壳后端（posts_announcement.rs / commands.rs）。⛔ 当前 ②④ 阻于 cses-java·① 可真跑。
+
+  /**
+   * UC-5.6w 公告·保存（写族 WS echo）：invoke('im_announcement_save', {channelId, type, message}）。
+   * 出站 post/announcement/save·body = 整个 args 透传（camelCase Post·壳后端补 userId·身份单一真源）。
+   * type=消息类型（go 仅校验非空）·message=公告正文。无 server echo 时（cses-java 宕）② 不可观测·壳不
+   * 乐观合成（pinned/announcement 态靠 im:post:updated 投影驱动）。无 channelId/type → 不发。
+   */
+  async announcementSave(
+    channelId: string,
+    type: string,
+    message: string,
+  ): Promise<void> {
+    const ch = channelId.trim();
+    const ty = type.trim();
+    if (!ch || !ty) return;
+    try {
+      await this.bridge.invoke<void>("im_announcement_save", {
+        channelId: ch,
+        type: ty,
+        message,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（公告靠 server WS post_update 回声驱动·无乐观合成）。
+    }
+  }
+
+  /**
+   * UC-5.6w 公告·确认收到（写族 WS echo）：invoke('im_announcement_read', {postId, channelId}）。
+   * 出站 post/announcement/read {postId, channelId}（camelCase·helix 读 snake 翻 camel wire）。
+   * 无 postId/channelId → 不发。状态靠 im:post:updated 投影驱动·无乐观合成。
+   */
+  async announcementRead(postId: string, channelId: string): Promise<void> {
+    const post = postId.trim();
+    const ch = channelId.trim();
+    if (!post || !ch) return;
+    try {
+      await this.bridge.invoke<void>("im_announcement_read", {
+        postId: post,
+        channelId: ch,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（公告已读靠 server WS post_update 回声驱动·无乐观合成）。
+    }
+  }
+
+  /**
+   * UC-5.6w 公告·删除（写族 WS echo）：invoke('im_announcement_delete', {postIds}）。
+   * 出站 post/announcement/delete {postIds, postId}（两字段同值数组·helix 双字段成形）。
+   * 无非空 postIds → 不发。状态靠 im:post:updated 投影驱动·无乐观合成。
+   */
+  async announcementDelete(postIds: string[]): Promise<void> {
+    const ids = postIds.filter((p) => !!p && p.trim());
+    if (ids.length === 0) return;
+    try {
+      await this.bridge.invoke<void>("im_announcement_delete", { postIds: ids });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（公告删除靠 server WS post_update 回声驱动·无乐观合成）。
+    }
+  }
+
+  /**
+   * UC-5.5b 消息置顶（写族 WS post_pin echo）：invoke('im_post_pin', {channelId, postId}）。
+   * 出站 channel/add/postPinned {channelId, postId}（camelCase·helix im_set_message_top 读 snake 翻 camel）。
+   * WS 回 post_pin → 实现 phase 经 emit_post_updated 投出 im:post:updated（pinned 态·post-targeted sid 锚）→
+   * patch message 行 pinned + DOM data-pinned。⛔ ②③④ 当前阻于 cses-java·① 出站经 go-mattermost 可真跑。
+   * 无 channelId/postId（未对账乐观消息）→ 不发。pinned 态靠投影驱动·壳纯渲染·无乐观合成。
+   */
+  async pinMessage(channelId: string, postId: string): Promise<void> {
+    const ch = channelId.trim();
+    const post = postId.trim();
+    if (!ch || !post) return;
+    try {
+      await this.bridge.invoke<void>("im_post_pin", {
+        channelId: ch,
+        postId: post,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（pinned 态靠 server WS post_pin 回声驱动·无乐观合成）。
+    }
   }
 
   /**

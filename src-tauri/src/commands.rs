@@ -585,6 +585,39 @@ pub async fn im_channel_query(
         .map_err(|e| format!("im_channel_query: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-5.7 频道成员在线状态（批量查在线）：前端传 `channelIds`（≥1 真频道 id 字符串数组）+ `reqId`
+/// → 本命令转 snake_case 入泵 `im_channel_online_status`（helix-im `outbound/channel_read.rs`
+/// `ChannelOnlineStatusCommand` 兑现出站 `POST channel/onlineStatus`·真源 partial 2 §28 内联匿名
+/// struct `{ChannelIds []string \`json:"channelIds"\`}`·全 camelCase·data=[]ChannelOnlineStatusGroup·
+/// 无 WS 回声）。读族注册（`is_read=true`）：HTTP 200 响应体经 helix `read_relay::emit_read_result`
+/// 透传回灌 `im:read:result{req_id, body}`（projection-schema §1.2·body 透传不冻结）。
+///
+/// 薄壳纪律：只翻译入参 + 入泵（channelIds 透传·body camelCase 化在 helix-im build）·本壳不臆造
+/// wire body；`req_id` 经 payload 透传（helix `module::read_req_id` 抠出注册回灌上下文）。
+#[tauri::command]
+pub async fn im_channel_online_status(
+    state: State<'_, AppState>,
+    channel_ids: Vec<String>,
+    req_id: String,
+) -> Result<(), String> {
+    if channel_ids.iter().all(|c| c.is_empty()) {
+        return Err("im_channel_online_status: channelIds 为空（非空字符串数组·≥1）".into());
+    }
+    if req_id.is_empty() {
+        return Err("im_channel_online_status: reqId 为空（前端 bridge 须生成·回灌关联）".into());
+    }
+    let payload = serde_json::json!({
+        "channel_ids": channel_ids,
+        "req_id": req_id,
+    });
+    let tick = command("im_channel_online_status", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_channel_online_status: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-10.3 获取全部功能模块（拉会话分组模块）：前端仅传 `reqId` → 本命令转 snake_case 入泵
 /// `im_get_all_modules`（helix-im `outbound/user_misc.rs` `GetAllModulesCommand` 兑现出站
 /// `POST modules/getAll`·真源 partial 3 §8 / modules.go:14 **不解析请求体** → 出站 wire body 为空
@@ -612,6 +645,255 @@ pub async fn im_modules_get_all(
         .send(tick)
         .await
         .map_err(|e| format!("im_modules_get_all: 入泵失败（泵已退出？）：{e}"))
+}
+
+/// UC-5.6r 公告·接受列表（读族 request-response）：前端传 `postId`（公告消息 server id）+ `reqId`
+/// → 本命令转 snake_case 入泵 `im_announcement_accept_list`（helix-im `outbound/posts_read_ext.rs`
+/// `im_announcement_accept_list`·`is_read=true` 兑现出站 `POST post/announcement/acceptList {postId}`·
+/// **`/post` 单数前缀**·全 camelCase·真源 partial 1 §28 `{postId string}`）。读族无 WS 回声：HTTP 200
+/// 响应体（公告接受记录列表）经 helix `read_relay::emit_read_result` 透传回灌 `im:read:result{req_id,
+/// body}`（projection-schema §1.2）。
+///
+/// 薄壳纪律：只翻译入参 + 入泵（postId 透传·body camelCase 化在 helix-im build·`req_id` 经 payload
+/// 透传供 `module::read_req_id` 抠出注册回灌上下文·非 wire 字段不泄漏进出站 body）·本壳不臆造。
+#[tauri::command]
+pub async fn im_announcement_accept_list(
+    state: State<'_, AppState>,
+    post_id: String,
+    req_id: String,
+) -> Result<(), String> {
+    if post_id.is_empty() {
+        return Err("im_announcement_accept_list: postId 为空".into());
+    }
+    if req_id.is_empty() {
+        return Err("im_announcement_accept_list: reqId 为空（前端 bridge 须生成·回灌关联）".into());
+    }
+    let payload = serde_json::json!({
+        "post_id": post_id,
+        "req_id": req_id,
+    });
+    let tick = command("im_announcement_accept_list", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_announcement_accept_list: 入泵失败（泵已退出？）：{e}"))
+}
+
+/// UC-5.6r 公告·列表查询（读族 request-response）：前端传 `channelId`（目标频道）+ 可选 `postId`
+/// （ChannelId 空时 server 回退用 postId 当 channelID）+ `reqId` → 本命令转 snake_case 入泵
+/// `im_announcement_list`（helix-im `posts_read_ext.rs` `im_announcement_list`·`is_read=true` 兑现出站
+/// `POST post/announcement/list {channelId[, postId]}`·全 camelCase·真源 partial 1 §30
+/// `{channelId string, postId string}`）。读族无 WS 回声：HTTP 200 响应体（公告列表）经
+/// `read_relay::emit_read_result` 透传回灌 `im:read:result{req_id, body}`。
+///
+/// 薄壳纪律：只翻译入参 + 入泵·body camelCase 化在 helix-im build·本壳不臆造。
+#[tauri::command]
+pub async fn im_announcement_list(
+    state: State<'_, AppState>,
+    channel_id: String,
+    req_id: String,
+    post_id: Option<String>,
+) -> Result<(), String> {
+    if channel_id.is_empty() {
+        return Err("im_announcement_list: channelId 为空".into());
+    }
+    if req_id.is_empty() {
+        return Err("im_announcement_list: reqId 为空（前端 bridge 须生成·回灌关联）".into());
+    }
+    let mut payload = serde_json::json!({
+        "channel_id": channel_id,
+        "req_id": req_id,
+    });
+    if let Some(pid) = post_id.filter(|p| !p.is_empty()) {
+        payload["post_id"] = serde_json::json!(pid);
+    }
+    let tick = command("im_announcement_list", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_announcement_list: 入泵失败（泵已退出？）：{e}"))
+}
+
+/// UC-5.6r 公告·详情（读族 request-response）：前端传 `postIds`（公告 server id 数组）+ `reqId` →
+/// 本命令转 snake_case 入泵 `im_announcement_detail`（helix-im `posts_read_ext.rs`
+/// `im_announcement_detail`·`is_read=true` 兑现出站 `POST post/announcement/detail {postIds:[]}`·全
+/// camelCase·真源 partial 1 §31 `{postIds []string}`）。读族无 WS 回声：HTTP 200 响应体（公告表行）经
+/// `read_relay::emit_read_result` 透传回灌 `im:read:result{req_id, body}`。
+///
+/// 薄壳纪律：只翻译入参 + 入泵·body camelCase 化在 helix-im build·本壳不臆造。
+#[tauri::command]
+pub async fn im_announcement_detail(
+    state: State<'_, AppState>,
+    post_ids: Vec<String>,
+    req_id: String,
+) -> Result<(), String> {
+    if post_ids.iter().all(|p| p.is_empty()) {
+        return Err("im_announcement_detail: postIds 为空（非空字符串数组）".into());
+    }
+    if req_id.is_empty() {
+        return Err("im_announcement_detail: reqId 为空（前端 bridge 须生成·回灌关联）".into());
+    }
+    let payload = serde_json::json!({
+        "post_ids": post_ids,
+        "req_id": req_id,
+    });
+    let tick = command("im_announcement_detail", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_announcement_detail: 入泵失败（泵已退出？）：{e}"))
+}
+
+/// UC-5.6w 公告·保存（写族 WS post_update 回声）：前端传 `channelId` + `type`（消息类型·go 仅校验
+/// 非空）+ `message`（公告正文）→ 本命令补 `userId`（AppState.identity·身份单一真源·壳不臆造 creds·
+/// go `PrePostSend` 在 UserId=="" 拒并 Ack-drop）→ 打包 **camelCase** `{channelId, type, message,
+/// userId}` 入泵 `im_announcement_save`（helix-im `outbound/posts_announcement.rs`
+/// `AnnouncementSaveCommand`·后端要完整 Post → build = 整个 args **透传**·不裁字段 → 出站
+/// `POST post/announcement/save`·真源 partial 1 §26 + 9--gap-posts §26）。
+///
+/// ⚠️ **payload 键必须 camelCase**（非 snake）：helix save build 直 `args.clone()` 当 wire body·壳发
+/// snake 会让出站 body snake 化 → expect.bodyForbidden 锚 `channel_id`/`user_id` 即 ① 红。故本命令
+/// 在壳内重建 camelCase Post（同 im_template_received camelCase 例外）。`type` 是 Rust 关键字·用
+/// 原始标识符 `r#type` 接收（Tauri 2 macro `.unraw()` → JS 键 `type`·tauri-macros wrapper.rs:440）。
+///
+/// WS 回 `post_update`（按 channelId 广播·EventKind::PostEdit）→ 投影 `im:post:updated`（fat）→
+/// edit_content_op patch message 行（保留本地 read_bits）。**⛔ 当前阻于 cses-java（WS 广播链断）·
+/// ① 出站经 go-mattermost 可真跑·②④ 待后端恢复**。薄壳纪律：只翻译入参 + 补身份 + 入泵·endpoint
+/// 全在 helix-im·本壳不臆造 body。
+#[tauri::command]
+pub async fn im_announcement_save(
+    state: State<'_, AppState>,
+    channel_id: String,
+    r#type: String,
+    message: String,
+) -> Result<(), String> {
+    if channel_id.is_empty() {
+        return Err("im_announcement_save: channelId 为空".into());
+    }
+    if r#type.trim().is_empty() {
+        return Err("im_announcement_save: type 为空（go 校验消息类型非空）".into());
+    }
+    let user_id = state.identity.user_id.clone();
+    if user_id.is_empty() {
+        return Err("im_announcement_save: 自身 userId 为空（profile cookieId 未注入）".into());
+    }
+    // payload 保留 camelCase（helix AnnouncementSaveCommand 直 args.clone() 当 wire body·snake 会污染
+    // 出站·expect.bodyForbidden 锚 snake 泄漏）。补 userId（身份单一真源·go PrePostSend 拒空 UserId）。
+    let payload = serde_json::json!({
+        "channelId": channel_id,
+        "type": r#type,
+        "message": message,
+        "userId": user_id,
+    });
+    let tick = command("im_announcement_save", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_announcement_save: 入泵失败（泵已退出？）：{e}"))
+}
+
+/// UC-5.6w 公告·确认收到（写族 WS post_update 回声）：前端传 `postId`（公告消息 server id）+
+/// `channelId` → 本命令转 snake_case 入泵 `im_announcement_read`（helix-im `posts_announcement.rs`
+/// `AnnouncementReadCommand`·读 snake `post_id`/`channel_id` → 翻 camel 兑现出站
+/// `POST post/announcement/read {postId, channelId}`·真源 partial 1 §27 verbatim `{PostId json:postId,
+/// ChannelId json:channelId}`）。
+///
+/// WS 回 `post_update`（co-tx + 按 channelId 广播·EventKind::PostEdit）→ 投影 `im:post:updated`（fat）→
+/// edit_content_op patch message 行。**⛔ 当前阻于 cses-java·① 出站经 go-mattermost 可真跑·②④ 待恢复**。
+/// 薄壳纪律：只翻译入参 + 入泵·endpoint/casing 全在 helix-im·本壳不臆造。
+#[tauri::command]
+pub async fn im_announcement_read(
+    state: State<'_, AppState>,
+    post_id: String,
+    channel_id: String,
+) -> Result<(), String> {
+    if post_id.is_empty() {
+        return Err("im_announcement_read: postId 为空".into());
+    }
+    if channel_id.is_empty() {
+        return Err("im_announcement_read: channelId 为空".into());
+    }
+    let payload = serde_json::json!({
+        "post_id": post_id,
+        "channel_id": channel_id,
+    });
+    let tick = command("im_announcement_read", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_announcement_read: 入泵失败（泵已退出？）：{e}"))
+}
+
+/// UC-5.6w 公告·删除（写族 WS post_update 回声）：前端传 `postIds`（待删公告 server id 数组）→ 本命令
+/// 转 snake_case 入泵 `im_announcement_delete`（helix-im `posts_announcement.rs`
+/// `AnnouncementDeleteCommand`·读 snake `post_ids` → 兑现出站 `POST post/announcement/delete {postIds,
+/// postId}` **两字段同值数组**·兼容后端单/复数命名差异·真源 partial 1 §29 verbatim `{PostIds []string
+/// json:postIds}`）。
+///
+/// WS 回 `post_update`（gap §69 announcement* → post_update ✅·删除过期公告广播）→ 投影
+/// `im:post:updated`（fat）→ edit_content_op patch message 行。**⛔ 当前阻于 cses-java·① 出站经
+/// go-mattermost 可真跑·②④ 待恢复**。薄壳纪律：只翻译入参 + 入泵·body 双字段成形全在 helix-im·本壳不臆造。
+#[tauri::command]
+pub async fn im_announcement_delete(
+    state: State<'_, AppState>,
+    post_ids: Vec<String>,
+) -> Result<(), String> {
+    if post_ids.iter().all(|p| p.is_empty()) {
+        return Err("im_announcement_delete: postIds 为空（非空字符串数组）".into());
+    }
+    let payload = serde_json::json!({
+        "post_ids": post_ids,
+    });
+    let tick = command("im_announcement_delete", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_announcement_delete: 入泵失败（泵已退出？）：{e}"))
+}
+
+/// UC-5.5b 消息置顶（写族 WS post_pin 回声）：前端传 `channelId`（目标频道）+ `postId`（被置顶消息
+/// server id）→ 本命令转 snake_case 入泵 helix-im `im_set_message_top`（`outbound/channel_pinned.rs`
+/// `SetMessageTopCommand`·读 snake `channel_id`/`post_id` → 翻 camel 兑现出站
+/// `POST channel/add/postPinned {channelId, postId}`·全 camelCase·真源 partial 2 §21
+/// `command.ChannelPostPinnedCommand{Id,ChannelId,PostId}`·helix 仅发 channelId+postId 两键·Id 由
+/// handler 侧覆盖不在出站体）。
+///
+/// 注：loopforge 命令名 `im_post_pin`（task/spec 命名）→ 接 helix 既有 `im_set_message_top` build
+/// （endpoint channel/add/postPinned·同一出站契约·见 uc-5.5b.expect.json `_note`）。
+///
+/// WS 回 `post_pin`（cses_channel.go:1840 NewWebSocketEvent(WebsocketEventPostPin)·broadcast channelId·
+/// payload=pinned post 信息）→ 实现 phase 经 emit_post_updated 投出 `im:post:updated`（pinned 态·
+/// post-targeted sid 锚·用户拍板 2026-06-26）→ patch message 行 pinned 态 + DOM data-pinned。**⛔ 当前
+/// 阻于 cses-java 业务 WS 广播链断·① 出站经 go-mattermost 可真跑·②③④ 待恢复**。薄壳纪律：只翻译入参
+/// + 入泵·endpoint/casing 全在 helix-im·本壳不臆造。
+#[tauri::command]
+pub async fn im_post_pin(
+    state: State<'_, AppState>,
+    channel_id: String,
+    post_id: String,
+) -> Result<(), String> {
+    if channel_id.is_empty() {
+        return Err("im_post_pin: channelId 为空".into());
+    }
+    if post_id.is_empty() {
+        return Err("im_post_pin: postId 为空（须指定被置顶消息 server id）".into());
+    }
+    let payload = serde_json::json!({
+        "channel_id": channel_id,
+        "post_id": post_id,
+    });
+    let tick = command("im_set_message_top", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_post_pin: 入泵失败（泵已退出？）：{e}"))
 }
 
 /// UC-9.x 书签·收藏消息：前端传 `channelId` + `postIds`（被收藏消息 server_id 列表）+ `reqId`
@@ -733,15 +1015,14 @@ pub async fn im_bookmark_load(
         .map_err(|e| format!("im_bookmark_load: 入泵失败（泵已退出？）：{e}"))
 }
 
-/// UC-5.1 创建群聊：前端传 `displayName` + `memberIds`（其他成员真实 userId 列表）→ 本命令按
-/// 真机curl真源 §4 拼 `channel/create` raw body 入泵 `im_create_channel`（helix-im
-/// `CreateChannelCommand` 透传 args 到 `POST /api/cses/channel/create`）。
+/// UC-5.1 创建群聊：前端传 `displayName` + `memberIds`（其他成员真实 userId 列表）→ 本命令把
+/// 身份（`teamId`/`selfId`）+ 结构化列表入泵 `im_create_channel`，wire body 成形 + role 业务赋值
+/// （self CREATOR + 他人 MEMBER）由 helix-im `CreateChannelCommand` 兑现出站
+/// `POST /api/cses/channel/create`（形态锚真源 §4）。
 ///
-/// body 单一真源：`teamId` / 自身 `userId`（role=CREATOR）取自 AppState.identity（profile
-/// companyId / cookieId），**不在前端 TS 硬编 creds**（守 src-tauri 纪律 3·身份单一真源）。
-/// 其他成员（role=MEMBER）由前端供 `memberIds`（e2e 读 seeded channel_member 真实 userId）。
-/// 形态锚真源 §4：`{teamId, displayName, orient:"", type:"P", users:[{id,teamId,role}],
-/// picturetype:"USER", picture:{userIds:[...]}, forceCreate:true}`（全 camelCase）。
+/// 身份单一真源：`teamId` / 自身 `userId` 取自 AppState.identity（profile companyId / cookieId），
+/// **不在前端 TS 硬编 creds**（守 src-tauri 纪律 5）。薄壳纪律：只翻译入参 + 解析身份 + 入泵结构化
+/// args（`{display_name, team_id, self_id, member_ids}`），body camelCase 化 + role 赋值全在 helix-im。
 #[tauri::command]
 pub async fn im_create_channel(
     state: State<'_, AppState>,
@@ -751,42 +1032,20 @@ pub async fn im_create_channel(
     if display_name.trim().is_empty() {
         return Err("im_create_channel: displayName 为空".into());
     }
-    let team_id = state.identity.team_id.clone();
     let self_id = state.identity.user_id.clone();
     if self_id.is_empty() {
         return Err("im_create_channel: 自身 userId 为空（profile cookieId 未注入）".into());
     }
 
-    // users[]：自己 CREATOR + 其他成员 MEMBER（真源 §4 三键 id/teamId/role 全 camelCase）。
-    let mut users: Vec<serde_json::Value> = Vec::with_capacity(member_ids.len() + 1);
-    let mut user_ids: Vec<String> = Vec::with_capacity(member_ids.len() + 1);
-    users.push(serde_json::json!({
-        "id": self_id,
-        "teamId": team_id,
-        "role": "CREATOR",
-    }));
-    user_ids.push(self_id.clone());
-    for mid in member_ids.into_iter().filter(|m| !m.is_empty() && *m != self_id) {
-        users.push(serde_json::json!({
-            "id": mid,
-            "teamId": team_id,
-            "role": "MEMBER",
-        }));
-        user_ids.push(mid);
-    }
-
-    let body = serde_json::json!({
-        "teamId": team_id,
-        "displayName": display_name,
-        "orient": "",
-        "type": "P",
-        "users": users,
-        "picturetype": "USER",
-        "picture": { "userIds": user_ids },
-        "forceCreate": true,
-    });
-
-    let tick = command("im_create_channel", body);
+    let tick = command(
+        "im_create_channel",
+        serde_json::json!({
+            "display_name": display_name,
+            "team_id": state.identity.team_id.clone(),
+            "self_id": self_id,
+            "member_ids": member_ids,
+        }),
+    );
     state
         .tick_tx
         .send(tick)
@@ -795,16 +1054,14 @@ pub async fn im_create_channel(
 }
 
 /// UC-5.2 创建话题（消息转话题）：前端传 `rootId`（话题挂载的根群 channelId）+ `postId`
-/// （被转成话题的消息 server id）+ `displayName` + `memberIds`（其他成员真实 userId）→ 本命令按
-/// 真机curl真源 §2 拼 `posts/makeTopic` raw body 入泵 `im_make_topic`（helix-im
-/// `MakeTopicCommand` 校验 postId 后透传 args 到 `POST /api/cses/posts/makeTopic`）。
+/// （被转成话题的消息 server id）+ `displayName` + `memberIds`（其他成员真实 userId）→ 本命令把
+/// 身份 + 结构化列表入泵 `im_make_topic`，wire body 成形 + role 业务赋值由 helix-im
+/// `MakeTopicCommand` 兑现出站 `POST /api/cses/posts/makeTopic`（形态锚真源 §2·type=T 话题）。
 ///
-/// 形态锚真源 §2：`{rootId, teamId, postId, displayName, type:"T", users:[{id,teamId,role}],
-/// picturetype:"USER", picture:{userIds:[...]}, forceCreate:true}`（全 camelCase）。与建群（§4
-/// channel/create）同形态，差异：① endpoint posts/makeTopic ② 多 rootId+postId ③ type 固定 T
-/// （话题·非 P 私聊群）④ 无 orient。`teamId` / 自身 `userId`（role=CREATOR）取自 AppState.identity
-/// （profile companyId / cookieId）·身份单一真源·壳不臆造 creds。WS 回 `channel_created`（话题=新
-/// channel）+ `post_update`（原消息挂 topicId）。
+/// `teamId` / 自身 `userId` 取自 AppState.identity（profile companyId / cookieId）·身份单一真源·壳不
+/// 臆造 creds。WS 回 `channel_created`（话题=新 channel）+ `post_update`（原消息挂 topicId）。薄壳
+/// 纪律：只翻译入参 + 解析身份 + 入泵结构化 args（`{root_id, post_id, display_name, team_id,
+/// self_id, member_ids}`），body camelCase 化 + role 赋值全在 helix-im。
 #[tauri::command]
 pub async fn im_make_topic(
     state: State<'_, AppState>,
@@ -822,43 +1079,22 @@ pub async fn im_make_topic(
     if display_name.trim().is_empty() {
         return Err("im_make_topic: displayName 为空".into());
     }
-    let team_id = state.identity.team_id.clone();
     let self_id = state.identity.user_id.clone();
     if self_id.is_empty() {
         return Err("im_make_topic: 自身 userId 为空（profile cookieId 未注入）".into());
     }
 
-    // users[]：自己 CREATOR + 其他成员 MEMBER（真源 §2 三键 id/teamId/role 全 camelCase）。
-    let mut users: Vec<serde_json::Value> = Vec::with_capacity(member_ids.len() + 1);
-    let mut user_ids: Vec<String> = Vec::with_capacity(member_ids.len() + 1);
-    users.push(serde_json::json!({
-        "id": self_id,
-        "teamId": team_id,
-        "role": "CREATOR",
-    }));
-    user_ids.push(self_id.clone());
-    for mid in member_ids.into_iter().filter(|m| !m.is_empty() && *m != self_id) {
-        users.push(serde_json::json!({
-            "id": mid,
-            "teamId": team_id,
-            "role": "MEMBER",
-        }));
-        user_ids.push(mid);
-    }
-
-    let body = serde_json::json!({
-        "rootId": root_id,
-        "teamId": team_id,
-        "postId": post_id,
-        "displayName": display_name,
-        "type": "T",
-        "users": users,
-        "picturetype": "USER",
-        "picture": { "userIds": user_ids },
-        "forceCreate": true,
-    });
-
-    let tick = command("im_make_topic", body);
+    let tick = command(
+        "im_make_topic",
+        serde_json::json!({
+            "root_id": root_id,
+            "post_id": post_id,
+            "display_name": display_name,
+            "team_id": state.identity.team_id.clone(),
+            "self_id": self_id,
+            "member_ids": member_ids,
+        }),
+    );
     state
         .tick_tx
         .send(tick)
@@ -867,20 +1103,18 @@ pub async fn im_make_topic(
 }
 
 /// UC-11.1 维护公司大群：前端传 `displayName` + `memberIds`（公司大群成员真实 userId 列表）→ 本命令
-/// 按真机curl真源 partials/3 §4 拼 `CreateChannelSpecifyOwner`（嵌入 Channel 全字段 + users[] +
-/// forceCreate + owner）作 `team` 对象入泵 `im_team_upsert`（helix-im `TeamUpsertCommand` 原样透传
-/// `team` 到 `POST /api/cses/teams/upsert`·非 team 表·只维护公司大群）。
+/// 把身份 + 结构化列表入泵 `im_team_upsert`，`CreateChannelSpecifyOwner` team 对象成形 + role/owner
+/// 业务赋值（self CREATOR + 他人 MEMBER）由 helix-im `TeamUpsertCommand` 兑现出站
+/// `POST /api/cses/teams/upsert`（真源 partials/3 §4·非 team 表·只维护公司大群）。
 ///
 /// **建群路径**（`id` 缺/空 → server `UpsertTeam` 走 `CreateCsesChannel`）：WS 回 `channel_created`
-/// （WebsocketEventChannelCreated）+ `channel_member_update`（WebsocketEventChannelMemberUpdate）→
-/// helix 投影 `im:channel:created`（{channel_id, channel}·同 UC-5.1 emit_channel_created）→ ③ CL 新行
-/// data-channel-id + ④ channel 表新行。本命令不传 `id` → server 必走建群分支（避开现网 ID!="" 二次
-/// decode io.Reader 已耗尽 bug·真源 §4 已知 bug 注记）。
+/// + `channel_member_update` → helix 投影 `im:channel:created` → ③ CL 新行 + ④ channel 表新行。helix-im
+/// 不携 `id` → server 必走建群分支（避开现网 ID!="" 二次 decode io.Reader 已耗尽 bug·真源 §4 注记）。
 ///
-/// body 单一真源：`teamId` / 自身 `userId`（owner + users CREATOR）取自 AppState.identity（profile
-/// companyId / cookieId）·**不在前端 TS 硬编 creds**（守 src-tauri 纪律 3·身份单一真源）。其他成员
-/// （role=MEMBER）由前端供 `memberIds`（e2e 读 seeded channel_member 真实 userId）。teams/* 走
-/// `rejectPersonalUser`·dev-local profile 为公司用户·非 personal·不触 403。
+/// 身份单一真源：`teamId` / 自身 `userId` 取自 AppState.identity（profile companyId / cookieId）·**不在
+/// 前端 TS 硬编 creds**（守 src-tauri 纪律 5）。teams/* 走 `rejectPersonalUser`·dev-local profile 为公司
+/// 用户·非 personal·不触 403。薄壳纪律：只翻译入参 + 解析身份 + 入泵结构化 args（`{display_name,
+/// team_id, self_id, member_ids}`），team 对象 camelCase 化 + owner/role 赋值全在 helix-im。
 #[tauri::command]
 pub async fn im_team_upsert(
     state: State<'_, AppState>,
@@ -890,46 +1124,20 @@ pub async fn im_team_upsert(
     if display_name.trim().is_empty() {
         return Err("im_team_upsert: displayName 为空".into());
     }
-    let team_id = state.identity.team_id.clone();
     let self_id = state.identity.user_id.clone();
     if self_id.is_empty() {
         return Err("im_team_upsert: 自身 userId 为空（profile cookieId 未注入）".into());
     }
 
-    // users[]：自己 CREATOR + 其他成员 MEMBER（三键 id/teamId/role 全 camelCase·同 channel/create）。
-    let mut users: Vec<serde_json::Value> = Vec::with_capacity(member_ids.len() + 1);
-    let mut user_ids: Vec<String> = Vec::with_capacity(member_ids.len() + 1);
-    users.push(serde_json::json!({
-        "id": self_id,
-        "teamId": team_id,
-        "role": "CREATOR",
-    }));
-    user_ids.push(self_id.clone());
-    for mid in member_ids.into_iter().filter(|m| !m.is_empty() && *m != self_id) {
-        users.push(serde_json::json!({
-            "id": mid,
-            "teamId": team_id,
-            "role": "MEMBER",
-        }));
-        user_ids.push(mid);
-    }
-
-    // CreateChannelSpecifyOwner（真源 partials/3 §4）：嵌入 Channel 全字段（teamId/displayName/orient/
-    // type/picturetype/picture·同 channel/create §4 必填集）+ users[] + forceCreate + owner（CREATOR）。
-    // 不携 `id` → server 走建群分支（CreateCsesChannel·触 channel_created）。
-    let team = serde_json::json!({
-        "teamId": team_id,
-        "displayName": display_name,
-        "orient": "",
-        "type": "P",
-        "picturetype": "USER",
-        "picture": { "userIds": user_ids },
-        "users": users,
-        "forceCreate": true,
-        "owner": { "id": self_id, "teamId": team_id, "role": "CREATOR" },
-    });
-
-    let tick = command("im_team_upsert", serde_json::json!({ "team": team }));
+    let tick = command(
+        "im_team_upsert",
+        serde_json::json!({
+            "display_name": display_name,
+            "team_id": state.identity.team_id.clone(),
+            "self_id": self_id,
+            "member_ids": member_ids,
+        }),
+    );
     state
         .tick_tx
         .send(tick)
@@ -1109,21 +1317,16 @@ pub async fn im_update_member_nickname(
 }
 
 /// UC-6.1 拉/踢人：前端传 `channelId`（目标频道）+ `joinUserIds`（拉进群的成员 userId 列表）+
-/// `leaveUserIds`（踢出群的成员 userId 列表·两者可同时非空）→ 本命令按真机curl真源 §5 拼
-/// `channel/member/change` raw body 入泵 `im_channel_member_change`（helix-im
-/// `outbound/channel_existing.rs` `MemberChangeCommand` 校验 channelId 后**透传 args 到**
-/// `POST /api/cses/channel/member/change`——注意该 command 是 args.clone() 直透，故 body 必须由本壳
-/// 以 camelCase 拼成形态锚真源 §5：`{channelId, joinUsers:[{id,teamId,role}], leaveUsers:[{id,teamId,role}]}`）。
+/// `leaveUserIds`（踢出群的成员 userId 列表·两者可同时非空）→ 本命令把身份 + 结构化 userId 列表入泵
+/// `im_channel_member_change`，joinUsers/leaveUsers 数组成形 + role=MEMBER 业务赋值 + join 排除自身由
+/// helix-im `MemberChangeCommand` 兑现出站 `POST /api/cses/channel/member/change`（形态锚真源 §5：
+/// `{channelId, joinUsers?:[{id,teamId,role}], leaveUsers?:[...]}`·空集省略字段）。
 ///
-/// `teamId` 取自 AppState.identity（profile companyId·身份单一真源·不在前端 TS 硬编 creds）。
-/// joinUsers role=MEMBER（拉进群默认普通成员·真源 §5 示例 role:"MEMBER"）；leaveUsers 同结构。
-/// 空集 → 该字段省略（不发 `joinUsers:[]` 空数组·与 joinUsers/leaveUsers 两者可同时非 nil 语义对齐）。
-///
-/// WS 回 `channel_member_update`（broadcast 到 channelId·channel 全量帧含 memberChange.join/leave）→
-/// ④ channel_member 表 BatchUpsert（join 成员·复合 PK channel_id,user_id）+ BatchDelete（leave 成员）+
-/// ② `im:channel:member-updated`（{channel_id, channel}·to_effect_s1::emit_channel_member_updated 透传帧
-/// channel 对象）→ ③ DOM data-members 回读。薄壳纪律：只翻译入参 + 入泵，endpoint 在 helix-im，本壳
-/// 只拼 camelCase body（因 MemberChangeCommand 直透 args·body 形态责任在壳·对齐真源 §5）。
+/// `teamId` / 自身 `userId` 取自 AppState.identity（profile companyId / cookieId·身份单一真源·不在前端
+/// TS 硬编 creds）。WS 回 `channel_member_update`（broadcast 到 channelId·channel 全量帧含
+/// memberChange.join/leave）→ ④ channel_member 表 BatchUpsert/BatchDelete + ② `im:channel:member-updated`
+/// → ③ DOM data-members 回读。薄壳纪律：只翻译入参 + 解析身份 + 入泵结构化 args（`{channel_id, team_id,
+/// self_id, join_user_ids, leave_user_ids}`），body camelCase 化 + role 赋值 + 自身过滤全在 helix-im。
 #[tauri::command]
 pub async fn im_channel_member_change(
     state: State<'_, AppState>,
@@ -1134,41 +1337,17 @@ pub async fn im_channel_member_change(
     if channel_id.trim().is_empty() {
         return Err("im_channel_member_change: channelId 为空".into());
     }
-    let team_id = state.identity.team_id.clone();
-    let self_id = state.identity.user_id.clone();
 
-    // 拼成员对象数组（真源 §5 三键 id/teamId/role 全 camelCase·role=MEMBER）。空/自身过滤。
-    let build_users = |ids: Vec<String>| -> Vec<serde_json::Value> {
-        ids.into_iter()
-            .filter(|u| !u.trim().is_empty())
-            .map(|uid| {
-                serde_json::json!({
-                    "id": uid,
-                    "teamId": team_id,
-                    "role": "MEMBER",
-                })
-            })
-            .collect()
-    };
-
-    let mut body = serde_json::Map::new();
-    body.insert("channelId".into(), serde_json::Value::String(channel_id));
-    if let Some(joins) = join_user_ids {
-        // 拉成员排除自身（拉别人进群·自身已在群·真源 §5 joinUsers 是新增成员）。
-        let joins: Vec<String> = joins.into_iter().filter(|u| *u != self_id).collect();
-        let users = build_users(joins);
-        if !users.is_empty() {
-            body.insert("joinUsers".into(), serde_json::Value::Array(users));
-        }
-    }
-    if let Some(leaves) = leave_user_ids {
-        let users = build_users(leaves);
-        if !users.is_empty() {
-            body.insert("leaveUsers".into(), serde_json::Value::Array(users));
-        }
-    }
-
-    let tick = command("im_channel_member_change", serde_json::Value::Object(body));
+    let tick = command(
+        "im_channel_member_change",
+        serde_json::json!({
+            "channel_id": channel_id,
+            "team_id": state.identity.team_id.clone(),
+            "self_id": state.identity.user_id.clone(),
+            "join_user_ids": join_user_ids.unwrap_or_default(),
+            "leave_user_ids": leave_user_ids.unwrap_or_default(),
+        }),
+    );
     state
         .tick_tx
         .send(tick)
@@ -1177,12 +1356,11 @@ pub async fn im_channel_member_change(
 }
 
 /// UC-6.2 设/撤管理员：前端传 `channelId`（目标频道）+ `userId`（被设/撤管理员的成员）+
-/// `set`（true=设管理员·走 `im_channel_add_manger`；false=撤管理员·走 `im_channel_remove_manger`）→
-/// 本命令按真机curl真源 partials/6 UC-6.2 + Go `command.AddChannelMangerCommand` /
-/// `DeleteChannelMangerCommand` 拼 `users:[{id,name,role,teamId}]` 入泵（helix-im
-/// `outbound/channel_change_dedicated.rs` `AddMangerCommand` / `RemoveMangerCommand` 校验 channelId +
-/// require_member_array 后兑现出站 `POST channel/add/manger` / `channel/remove/manger`·body
-/// `{channelId, users:[{id,name,role,teamId}]}`·全 camelCase）。
+/// `set`（true=设管理员·false=撤管理员）→ 本命令把身份 + `set` 标志入泵 `im_channel_set_manger`，
+/// role 业务赋值（set→ADMIN/MEMBER）+ endpoint 路由（`channel/add/manger` / `channel/remove/manger`）
+/// + users 单成员定点 `{id,name,role,teamId}` 拼装全由 helix-im
+/// `outbound/channel_change_dedicated.rs` `SetMangerCommand` 兑现（真机curl真源 partials/6 §19/§20·
+/// 全 camelCase）。既有 `AddMangerCommand`/`RemoveMangerCommand` helix 仍保留注册·壳不再用·无害。
 ///
 /// `teamId` 取自 AppState.identity（profile companyId·身份单一真源·不在前端 TS 硬编 creds）。
 /// `name` 留空串（Go 侧 manger 仅按 id 鉴定·name 仅展示·真源示例非空但 id 才是定点键）；`role`=
@@ -1207,27 +1385,16 @@ pub async fn im_channel_set_manger(
     if user_id.trim().is_empty() {
         return Err("im_channel_set_manger: userId 为空".into());
     }
-    let team_id = state.identity.team_id.clone();
-    // role 随设/撤切换（设=ADMIN·撤=MEMBER·与 WS channel_member_role_updated echo data.role 对齐）。
-    let role = if set { "ADMIN" } else { "MEMBER" };
-    // users 数组：单成员定点（id 为定点键·name 仅展示留空·teamId/role 真源 §19/§20 四键全 camelCase）。
-    let users = serde_json::json!([{
-        "id": user_id,
-        "name": "",
-        "role": role,
-        "teamId": team_id,
-    }]);
-    // 设=add_manger·撤=remove_manger（两 helix command 同 body 结构·仅 endpoint 异）。
-    let cmd_name = if set {
-        "im_channel_add_manger"
-    } else {
-        "im_channel_remove_manger"
-    };
+    // role 业务赋值（set=true→ADMIN·set=false→MEMBER）+ endpoint 路由（add/remove manger）+ users
+    // 单成员定点拼装全下沉 helix-im SetMangerCommand·壳只传结构化 args `{channel_id, user_id,
+    // team_id, set}`。
     let tick = command(
-        cmd_name,
+        "im_channel_set_manger",
         serde_json::json!({
             "channel_id": channel_id,
-            "users": users,
+            "user_id": user_id,
+            "team_id": state.identity.team_id.clone(),
+            "set": set,
         }),
     );
     state

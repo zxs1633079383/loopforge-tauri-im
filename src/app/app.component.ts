@@ -78,9 +78,27 @@ import { MessageRow } from "./im/message-row.model";
             <button
               class="im__mini"
               type="button"
+              data-testid="online-status-btn"
+              (click)="onOnlineStatus()"
+            >在线</button>
+            <button
+              class="im__mini"
+              type="button"
               data-testid="modules-get-all-btn"
               (click)="onModulesGetAll()"
             >模块</button>
+            <button
+              class="im__mini"
+              type="button"
+              data-testid="announcement-list-btn"
+              (click)="onAnnouncementList()"
+            >公告列</button>
+            <button
+              class="im__mini"
+              type="button"
+              data-testid="announcement-save-btn"
+              (click)="onAnnouncementSave()"
+            >存公告</button>
             <button
               class="im__mini"
               type="button"
@@ -295,6 +313,36 @@ import { MessageRow } from "./im/message-row.model";
                   data-testid="bookmark-delete-btn"
                   (click)="onDeleteBookmark(m)"
                 >弃藏</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="post-pin-btn"
+                  (click)="onPinMessage(m)"
+                >顶</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="announcement-accept-list-btn"
+                  (click)="onAnnouncementAcceptList(m)"
+                >受</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="announcement-detail-btn"
+                  (click)="onAnnouncementDetail(m)"
+                >详公</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="announcement-read-btn"
+                  (click)="onAnnouncementRead(m)"
+                >阅公</button>
+                <button
+                  class="im__mini"
+                  type="button"
+                  data-testid="announcement-delete-btn"
+                  (click)="onAnnouncementDelete(m)"
+                >删公</button>
                 <button
                   class="im__mini"
                   type="button"
@@ -751,6 +799,18 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   /**
+   * UC-5.7 频道成员在线状态（批量查在线·读族）：store.loadOnlineStatus（invoke
+   * im_channel_online_status → 出站 channel/onlineStatus·内联 {channelIds:[]string}）。读族无 WS 回声·
+   * 在线状态靠 helix `im:read:result{req_id, body}`（data=[]ChannelOnlineStatusGroup）透传回灌
+   * （前端从 body 抽在线状态渲染·非冻结契约面）。最简 UI：取本地已渲染频道 id 作 channelIds
+   * （保证有命中·真实「批量查在线」流），无频道则不发。e2e 走 bridge 直 invoke 注入确定性 channelIds/reqId。
+   */
+  onOnlineStatus(): void {
+    const ids = this.store.channels().map((c) => c.channelId).filter(Boolean);
+    void this.store.loadOnlineStatus(ids);
+  }
+
+  /**
    * UC-10.3 获取全部功能模块（读族）：store.getAllModules（invoke im_modules_get_all → 出站
    * modules/getAll·无 body）。读族无 WS 回声·模块列表靠 helix `im:read:result{req_id, body}` 透传
    * 回灌（前端从 body 抽模块渲染·非冻结契约面）。最简 UI：无入参直触发拉全部模块。
@@ -758,6 +818,31 @@ export class AppComponent implements OnInit, OnDestroy {
    */
   onModulesGetAll(): void {
     void this.store.getAllModules();
+  }
+
+  /**
+   * UC-5.6r 公告·列表查询（读族）：store.announcementList（invoke im_announcement_list → 出站
+   * post/announcement/list {channelId}）。读族无 WS 回声·公告列表靠 helix `im:read:result{req_id,
+   * body}` 透传回灌（前端从 body 抽公告渲染·非冻结契约面）。最简 UI：取当前活动频道 id 作 channelId·
+   * 无则不发。e2e 走 bridge 直 invoke 注入确定性 channelId/reqId 覆盖此便捷路径。
+   */
+  onAnnouncementList(): void {
+    const channelId = this.store.activeChannel();
+    if (!channelId) return;
+    void this.store.announcementList(channelId);
+  }
+
+  /**
+   * UC-5.6w 公告·保存（写族 WS post_update echo）：store.announcementSave（invoke im_announcement_save →
+   * 出站 post/announcement/save·camelCase Post·壳后端补 userId）。type=TEXT 占位·message=占位公告正文。
+   * server echo（im:post:updated）⛔ 当前阻于 cses-java·① 出站经 go-mattermost 可真跑。无活动频道 → 不发。
+   * e2e 走 bridge 直 invoke 注入真实 channelId/type/message 覆盖此便捷路径。
+   */
+  onAnnouncementSave(): void {
+    const channelId = this.store.activeChannel();
+    if (!channelId) return;
+    const message = `announcement-${Math.random().toString(36).slice(2, 8)}`;
+    void this.store.announcementSave(channelId, "TEXT", message);
   }
 
   /** UC-4.2 按需 sync：触发引擎重连 → 重检 per-channel needSync gap → 对落后频道自驱
@@ -1067,6 +1152,71 @@ export class AppComponent implements OnInit, OnDestroy {
     const postId = (row.msgId ?? "").trim();
     if (!postId) return;
     void this.store.deleteBookmark(postId);
+  }
+
+  // ── UC-5.6r/5.6w/5.5b 公告 + 置顶交互件（C007 必配方法 · 便捷 UI 入口 · e2e 走 bridge 直 invoke 覆盖）──
+  // postId 取自 row.msgId（消息 server id）·无 server id（未对账乐观行）→ 不发。读族（acceptList/detail）
+  // 靠 im:read:result 投影驱动；写族（read/delete/pin）靠 im:post:updated 投影驱动·壳无乐观合成。
+
+  /**
+   * UC-5.6r 公告·接受列表（读族）：postId=公告消息 server id（msgId）→ store.announcementAcceptList
+   * （invoke im_announcement_accept_list → 出站 post/announcement/acceptList {postId}）。读族透传回灌
+   * im:read:result。无 server id → 不发。e2e 走 bridge 直 invoke 注入真实 postId/reqId 覆盖此便捷路径。
+   */
+  onAnnouncementAcceptList(row: MessageRow): void {
+    const postId = (row.msgId ?? "").trim();
+    if (!postId) return;
+    void this.store.announcementAcceptList(postId);
+  }
+
+  /**
+   * UC-5.6r 公告·详情（读族）：postIds=[公告消息 server id]（msgId）→ store.announcementDetail（invoke
+   * im_announcement_detail → 出站 post/announcement/detail {postIds:[]}）。读族透传回灌 im:read:result。
+   * 无 server id → 不发。e2e 走 bridge 直 invoke 注入真实 postIds/reqId 覆盖此便捷路径。
+   */
+  onAnnouncementDetail(row: MessageRow): void {
+    const postId = (row.msgId ?? "").trim();
+    if (!postId) return;
+    void this.store.announcementDetail([postId]);
+  }
+
+  /**
+   * UC-5.6w 公告·确认收到（写族 WS post_update echo）：postId=公告消息 server id（msgId）+ channelId=
+   * 当前活动频道 → store.announcementRead（invoke im_announcement_read → 出站 post/announcement/read
+   * {postId, channelId}）。server echo（im:post:updated）⛔ 当前阻于 cses-java·① 出站可真跑。无 server
+   * id / 无活动频道 → 不发。e2e 走 bridge 直 invoke 注入真实 postId/channelId 覆盖此便捷路径。
+   */
+  onAnnouncementRead(row: MessageRow): void {
+    const postId = (row.msgId ?? "").trim();
+    const channelId = this.store.activeChannel();
+    if (!postId || !channelId) return;
+    void this.store.announcementRead(postId, channelId);
+  }
+
+  /**
+   * UC-5.6w 公告·删除（写族 WS post_update echo）：postIds=[公告消息 server id]（msgId）→
+   * store.announcementDelete（invoke im_announcement_delete → 出站 post/announcement/delete {postIds,
+   * postId} 两字段同值数组）。server echo ⛔ 当前阻于 cses-java·① 出站可真跑。无 server id → 不发。
+   * e2e 走 bridge 直 invoke 注入真实 postIds 覆盖此便捷路径。
+   */
+  onAnnouncementDelete(row: MessageRow): void {
+    const postId = (row.msgId ?? "").trim();
+    if (!postId) return;
+    void this.store.announcementDelete([postId]);
+  }
+
+  /**
+   * UC-5.5b 消息置顶（写族 WS post_pin echo）：channelId=当前活动频道·postId=被置顶消息 server id
+   * （msgId）→ store.pinMessage（invoke im_post_pin → 出站 channel/add/postPinned {channelId, postId}）。
+   * WS 回 post_pin → im:post:updated（pinned 态）→ DOM data-pinned。⛔ ②③④ 当前阻于 cses-java·① 出站经
+   * go-mattermost 可真跑。无 server id（未对账乐观行）/ 无活动频道 → 不发。pinned 态靠投影驱动·壳纯渲染·
+   * 无乐观合成。e2e 走 bridge 直 invoke 注入真实 channelId/postId 覆盖此便捷路径。
+   */
+  onPinMessage(row: MessageRow): void {
+    const channelId = this.store.activeChannel();
+    const postId = (row.msgId ?? "").trim();
+    if (!channelId || !postId) return;
+    void this.store.pinMessage(channelId, postId);
   }
 
   // ── UC-8.x 投票 CRUD 交互件（C007 必配方法 · 便捷 UI 入口 · e2e 走 bridge 直 invoke 覆盖）─────
