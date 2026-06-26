@@ -7,9 +7,7 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use helix_core::Tick;
 use helix_driver_instrument::InstrumentCtx;
-use tokio::sync::mpsc;
 
 /// 就绪 probe 的可观测状态（CLAUDE.md §3：increment_end 收齐 + inflight==0 + cursor 稳）。
 ///
@@ -47,7 +45,11 @@ impl ReadinessProbe {
 #[derive(Clone)]
 pub struct AppState {
     /// 进泵的 tick 发送端（命令注入入口，与 WS 入站同一条泵，串行进 core）。
-    pub tick_tx: mpsc::Sender<Tick>,
+    ///
+    /// 包了 P0b ⓪ Inbound tee 装饰器（`TeeTickSender`）：每条 `Tick::Command` 进引擎前旁路落
+    /// `Facet::Inbound`，与 command 层 `Facet::IpcIn` 配对量化 C013 纯壳不变量（test-only·webdriver
+    /// feature 闸·release 退化为对内层 `mpsc::Sender` 纯透传）。命令调用点 `send().await` 签名不变。
+    pub tick_tx: crate::tick_tee::TeeTickSender,
     /// 仪表上下文（set_uc 透传 + 投影面日志共用）。
     /// 无 webdriver feature 时仅 `set_uc` 之外无读者 → allow dead_code（投影面 tee 用的是
     /// engine::spawn 收到的同一份 clone，不经此字段）。

@@ -15,6 +15,7 @@ mod commands;
 mod config;
 mod engine;
 mod state;
+mod tick_tee;
 
 use std::sync::Arc;
 
@@ -109,6 +110,9 @@ pub fn run() {
             e.into()
         })?;
 
+        // P0b ⓪ Inbound tee：把进泵发送端包一层 TeeTickSender（webdriver feature 下旁路落
+        // Facet::Inbound·release 纯透传）。引擎内部留用的 tick_tx clone 不经此 tee（只捕获 IPC 派发指令）。
+        let tick_tx = crate::tick_tee::TeeTickSender::new(tick_tx, ctx_for_setup.clone());
         app.manage(AppState {
             tick_tx,
             ctx: ctx_for_setup,

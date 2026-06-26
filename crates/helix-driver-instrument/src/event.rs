@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// 四面契约里的"面"。
+///
+/// P0b 6 面扩展（test-only·6-facet-oracle.md）在四面之上补**输入侧两个面** [`Facet::IpcIn`] +
+/// [`Facet::Inbound`]，使能机器断言「壳在 invoke→helix 之间零加工」（C013 纯壳不变量）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Facet {
@@ -18,6 +21,12 @@ pub enum Facet {
     Storage,
     /// 入站 WS 帧（go 主动推；驱动投影的输入，供 reducer 串 corr_key）。
     WsRecv,
+    /// ⓪ IPC 输入面（test-only）：src-tauri command 层 tee `{command, args}`——壳收到的原始 invoke
+    /// 入参。与 [`Facet::Inbound`] 配对量化 C013 纯壳不变量（IpcIn.args ≡ Inbound.args）。kebab=`ipc-in`。
+    IpcIn,
+    /// 进引擎指令面（test-only）：command-dispatch 装饰器 tee `{command, args}`——进引擎泵的指令。
+    /// 与 [`Facet::IpcIn`] 比对证明「壳零中间 shaping」（reducer 纯壳不变量）。kebab=`inbound`。
+    Inbound,
 }
 
 /// 链路上的"哪一跳"（reducer 定位"断在哪一跳"用）。
@@ -38,6 +47,10 @@ pub enum Hop {
     Storage,
     /// 连接生命周期（connect/close）。
     Lifecycle,
+    /// ⓪ IPC 输入（src-tauri command 层 tee·test-only）。kebab=`ipc-in`。
+    IpcIn,
+    /// 进引擎指令（command-dispatch 装饰器 tee·test-only）。kebab=`inbound`。
+    Inbound,
 }
 
 /// 一条结构化 hop 日志。
@@ -165,6 +178,14 @@ pub fn extract_corr_key(payload: &Value) -> Option<String> {
     if let Some(data) = payload.get("data") {
         if let Some(k) = probe(data) {
             return Some(augment_posts(k, data));
+        }
+    }
+    // P0b ⓪ IpcIn/Inbound tee payload 形态 {command, args:{...}}：领域键嵌在 `.args`（顶层只有
+    // command/args）→ 探 args 取 ch/tmp/sid/seq，使纯壳两面与发送束聚同 corr_key（6-facet-oracle §3·
+    // 与 reducer corr-key.mjs::extractDims `.args` 探针同步）。
+    if let Some(args) = payload.get("args") {
+        if let Some(k) = probe(args) {
+            return Some(augment_posts(k, args));
         }
     }
     // 出站 HTTP body 嵌在 `payload.body`（http.rs::req_payload）：channelId/posts 等领域键在此层
@@ -338,6 +359,46 @@ mod tests {
             "body": {"channels": [{"id": "chView"}]}
         });
         assert_eq!(extract_corr_key(&p).as_deref(), Some("ch=chView"));
+    }
+
+    #[test]
+    fn ipc_in_inbound_facet_serialize_kebab() {
+        // P0b ⓪：新增两面序列化为 kebab——与 reducer facet 字符串（'ipc-in'/'inbound'）逐字对齐。
+        assert_eq!(serde_json::to_string(&Facet::IpcIn).unwrap(), "\"ipc-in\"");
+        assert_eq!(serde_json::to_string(&Facet::Inbound).unwrap(), "\"inbound\"");
+        assert_eq!(serde_json::to_string(&Hop::IpcIn).unwrap(), "\"ipc-in\"");
+        assert_eq!(serde_json::to_string(&Hop::Inbound).unwrap(), "\"inbound\"");
+        // 回归：旧四面序列化不变（叠加面零破坏）。
+        assert_eq!(serde_json::to_string(&Facet::Outbound).unwrap(), "\"outbound\"");
+        assert_eq!(serde_json::to_string(&Facet::WsRecv).unwrap(), "\"ws-recv\"");
+    }
+
+    #[test]
+    fn ipc_in_inbound_facet_roundtrip() {
+        // 可证伪：序列化往返恒等（reducer 写出的 ipc-in/inbound 帧能被 Rust 侧反序列化回同一面）。
+        for f in [Facet::IpcIn, Facet::Inbound, Facet::Outbound, Facet::WsRecv] {
+            let s = serde_json::to_string(&f).unwrap();
+            let back: Facet = serde_json::from_str(&s).unwrap();
+            assert_eq!(f, back);
+        }
+    }
+
+    #[test]
+    fn extracts_from_args_for_ipc_in_inbound() {
+        // P0b ⓪ tee payload {command, args:{...}}：领域键嵌 .args（顶层无 ch/tmp）→ 须从 args 抽。
+        // IpcIn（camel）：
+        let ipc = json!({"command": "im_send", "args": {"channelId": "c1", "temporaryId": "t9"}});
+        assert_eq!(extract_corr_key(&ipc).as_deref(), Some("ch=c1;tmp=t9"));
+        // Inbound（snake·进引擎指令）：
+        let inb = json!({"command": "im_send_message", "args": {"channel_id": "c1", "temporary_id": "t9"}});
+        assert_eq!(extract_corr_key(&inb).as_deref(), Some("ch=c1;tmp=t9"));
+    }
+
+    #[test]
+    fn args_probe_falsifiable_no_domain_key() {
+        // 可证伪对偶：args 无任一领域维 → None（不臆造束·保持纯壳两面落 unkeyed 仍可被 reducer 按面找）。
+        let p = json!({"command": "im_health", "args": {"foo": 1}});
+        assert_eq!(extract_corr_key(&p), None);
     }
 
     #[test]

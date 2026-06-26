@@ -37,6 +37,20 @@ pub async fn im_send(
     if temporary_id.is_empty() {
         return Err("im_send: temporaryId 为空（薄壳须生成）".into());
     }
+    // P0b ⓪ IpcIn tee（test-only·webdriver feature 闸·release --no-default-features 去掉）：落「壳
+    // 收到的原始 invoke 入参」(pre-shaping)，与 Inbound（TeeTickSender 进引擎指令）配对量化 C013 纯壳
+    // 不变量 IpcIn.args ≡ Inbound.args（reducer casing 归一后逐字段相等）。竖切 = UC-1.1 发消息。
+    // msg_type 原值透传（None→null·不在此处默认）：让纯壳不变量诚实暴露「壳是否做了 type 默认 shaping」。
+    #[cfg(feature = "webdriver")]
+    state.ctx.log_ipc_in(
+        "im_send",
+        serde_json::json!({
+            "channel_id": &channel_id,
+            "text": &text,
+            "temporary_id": &temporary_id,
+            "type": &msg_type,
+        }),
+    );
     // type 缺省由 helix send_build 容错为 "TEXT"；DOCUMENT 等富媒体显式透传真值（UC-1.2）。
     let msg_type = msg_type.unwrap_or_else(|| "TEXT".into());
     let tick = command(

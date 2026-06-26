@@ -82,6 +82,10 @@ export function extractDims(payload) {
     payload?.data,
     payload?.body,
     payload?.body?.data,
+    // P0b ⓪ IpcIn/Inbound tee payload 形态 {command, args:{...}}：领域键嵌在 .args（非顶层/.data/
+    // .body）→ 探 .args 使纯壳两面经 ch/tmp 与发送束聚同 corr_key（与装饰器 event.rs::extract_corr_key
+    // .args 探针同步·6-facet-oracle §3 纯壳不变量同 corr_key 束）。
+    payload?.args,
     // 批量信封（im:post:batch-updated `data.posts:[{id,...}]`）：post id 嵌在数组元素内，
     // 顶层只有 channel_id。探入 posts[0] 取 sid，使撤回/批量事件的投影能与出站(postId)、
     // 落库(sid) 聚同一束。多 post 信封(转发 UC-1.7)首元素代表，后续按需扩展。

@@ -80,6 +80,29 @@ impl InstrumentCtx {
         f(&mut g)
     }
 
+    /// P0b ⓪ IpcIn tee（test-only）：src-tauri command 层落「壳收到的原始 invoke 入参」。
+    ///
+    /// payload 形态固定 `{command, args}`——reducer 纯壳不变量比对 IpcIn.args ≡ Inbound.args
+    /// （6-facet-oracle §3）。corr_key 由 [`extract_corr_key`] 探 `.args` 抽（与发送束聚同束）。
+    pub fn log_ipc_in(&self, command: &str, args: Value) {
+        self.log(
+            Facet::IpcIn,
+            Hop::IpcIn,
+            serde_json::json!({ "command": command, "args": args }),
+        );
+    }
+
+    /// 进引擎指令 tee（test-only）：command-dispatch 装饰器落「进引擎泵的指令」。
+    ///
+    /// 与 [`log_ipc_in`](Self::log_ipc_in) 同 `{command, args}` 形态，配对量化 C013 纯壳不变量。
+    pub fn log_inbound(&self, command: &str, args: Value) {
+        self.log(
+            Facet::Inbound,
+            Hop::Inbound,
+            serde_json::json!({ "command": command, "args": args }),
+        );
+    }
+
     /// 落一条 hop 日志（自动抽 corr_key + 单调 seq）。
     pub fn log(&self, facet: Facet, hop: Hop, payload: Value) {
         let ev = HopEvent {
@@ -97,5 +120,68 @@ impl InstrumentCtx {
     /// 把当前 tape 存盘（Record 跑完后调用）。
     pub fn save_tape(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
         self.with_tape(|t| t.save(path))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::log_sink::LogSink;
+    use serde_json::json;
+
+    /// 构造一个 in-memory LogSink 背书的 ctx，跑闭包后取回写出的行。
+    fn capture(f: impl FnOnce(&InstrumentCtx)) -> Vec<serde_json::Value> {
+        let (sink, buf) = LogSink::in_memory();
+        let ctx = InstrumentCtx::new("r-test", Mode::Live, sink, Tape::new());
+        ctx.set_uc("UC-test");
+        f(&ctx);
+        buf.lines()
+            .iter()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).expect("行须为合法 JSON"))
+            .collect()
+    }
+
+    #[test]
+    fn log_ipc_in_emits_facet_and_payload() {
+        // P0b ⓪ 装饰器单测：log_ipc_in 落 facet=ipc-in / hop=ipc-in / payload={command,args}。
+        let rows = capture(|ctx| {
+            ctx.log_ipc_in("im_send", json!({"channelId": "c1", "temporaryId": "t9", "text": "hi"}));
+        });
+        assert_eq!(rows.len(), 1);
+        let ev = &rows[0];
+        assert_eq!(ev["facet"], "ipc-in");
+        assert_eq!(ev["hop"], "ipc-in");
+        assert_eq!(ev["uc_id"], "UC-test");
+        assert_eq!(ev["payload"]["command"], "im_send");
+        assert_eq!(ev["payload"]["args"]["channelId"], "c1");
+        // corr_key 须从 .args 抽出（ch+tmp）——纯壳两面与发送束聚同束的前提。
+        assert_eq!(ev["corr_key"], "ch=c1;tmp=t9");
+    }
+
+    #[test]
+    fn log_inbound_emits_facet_and_payload() {
+        let rows = capture(|ctx| {
+            ctx.log_inbound("im_send_message", json!({"channel_id": "c1", "temporary_id": "t9"}));
+        });
+        assert_eq!(rows.len(), 1);
+        let ev = &rows[0];
+        assert_eq!(ev["facet"], "inbound");
+        assert_eq!(ev["hop"], "inbound");
+        assert_eq!(ev["payload"]["command"], "im_send_message");
+        // snake_case args 也经 .args 探针抽出领域键（与 IpcIn camel 归一后同束）。
+        assert_eq!(ev["corr_key"], "ch=c1;tmp=t9");
+    }
+
+    #[test]
+    fn ipc_in_inbound_share_monotonic_seq() {
+        // 可证伪：两 tee 共享单调 seq（同一 run 内排序·不依赖墙钟·守 HX-C011）。
+        let rows = capture(|ctx| {
+            ctx.log_ipc_in("im_send", json!({"channelId": "c1"}));
+            ctx.log_inbound("im_send_message", json!({"channel_id": "c1"}));
+        });
+        assert_eq!(rows.len(), 2);
+        let s0 = rows[0]["seq"].as_u64().unwrap();
+        let s1 = rows[1]["seq"].as_u64().unwrap();
+        assert!(s1 > s0, "Inbound seq 须晚于 IpcIn（{s1} > {s0}）");
     }
 }
