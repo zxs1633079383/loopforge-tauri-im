@@ -47,6 +47,16 @@ step "7 单文件 ≤800 行（警告）"
 OVER=$(find src-tauri/src crates/*/src src/app test/reducer -name '*.rs' -o -name '*.ts' -o -name '*.mjs' 2>/dev/null | while read -r f; do n=$(wc -l <"$f"); [ "$n" -gt 800 ] && echo "$f($n)"; done)
 [ -z "$OVER" ] && ok "无超 800 行文件" || printf "  ⚠️ 超 800 行: %s\n" "$OVER"
 
+# 8b. C013 纯渲染壳禁区 grep（第二北极星·应单调 ≤ BASELINE·冻结=不增；S8 终局 BASELINE=0）
+step "8b C013 纯渲染壳禁区 grep（第二北极星·HITS ≤ BASELINE）"
+C013_BASELINE=0
+HITS=$(grep -roE "extract[A-Z][A-Za-z]+|normalize[A-Z][A-Za-z]+|_rows\(\)\.findIndex|role *=== *['\"]CREATOR|role *=== *['\"]ADMIN|role *=== *['\"]MANGER" src/app/im/*.ts 2>/dev/null | wc -l | tr -d ' ')
+if [ "$HITS" -le "$C013_BASELINE" ]; then
+  ok "禁区命中 ${HITS} / 基线 ${C013_BASELINE}（HITS==0 ⟺ 第二北极星 100%）"
+else
+  bad "C013 违反：禁区命中 ${HITS} > 基线 ${C013_BASELINE}（本仓新增处理逻辑·应去 helix 补投影/指令）"
+fi
+
 # 8. clippy 卫生（慢·默认跳；GATE_CLIPPY=1 启用·deny warnings）
 step "8 clippy 卫生（默认跳·GATE_CLIPPY=1 启用）"
 if [ "${GATE_CLIPPY:-0}" = "1" ]; then

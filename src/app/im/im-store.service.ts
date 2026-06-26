@@ -1,6 +1,5 @@
 import { Injectable, computed, inject, signal } from "@angular/core";
 import { TauriBridgeService } from "./tauri-bridge.service";
-import { extractReplyIds } from "./read-result-extract";
 import {
   BookmarkRow,
   ChannelRow,
@@ -39,6 +38,8 @@ import {
   PostSendingData,
   READ_RESULT_CHANNEL,
   ReadResultData,
+  CHANNEL_REPLIES_CHANNEL,
+  ChannelRepliesData,
   TODO_UPDATED_CHANNEL,
   TodoUpdatedData,
 } from "./projection.types";
@@ -106,7 +107,7 @@ export class ImStoreService {
   readonly membersAttr = computed(() => this._membersAttr());
 
   /** UC-6.4 成员快照回灌分流：待回灌的 member byIds reqId（applyReadResult 按 req_id 认领该
-   *  im:read:result 是成员快照而非回复链·避免成员被 extractReplyIds 误塞进回复抽屉）。 */
+   *  im:read:result 是成员快照·命中即 drop·成员渲染走 im:channel:members render-ready 通道）。 */
   private readonly pendingMemberReqs = new Set<string>();
 
   /** 健康探针（H 区 · data-health · UC-12.1）。空占位 → onHealth() 填。 */
@@ -1613,11 +1614,19 @@ export class ImStoreService {
       return;
     }
 
-    // UC-2.4 读族回灌：im:read:result（{req_id, body}）→ 把回复链 postId 抽进 AX reply-drawer
-    // （data-reply-id 直映·壳纯渲染透传 body·不解析重组业务）。读族无 WS 回声·HTTP 200 即数据。
-    // 先于 captureActiveChannel/message-row 分支（读结果非 channel-row 信号·body 无顶层 channel_id）。
+    // UC-2.4 读族回灌：im:read:result（{req_id, body}）→ UC-6.4 成员 byIds 认领 drop + UC-12.1 健康
+    // 探针 body.status 透传。S8（issue #57·C013）：回复链抽取已下沉 helix（im:channel:replies render-ready）·
+    // 本分支不再 extract reply。先于 captureActiveChannel/message-row 分支（读结果非 channel-row 信号）。
     if (channel === READ_RESULT_CHANNEL) {
       this.applyReadResult(env.payload?.data as ReadResultData | undefined);
+      return;
+    }
+
+    // UC-2.4 回复族 render-ready（im:channel:replies·{reqId, replyIds}）→ 把 replyIds 1:1 绑进 AX
+    // reply-drawer（data-reply-id 直映·壳纯绑定）。S8（issue #57·C013）：helix 抽好 postId·额外 emit·
+    // 壳零 extract。先于 captureActiveChannel/message-row 分支（reply 投影无顶层 channel_id）。
+    if (channel === CHANNEL_REPLIES_CHANNEL) {
+      this.applyChannelReplies(env.payload?.data as ChannelRepliesData | undefined);
       return;
     }
 
@@ -1781,18 +1790,32 @@ export class ImStoreService {
       return;
     }
     if (data.error !== undefined) {
-      this._replies.set([]); // 失败回灌 → 清抽屉（前端 reject 语义·不残留旧链）
-      return;
+      return; // 失败回灌：回复抽屉清空由 im:channel:replies(replyIds:[]) 收口（S8·不在本分支）
     }
     // UC-12.1 健康探针回灌：body=裸 `{status:"OK"}`（健康端点不走业务信封）→ 设 _health（data-health
-    // 直映 H 区指示件）。纯渲染透传 body.status·不解析重组。health body 无 reply 形态·下方抽 reply 自然空。
+    // 直映 H 区指示件·1:1 绑定后端权威 status·非合成）。纯渲染透传 body.status。
     const body = data.body;
     if (body && typeof body === "object" && typeof (body as { status?: unknown }).status === "string") {
       this._health.set((body as { status: string }).status);
     }
-    // 读族 body 抽 reply postId 经纯函数 extractReplyIds（read-result-extract.ts·壳体积控制 <800 行）。
-    const ids = extractReplyIds(data.body);
-    this._replies.set(ids.map((replyId) => ({ replyId })));
+  }
+
+  /**
+   * UC-2.4 回复族 render-ready 纯绑定（im:channel:replies·issue #57 S8·C013 第二北极星·终局切）。
+   *
+   * helix 已把回复链 postId 抽取（getReplies/getReplyBranch 透传 body 的 rootPost/replies/data/list
+   * 探针 + 去重保序）下沉（render_ready_replies）→ 本壳**纯绑定**：直接把 `replyIds` 1:1 映成 ReplyRow
+   * 灌进 AX reply-drawer（data-reply-id 直映·零 extract / 零 body 探针 / 零 shape 兼容）。失败/空 →
+   * replyIds:[] → 清抽屉（前端 reject 语义·不残留旧链）。data 缺 → noop（守边界零信任·不误清）。
+   */
+  private applyChannelReplies(data: ChannelRepliesData | undefined): void {
+    if (!data || typeof data !== "object") return;
+    const ids = Array.isArray(data.replyIds) ? data.replyIds : [];
+    this._replies.set(
+      ids
+        .filter((replyId) => typeof replyId === "string" && replyId !== "")
+        .map((replyId) => ({ replyId })),
+    );
   }
 
   /**
@@ -1827,20 +1850,21 @@ export class ImStoreService {
   }
 
   /**
-   * UC-10.1：im:todo:updated（{items:[{id, channel, post, type, canDel}]}·内核自驱·queryTodoList
-   * HTTP 回报装配）→ 把 items 渲染进 AX todo-panel（data-todo-id/-type/-can-del 直映）。壳纯渲染：
-   * 只从每个 item 抽 id（必填·渲染锚）+ type/canDel（可选·展示属性）·channel/post 透传对象不解析重组。
-   * items=[]（status≠SUCCESS/结构缺失）→ 清空待办列表（前端无害刷新·不残留旧待办·不挂起）。
+   * UC-10.1：im:todo:updated（{items:[{todoId, todoType, canDel, …}]}·内核自驱·queryTodoList HTTP
+   * 回报装配）→ 把 items 渲染进 AX todo-panel（data-todo-id/-type/-can-del 直映）。S8（issue #57·C013）：
+   * helix 额外吐 render-ready 终态键 todoId/todoType（canDel 已成品）→ 本壳**纯绑定**：1:1 取 helix 给的
+   * todoId/todoType/canDel 成品赋 TodoRow（零 rename·零 wire 探针·零 item.id→todoId 重命名）。todoId
+   * 缺则跳过（守渲染锚必填·同 applyChannelMembers memberId 守边界）。items=[] → 清空待办（无害刷新·不挂起）。
    */
   private applyTodoUpdated(data: TodoUpdatedData | undefined): void {
     if (!data || typeof data !== "object") return;
     const items = Array.isArray(data.items) ? data.items : [];
     this._todos.set(
       items
-        .filter((it) => it && typeof it === "object" && typeof it.id === "string" && it.id !== "")
+        .filter((it) => it && typeof it === "object" && typeof it.todoId === "string" && it.todoId !== "")
         .map((it) => ({
-          todoId: it.id,
-          todoType: typeof it.type === "string" ? it.type : undefined,
+          todoId: it.todoId as string,
+          todoType: it.todoType,
           canDel: it.canDel === true,
         })),
     );
@@ -2318,6 +2342,9 @@ export class ImStoreService {
     );
   }
 
+  // C013 铁律 (b) 纯展示格式化：helix message_item_data 的 readBits 可能是 string|number（位图原值）·
+  // 此处仅做 String() 字符串化以喂 data-read-bits 属性（DOM attr 恒 string）——非业务 shaping / 非
+  // wire 归一（位图语义不解析·只渲染原值）。非禁区 grep 命中·留作纯展示格式化（不下沉 helix）。
   private toReadBits(v: string | number | undefined): string {
     if (v === undefined || v === null) return "";
     return String(v);

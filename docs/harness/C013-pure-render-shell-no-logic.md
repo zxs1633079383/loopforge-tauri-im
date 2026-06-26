@@ -23,7 +23,8 @@
 ## 3. 北极星 + 迁移
 
 - 北极星 = `纯绑定渲染路径 / 总渲染路径` → 100%（path = 一个 `apply*` 函数·纯绑定 = 只 upsert+赋值）。
-- 背靠背：`src/app/im/*.ts` 禁区 grep 命中 → 0。精确闸门基线 2026-06-26 = 31 命中（§4 模式）。
+- 背靠背：`src/app/im/*.ts` 禁区 grep 命中 → 0。**S8 终局达成（issue #57·2026-06-26）：HITS == 0 ⟺ 第二北极星 100%**。
+  历史基线：31（init）→ 22（S4）→ 17（S5）→ 15（S6）→ 5（S7·仅剩 extractReplyIds）→ **0（S8·回复族下沉 helix im:channel:replies）**。
 - 迁移：冻结（不增）+ 台账（§4 真源）+ 顺手迁（碰 UC 就把 shaping 搬 helix·删本仓 apply\*）。
   头阵 = `applyMessageItem`（helix 入库成功吐 render-ready 终态行·本仓直接渲染+取消转圈）。
 
@@ -32,7 +33,7 @@
 ```bash
 # 禁区命中数（覆盖率背靠背指标·应单调 ≤ 基线·冻结=不增）
 HITS=$(grep -roE "extract[A-Z][A-Za-z]+|normalize[A-Z][A-Za-z]+|_rows\(\)\.findIndex|role *=== *['\"]CREATOR|role *=== *['\"]ADMIN|role *=== *['\"]MANGER" src/app/im/*.ts | wc -l | tr -d ' ')
-BASELINE=15   # S6(applyMessagesQueryResult/applyOlderLoaded 迁移·消灭 2 个 _rows().findIndex)后下调 17→15·随迁移单调下调·禁上调
+BASELINE=0    # S8 终局切（issue #57·回复族 extractReplyIds 下沉 helix im:channel:replies）后下调 5→0·第二北极星 100%·禁上调
 echo "纯渲染壳禁区命中: $HITS / 基线 $BASELINE"
 [ "$HITS" -gt "$BASELINE" ] && echo "⛔ C013 违反：本仓新增了处理逻辑（应去 helix 补投影/指令）" && exit 1
 echo "✅ C013：未新增本仓处理逻辑（冻结生效）"

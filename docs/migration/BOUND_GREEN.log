@@ -20,3 +20,6 @@
 2026-06-26T13:44:27Z	applyOlderLoaded	A2	UC-2.2 四面 reducer green×2(①②读族绿·prepend O(1)·server 无更早历史 ③ 行数不变 documented)·禁区消灭 findIndex
 2026-06-26T13:44:27Z	applyPostSending	A2	UC-1.4 四面 green×2 + UC-send-1 六面 green×2(乐观 sending render-ready text/type 直绑·不再 pendingText/pendingType)
 2026-06-26T14:23:56Z	applyChannelMembers	A2	UC-6.4 ①② green×2(im:read:result 保留 + im:channel:members byIds 渲染路径实证·memberId:444)·UC-6.2 ①③ green×2(data-admin 乐观)·UC-6.3 四面 green×2(data-nickname via applyMemberNickname)·UC-6.1 ③④ echo-gated(channel_member_update WS 不到达·见 NEED_CSES_IM_SERVER_FIX·非回归)·成员禁区 grep 归零·role→admin 下沉 helix
+2026-06-26T14:58:34Z	applyChannelReplies	A2	UC-2.4 ①② reducer green×2(im:read:result verbatim 照旧 + im:channel:replies{reqId,replyIds} render-ready 双 emit 实证·壳纯绑定 data-reply-id)·禁区 grep 归零·消灭 extractReplyIds×5
+2026-06-26T14:58:34Z	applyTodoUpdated	A2	UC-10.1 ①②③ reducer green×2(14 items render-ready todoId/todoType 直绑·data-todo-id/-type/-can-del)·壳退纯绑定不 filter/抽
+2026-06-26T14:58:34Z	applyReadResult	A2	UC-6.4 ①② green(member byIds drop 路径)·禁区 grep 该行归零·UC-12.1 健康探针 ② backend read-relay 未回灌 echo-gated(见 NEED·非绑定缺陷·非 S8 回归)

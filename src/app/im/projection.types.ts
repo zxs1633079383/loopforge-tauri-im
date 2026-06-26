@@ -185,6 +185,22 @@ export interface ReadResultData {
 }
 
 /**
+ * UC-2.4 回复族 render-ready 渲染通道（projection-schema §1.6·issue #57 S8·C013 纯渲染壳·终局切）。
+ * helix 把回复链 postId 抽取（getReplies/getReplyBranch 透传 body 的 rootPost/replies/data/list 探针）
+ * 下沉后**额外**emit 的 render-ready 通道——壳 `applyChannelReplies` 退**纯绑定**：直接把 `replyIds`
+ * 1:1 绑到 AX reply-drawer 的 data-reply-id，零 extract / 零 body 探针 / 零 shape 兼容。冻结的
+ * im:read:result{req_id,body} 投影原样保留（UC-2.4 ② 契约面照旧裁定 verbatim body）·本通道只供壳渲染绑定。
+ * 失败/空 → replyIds:[]（壳清抽屉·前端 reject 语义）。
+ */
+export const CHANNEL_REPLIES_CHANNEL = "im:channel:replies";
+
+/** im:channel:replies data 形态（projection-schema §1.6·{reqId, replyIds:[postId]}·render-ready 去重保序）。 */
+export interface ChannelRepliesData {
+  reqId: string;
+  replyIds: string[];
+}
+
+/**
  * UC-2.1 切群首屏投影 channel（projection-schema §1 行 74 query::emit_message_query_result）。
  * data 形态 = `{ channel_id, messages: [...] }`（外层 2 键·schema 行 281：直接渲染不走 {items:[]} 解包）。
  * messages 元素 = `SELECT * FROM message` 原始 DB 行（snake 列名·schema 行 269）——关键列：
@@ -274,20 +290,28 @@ export interface ChannelMembersData {
  * channel/post = 后端 queryTodoList 返回 wire 对象原样透传·inner 不冻结·id/type/canDel 装配）。
  * 触发路径：**内核自驱**——global increment_channel_end（hello 收尾）攒到 about-me（mention/urgent）
  * post id → build posts/queryTodoList → HTTP 回报装配 emit（无前端命令·无 WS 回声·无落库·in-memory）。
- * 壳收到即把 items 渲染进 AX todo-panel（data-todo-id 直映 item.id·data-todo-type=item.type·
- * data-todo-can-del=item.canDel·壳纯渲染只透传投影 item·不在 JS 合成）。status≠SUCCESS/结构缺失 →
- * items=[] 仍 emit（前端无害清空·不挂起）。④ 落库 = N/A（projection-only·见 todo.rs port_reply 仅 emit）。
+ * 壳收到即把 items 渲染进 AX todo-panel（data-todo-id 直映 item.todoId·data-todo-type=item.todoType·
+ * data-todo-can-del=item.canDel·壳纯绑定只 1:1 取 render-ready 终态键·不 rename/不 wire 探针）。
+ * S8（issue #57·C013）：helix 额外吐 todoId/todoType 终态键（canDel 已成品）→ 壳 applyTodoUpdated 退纯绑定。
+ * status≠SUCCESS/结构缺失 → items=[] 仍 emit（前端无害清空·不挂起）。④ 落库 = N/A（projection-only）。
  */
 export const TODO_UPDATED_CHANNEL = "im:todo:updated";
 
-/** im:todo:updated data 形态（projection-schema 行 154·{items}·item 透传不冻结·id/type/canDel 装配）。 */
+/**
+ * im:todo:updated data 形态（projection-schema 行 154·{items}）。
+ * S8：item 携 render-ready 终态键 todoId/todoType/canDel（壳直绑）；冻结-记录的 id/channel/post/type
+ * 原样保留（inner 不冻结·壳不读）。
+ */
 export interface TodoUpdatedData {
   items: Array<{
-    id: string;
+    todoId?: string;
+    todoType?: string;
+    canDel?: boolean;
+    // 冻结-记录键（壳纯绑定不读·保留供契约/调试）：
+    id?: string;
     channel?: unknown;
     post?: unknown;
     type?: string;
-    canDel?: boolean;
   }>;
 }
 
