@@ -23,3 +23,8 @@
 2026-06-26T14:58:34Z	applyChannelReplies	A2	UC-2.4 ①② reducer green×2(im:read:result verbatim 照旧 + im:channel:replies{reqId,replyIds} render-ready 双 emit 实证·壳纯绑定 data-reply-id)·禁区 grep 归零·消灭 extractReplyIds×5
 2026-06-26T14:58:34Z	applyTodoUpdated	A2	UC-10.1 ①②③ reducer green×2(14 items render-ready todoId/todoType 直绑·data-todo-id/-type/-can-del)·壳退纯绑定不 filter/抽
 2026-06-26T14:58:34Z	applyReadResult	A2	UC-6.4 ①② green(member byIds drop 路径)·禁区 grep 该行归零·UC-12.1 健康探针 ② backend read-relay 未回灌 echo-gated(见 NEED·非绑定缺陷·非 S8 回归)
+# ===== 编排终态（2026-06-26·grilling→PRD#49→8 竖切自驱）=====
+# ✅ DONE 双流水线编排 S1-S8 全通关 | commit 3cbb30d..b563c7a | 第二北极星 100%(禁区 grep 0·gate.sh 8b 机器强制) | loopforge/main 已推 github
+# 北极星：第二(壳纯度/禁区0)=100% ✅ | render-board BOUND_GREEN 🟩10/19(余9无禁区 trivially pure·欠 e2e reducer 确认)
+# helix render-ready 累积 fix/im-wire-body-build(5198b28)=S4-S8 全套+parser债收口 | 6 面 oracle(IpcIn/Inbound/WsRecv/纯壳不变量) test-only 上线
+# 待办尾巴(非回归·已 NEED_FIX 归档)：后端 cses-im-server WS echo 非确定到达(UC-1.5撤回/1.10定时/6.1拉踢/12.1健康) + helix quickReply reactions(UC-1.8 跨分支cherry破债线) + helix 远端push(user_misc.rs预存债)
