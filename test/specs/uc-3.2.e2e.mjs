@@ -32,7 +32,7 @@ const EXPECT = JSON.parse(
 const RUN_JSONL =
   process.env.HELIX_RUN_JSONL ?? new URL('../../src-tauri/run.jsonl', import.meta.url).pathname;
 
-// UC-3.2 单条已读须 **≤2 人频道**：go-mattermost publishRead 仅对 ≤2 人频道推 WS `post_read`
+// UC-3.2 单条已读须 **≤2 人频道**：cses-im-server publishRead 仅对 ≤2 人频道推 WS `post_read`
 // （type6·CI4 矩阵 #2「post_read(≤2人) + update_channel(刷未读)」）；>2 人群仅发 update_channel 刷
 // badge·无 post_read echo → 无 im:post:read 投影。故本 spec 锚定 seeded 2 人私聊频道（type P·含自身
 // userId 444），而非 store.activeChannel() 自动锚的首个增量频道（实测 14 人群·只回 update_channel）。
@@ -157,7 +157,7 @@ describe('UC-3.2 · 单条消息已读 round-trip（四面契约）', () => {
     // ② post_read WS echo 等待（确定性条件·HX-C011）：轮询 run.jsonl 找 MSG_ID 的 im:post:read 投影。
     //
     // ⚠️ 单账号 server-data-gap（带 run.jsonl 证据·见本文件尾 + uc-coverage-ledger UC-3.2）：
-    //   `post_read` 是**已读回执**——告知 *对端发送者* 消息已被读。go-mattermost publishRead 对自己
+    //   `post_read` 是**已读回执**——告知 *对端发送者* 消息已被读。cses-im-server publishRead 对自己
     //   刚发、对端离线的消息标已读时，**不向「读者本人」回推 post_read WS 帧**（read 在 server 推进
     //   read_bits + 频道 seq，但不产生回灌本客户端的 type=6 channel event；增量 sync 拉 fromSeq:N
     //   返 no_change·nextSeq 不进）。故 ②`im:post:read` / ④ message read_bits 落库在**单账号**夹具

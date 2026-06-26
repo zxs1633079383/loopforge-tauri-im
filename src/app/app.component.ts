@@ -835,7 +835,7 @@ export class AppComponent implements OnInit, OnDestroy {
   /**
    * UC-5.6w 公告·保存（写族 WS post_update echo）：store.announcementSave（invoke im_announcement_save →
    * 出站 post/announcement/save·camelCase Post·壳后端补 userId）。type=TEXT 占位·message=占位公告正文。
-   * server echo（im:post:updated）⛔ 当前阻于 cses-java·① 出站经 go-mattermost 可真跑。无活动频道 → 不发。
+   * server echo（im:post:updated）⛔ 当前阻于后端 WS 业务广播链(切 cses-im-server 后待复验)·① 出站经 cses-im-server 可真跑。无活动频道 → 不发。
    * e2e 走 bridge 直 invoke 注入真实 channelId/type/message 覆盖此便捷路径。
    */
   onAnnouncementSave(): void {
@@ -1209,7 +1209,7 @@ export class AppComponent implements OnInit, OnDestroy {
    * UC-5.5b 消息置顶（写族 WS post_pin echo）：channelId=当前活动频道·postId=被置顶消息 server id
    * （msgId）→ store.pinMessage（invoke im_post_pin → 出站 channel/add/postPinned {channelId, postId}）。
    * WS 回 post_pin → im:post:updated（pinned 态）→ DOM data-pinned。⛔ ②③④ 当前阻于 cses-java·① 出站经
-   * go-mattermost 可真跑。无 server id（未对账乐观行）/ 无活动频道 → 不发。pinned 态靠投影驱动·壳纯渲染·
+   * cses-im-server 可真跑。无 server id（未对账乐观行）/ 无活动频道 → 不发。pinned 态靠投影驱动·壳纯渲染·
    * 无乐观合成。e2e 走 bridge 直 invoke 注入真实 channelId/postId 覆盖此便捷路径。
    */
   onPinMessage(row: MessageRow): void {

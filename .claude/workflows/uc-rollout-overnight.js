@@ -1,6 +1,6 @@
 export const meta = {
   name: 'uc-rollout-overnight',
-  description: '通宵自主跑 UC rollout：#46 UI 骨架 → 阶段0-7 逐 issue 串行四面闭环 → 每阶段全绿打 tag。红则四段日志定位+修+验证(gRPC 自重启)，卡死标🟡不阻塞。',
+  description: '通宵自主跑 UC rollout：#46 UI 骨架 → 阶段0-7 逐 issue 串行四面闭环 → 每阶段全绿打 tag。红则三段日志定位+修+验证(后端=cses-im-server :8066 自包含·挂则自重启)，卡死标🟡不阻塞。',
   phases: [
     { title: 'Scaffold UI' },
     { title: 'phase0-ready' }, { title: 'phase1-channel' }, { title: 'phase2-send' },
@@ -44,9 +44,9 @@ ng(1420)+app(4445) 一次起常驻·跨多次 wdio 复用：\`bash scripts/harne
 
 ## 铁律
 - **冻结 oracle 永不为绿而改**：\`test/expect/*.expect.json\` / projection-schema / 真机curl真源 / golden tape。**可改机器件**：reducer four-facet-reducer.mjs / 装饰器 extract_corr_key / seed·cursor 脚本 / 渲染壳 / helix 引擎实现。绿由 reducer 裁定(C009)。
-- **确认即修+验证**：红→四段日志(${RUNBOOK} §6.1)定位哪一端→loopforge/helix/reducer/装饰器/环境缺陷就**改+复跑验证**(helix 在 /Users/mac28/workspace/rustWorkspace/helix 改+commit·不 merge 主线)。go-server 默认对。
-- **infra 真相纠偏(别再误判 down)**：go-mattermost 跑在 GoLand 里→**没有 /tmp/mm-go.log 是正常的**·别据此判 go 未起；验 go 用 \`curl -s localhost:8065/api/v4/system/ping\`(200=健康)。app 实际打开的 DB 是**字面名文件** \`/tmp/loopforge-im.db?mode=rwc\`(engine.rs:101 format 串把 ?mode=rwc 拼进文件名)·**plain /tmp/loopforge-im.db 是 0 字节幽灵文件·别据此判 db 空/infra down**。cses-java 是 graalvm Micronaut(端口 7091/3399/3391)。
-- **gRPC 隧道断**(确认是连接非逻辑)：/tmp/mm-go.log 或 go 控制台出现 'no service available'/'grpcx9.go' → \`sudo bash /Users/mac28/workspace/java/zlc_ai/GenericAgent/tp-connect.sh\`(密码四空格·若交互 sudo 失败则在 issue 留 NEED_TUNNEL comment 让 main 协调·不死磕)。
+- **确认即修+验证**：红→三段日志(${RUNBOOK} §6.1)定位哪一端→loopforge/helix/reducer/装饰器/环境缺陷就**改+复跑验证**(helix 在 /Users/mac28/workspace/rustWorkspace/helix 改+commit·不 merge 主线)。cses-im-server 默认对。
+- **infra 真相纠偏(别再误判 down)**：后端=**cses-im-server**(:8066·自包含 PG/Redis/Pulsar·**无 cses-java/gRPC/telepresence**·切流 spec docs/cutover/)。验后端用 \`curl -s localhost:8066/api/cses/health\`(200=健康)。cses-im-server **stdout-only 日志**(slog·无 FileAppender)→须 \`go run ./cmd/server > /tmp/cses-im-server.log 2>&1 &\` 重定向落文件(建议 \`CSES_IM_LOG_FORMAT=json\` 便于 reducer/grep)。app 实际打开的 DB 是**字面名文件** \`/tmp/loopforge-im.db?mode=rwc\`(engine.rs:101 format 串把 ?mode=rwc 拼进文件名)·**plain /tmp/loopforge-im.db 是 0 字节幽灵文件·别据此判 db 空/infra down**。
+- **后端起停**(确认是后端未起/挂·非 loopforge/helix 逻辑)：\`curl -s localhost:8066/api/cses/health\` 非 200 或连不上 → 重启 cses-im-server：\`cd /Users/mac28/workspace/golangProject/cses-im-server && CSES_IM_LISTEN_ADDR=:8066 CSES_IM_LOG_FORMAT=json go run ./cmd/server > /tmp/cses-im-server.log 2>&1 &\`(自包含·需本地 PG+Redis 起)。tail /tmp/cses-im-server.log 见 \`listening addr=:8066\` 即就绪→重发请求复跑。
 - **#7(UC-4.1 cold-increment) 已知 yellow=真 server-data-gap（cursor 重置后 hello 仍回空增量·server 无 channel event 历史可回放·commit 63bfc7e ①③已绿）·不阻塞任何下游 UC**：建群(#8)/发消息(#10)/已读/历史 都是独立流·**不依赖 cold-increment**。遇 issue 上"Blocked by #7"一律视为可推进·别再回头死磕 #7。#7 留到所有数据生成类 UC 后由收尾复跑（那时 server 已有真事件→②④ 多半自愈转绿）。
 - **不回退已绿** UC-1.1/1.2/1.5 + UC-4.1 的 ①③(63bfc7e/f72fdf2)；前端事件必配组件方法(C007)。
 - **绝不 merge main / 不 push**；commit 前验 pwd 在仓内 + branch=feat/uc-rollout + \`bash scripts/gate.sh\` 须绿；conventional 中文结构化 commit。
@@ -66,7 +66,7 @@ function ucPrompt(uc) {
 3. 接最简 Angular UI：按 angular-ui-plan 往 #46 骨架绑数据/加交互件（加法式·事件配方法 C007）。
 4. **暖栈常驻**（别每轮 down/cold-boot·见 DISCIPLINE「暖栈」节）：\`bash scripts/harness.sh up\`（幂等·已健康则复用·不重起 ng+app）确保 1420+4445 常驻。**改了 Rust/Angular** → \`bash scripts/harness.sh reload-app\`（只重起 app·cargo run 增量~秒级 boot~30-60s·ng 不动；UC-4.1 用 \`reload-app --uc4.1\` 重置 cursor）。仅改 spec/expect/reducer → **不 reload·直接下一步**。
 5. \`bash scripts/harness.sh spec ${uc.id}\`（暖跑·app 不重起·仅 wdio·~3s·默认 seeded db）。**红→改完机器件/壳后**：仅改 spec/expect/reducer 重跑 \`harness.sh spec ${uc.id}\`（秒级内循环）；改了 Rust/Angular 先 \`harness.sh reload-app\` 再 \`spec\`。
-6. 四面 reducer：**绿**→翻 docs/uc-coverage-ledger.md ✅ + 勾 docs/uc-rollout/rollout-checklist.md + \`gh issue close ${uc.n} --comment "四面全绿 corr_key=..."\` + \`bash scripts/gate.sh\` + commit → status=green。**红**→§6.1 四段日志定位 + 套「契约 vs 环境决策范式」**自决修到绿**(改环境/机器件/helix 实现·迭代复跑)。**禁 blocked/yellow 退路**——只有确凿 server-side 数据 gap(带 run.jsonl 证据)才 yellow，其余必修到四面真绿。覆盖核对：本 UC 的 HTTP/WS 都在 spec 里被实跑覆盖(对 coverage-crossmap.md)。
+6. 四面 reducer：**绿**→翻 docs/uc-coverage-ledger.md ✅ + 勾 docs/uc-rollout/rollout-checklist.md + \`gh issue close ${uc.n} --comment "四面全绿 corr_key=..."\` + \`bash scripts/gate.sh\` + commit → status=green。**红**→§6.1 三段日志定位 + 套「契约 vs 环境决策范式」**自决修到绿**(改环境/机器件/helix 实现·迭代复跑)。**禁 blocked/yellow 退路**——只有确凿 server-side 数据 gap(带 run.jsonl 证据)才 yellow，其余必修到四面真绿。覆盖核对：本 UC 的 HTTP/WS 都在 spec 里被实跑覆盖(对 coverage-crossmap.md)。
 ${uc.notes && uc.notes.includes('预期红') ? '   注：本 UC ① 预期红(acl fix 在 helix round3 不在 pin 的 round6)——可在 helix 仓 cherry-pick/移植该 fix 到 round6 后验证；移植不动则标 🟡 出 bug 报告。' : ''}
 7. 返回 UC_RESULT 结构。`
 }

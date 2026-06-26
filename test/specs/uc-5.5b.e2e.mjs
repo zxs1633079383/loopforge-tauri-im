@@ -6,7 +6,7 @@
 //                （channel_pinned.rs::SetMessageTopCommand 派生：POST channel/add/postPinned
 //                {channelId,postId} camelCase·bodyForbidden 锚 snake_case channel_id/post_id 泄漏
 //                + 锚 unpin 路由 channel/remove/postPinned 误混）。
-//                **本面经 go-mattermost :8065 可真跑·与 ②③④ 的 cses-java WS 阻塞解耦。**
+//                **本面经 cses-im-server :8066 可真跑·与 ②③④ 的后端 WS 业务广播链(切 cses-im-server 后待复验)解耦。**
 //   ② projection: 读 run.jsonl → reducer 聚 corr_key(sid=postId) → 断 im:post:updated fat 13 键集
 //                （emit_post_updated·post_pin payload=pinned post 信息）。
 //   ③ DOM    : 被置顶消息行渲染 data-pinned（self 已置顶·Phase2 UI 设计阶段确定形态）。
@@ -108,7 +108,7 @@ async function waitOutbound(urlEndsWith) {
 }
 
 /**
- * 发一条消息建基础并取其 server_id（置顶目标）。send 经 go-mattermost :8065 round-trip
+ * 发一条消息建基础并取其 server_id（置顶目标）。send 经 cses-im-server :8066 round-trip
  * （posts/create → WS post echo 覆写乐观行 status=sent → server_id）——**此链经 go 可真跑**
  * （与 post_pin 业务 echo 经 cses-java 解耦）。返回 {CH, MSG_ID}。
  */
@@ -175,7 +175,7 @@ describe('UC-5.5b · 消息置顶 post_pin round-trip（四面契约）', () => 
     );
   });
 
-  // ───────────────────────── ① 出站面（go-mattermost :8065 在线·真可达绿）─────────────────────────
+  // ───────────────────────── ① 出站面（cses-im-server :8066 在线·真可达绿）─────────────────────────
   // send round-trip（posts/create→WS echo）+ post_pin 出站均经 go·与 post_pin 业务 echo（cses-java）解耦。
   // 独立 it 保 ① 绿信号不被 ②③④（backend-down）红淹没（同 5.6w ① / ②④ 分块）。
   it('① 发消息取 server_id → im_post_pin 置顶 → POST channel/add/postPinned {channelId,postId}（camelCase·go-served）', async () => {
