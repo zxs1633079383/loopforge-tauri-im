@@ -79,10 +79,12 @@ bash scripts/gate.sh                    # 应绿
 |---|---|---|
 | **loopforge**（本仓） | `/tmp/loopforge/run-app.log`（Rust 引擎装配/hello/increment/出站·`run.sh` 自动落）· `run-ng.log`（前端 TS 编译·**C007 假死查这**）· `wdio-out.log`（e2e）· `run.jsonl`（四面 hop·reducer 读） | run.sh 自动写·开箱即用 |
 | **helix**（引擎） | 同 `/tmp/loopforge/run-app.log` → `grep helix_im` / `grep -iE "im::ws\|increment\|acl\|gate"` | helix 跑在 loopforge 进程内·tracing 进 run-app.log |
-| **mattermost-go**（默认对·仅 gRPC/诡异疑） | 控制台 STDOUT → 启动时重定向：`cd /Users/mac28/workspace/golangProject/mattermost/server && go run . server > /tmp/mm-go.log 2>&1 &` | config `server/config/config.json`·LogSettings 默认 console |
-| **cses-java** | 控制台 STDOUT（logback ConsoleAppender）→ 启动时重定向 `> /tmp/cses-java.log 2>&1`（见下 gRPC 重启）| gradle root `/Users/mac28/workspace/java/cses`·logback `helm/cses-server/config/logback.xml` |
+| **mattermost-go**（默认对·仅 gRPC/诡异疑） | **`/Users/mac28/workspace/mmlog/mattermost.log`**（app 自带 FileAppender·**GoLand/IDE 启动也照写·不必重定向**） | config `server/config/config.json` LogSettings.FileLocation·IDE 启动直接 tail 此文件 |
+| **cses-java** | **`/tmp/cses-java.log`**（logback FileAppender·2026-06-26 加·**IntelliJ 启动也照写**）+ STDOUT（IDE 控制台） | gradle root `/Users/mac28/workspace/java/cses`·logback `gen/src/main/resources/logback.xml`（加 FileAppender 后须 rebuild+重启生效） |
 
-四段 tail：`tail -f /tmp/loopforge/run-app.log /tmp/cses-java.log /tmp/mm-go.log`（+ run.jsonl 给 reducer）。
+> **IDE 启动进程的日志怎么直接观察（不必重定向）**：`lsof -p <pid> \| grep -iE "\.log"` 即得该进程实际写的日志文件（app 的 FileAppender 与 IDE 控制台是并行两路）。go=mattermost.log、cses-java=（加 FileAppender 后）/tmp/cses-java.log。`<gopid>=$(lsof -ti:8065)`、`<jpid>=$(lsof -ti:3399)`。
+
+四段 tail：`tail -f /tmp/loopforge/run-app.log /Users/mac28/workspace/mmlog/mattermost.log /tmp/cses-java.log`（+ run.jsonl 给 reducer）。
 
 ### gRPC 出问题时（确认是 gRPC/连接·非 loopforge/helix 逻辑）
 **🔔 特征信号（归一类·见此即判 gRPC 隧道断）**：mattermost-go 日志出现
