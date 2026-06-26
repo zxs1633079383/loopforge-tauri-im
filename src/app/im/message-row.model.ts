@@ -30,6 +30,9 @@ export interface ChannelRow {
   unread?: number;
   /** data-has-schedule：channel.has_schedule_post（UC-1.10） */
   hasSchedule?: boolean;
+  /** channel 创建时间（int64 毫秒·dialogList 行 create_at 列透传·非 DOM 属性）：
+   *  CL 区频道行按它升序排列（最早建的在最上）。缺→排最前（dialogList 未回灌前的占位行）。 */
+  createAt?: number;
 }
 
 /** 成员行（MB 区 · spec §1.4）。data-member-id 直映 channel.members[]。 */

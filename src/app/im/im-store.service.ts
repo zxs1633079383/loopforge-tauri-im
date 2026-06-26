@@ -91,7 +91,11 @@ export class ImStoreService {
 
   /** 频道列表（CL 区 · spec §1.2）。空占位 → 各 UC（4.1/5.x/11.x）填 applyChannels*。 */
   private readonly _channels = signal<ChannelRow[]>([]);
-  readonly channels = computed(() => this._channels());
+  /** CL 区频道行：按 channel 创建时间**升序**（最早建的在最上·createAt 缺则排最前）。
+   *  排序在 computed 出口做（不动 _channels 插入序·dialogList 回灌 createAt 后自动归位）。 */
+  readonly channels = computed(() =>
+    [...this._channels()].sort((a, b) => (a.createAt ?? 0) - (b.createAt ?? 0)),
+  );
 
   /** 成员列表（MB 区 · spec §1.4）。空占位 → UC-6.x 填 applyChannelMember*。 */
   private readonly _members = signal<MemberRow[]>([]);
@@ -1705,6 +1709,13 @@ export class ImStoreService {
             : undefined,
         notice: this.normalizeNotice(row["notice"]),
         top: this.normalizeIsTop(row["is_top"]),
+        // channel 创建时间（DB 列 create_at·snake；兼容 camel createAt）→ CL 区升序排序键。
+        createAt:
+          typeof row["create_at"] === "number" && Number.isFinite(row["create_at"])
+            ? (row["create_at"] as number)
+            : typeof row["createAt"] === "number" && Number.isFinite(row["createAt"])
+              ? (row["createAt"] as number)
+              : undefined,
       });
     }
     if (!this._activeChannel() && ids.length > 0) this._activeChannel.set(ids[0]);
