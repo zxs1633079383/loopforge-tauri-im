@@ -1,7 +1,7 @@
 {
-  "_note": "开发态 profile（debug 构建默认选此）。含本地联调真 creds，仅本地使用——禁拷进 prod.json。",
-  "apiBase": "http://localhost:8065/api/cses",
-  "wsUrl": "ws://localhost:8065/api/v4/websocket",
+  "_note": "开发态 profile（debug 构建默认选此）。含本地联调真 creds，仅本地使用——禁拷进 prod.json。后端=cses-im-server(:8066·自包含 PG/Redis/Pulsar)·HTTP 前缀 /api/cses + WS /api/v4/websocket 与旧 mattermost 一致·仅端口 8065→8066。切流 spec：docs/cutover/。",
+  "apiBase": "http://localhost:8066/api/cses",
+  "wsUrl": "ws://localhost:8066/api/v4/websocket",
   "companyId": "64118eebd2b665246b7880eb",
   "cookieId": "444",
   "deviceId": "ED380414932542BAB4993E5AC3E07C64"
