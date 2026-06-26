@@ -40,3 +40,22 @@
   WS 全量帧（含 memberChange.join/leave + 四源），合理时延内到达（与 update_channel_member_nickName echo 同等可靠·
   后者 UC-6.3 reliably 到达·四面全绿）。
 - **当前状态**：loopforge/helix 侧绑定就绪（不 mock）。UC-6.1 保 `[~]`·待后端 channel_member_update echo 稳定即自动 ④③②绿。
+
+---
+
+## UC-12.1 健康探针 `im:read:result` 未回灌（S8 regression-sweep 发现·pre-existing·非 S8 回归）
+
+- **现象（S8·issue #57·2026-06-26）**：`bash scripts/harness.sh spec 12.1` 连跑 2 次全红，断点恒为
+  `health im:read:result(req_id=…) 未回灌（连通性 200 未达）`（waitReadResult 15s 超时·im:read:result 始终不来）。
+- **关键证据**：`curl http://localhost:8066/api/cses/health` 直连 **200**（裸 `{"status":"OK"}`·不走 ADR-007 业务信封）。
+  但 app 内 `invoke im_health{reqId}` 后 run.jsonl **无** `im:read:result{req_id}` 回灌（既非 body 形也非 error 形）。
+- **归因**：`im_health` 走 helix `commands::is_read` → **未改的** `OutboundReadReply` 路径（S8 仅 **额外** 加
+  `OutboundReplies` 分支给 getReplies/getReplyBranch·health 落 `else → OutboundReadReply` 字节级未变）→
+  port_reply `unwrap_sync_envelope(health_resp)` 对**裸非信封** health body 解码失败 → 预期 emit_read_error{req_id}，
+  但实测连 error 形都没到（疑 HTTP 出站未完成 / 健康端点经特殊 base / read req_id 注册边界）。
+  **基线 helix 964d90d 行为同**（health 路径 S8 未触碰）→ **非 S8 回归**（pre-existing·rollout-checklist 旧标 ✅ 系
+  cses-im-server 后端切换前 issue #41 历史态）。
+- **期望排查**：① helix read_relay 对**非信封裸 body**（health/连通性端点）的 OutboundReadReply 解码兜底——
+  unwrap_sync_envelope 失败时应 emit_read_error{req_id} 让前端 reject 而非永久挂起（核对该兜底是否真 emit）；
+  ② 或后端 cses-im-server health 端点是否应走信封。loopforge 壳侧 `applyReadResult` health body.status 1:1 绑定就绪（不 mock）。
+- **当前状态**：S8 第二北极星（禁区 grep==0）+ 回复/待办族绑定与 UC-12.1 正交·**不阻塞 S8 收口**。UC-12.1 保 `[~]` echo-gated。

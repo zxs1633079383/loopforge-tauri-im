@@ -29,7 +29,7 @@ loopforge 的 TS **只能做四件事**：
 
 | 禁区 | 现有违例 |
 |---|---|
-| 解析/重组 payload | `extractReplyIds` `extractReactions` `extractTemplateReceived` ~~`applyMembersSnapshot`~~（S7 消灭） |
+| 解析/重组 payload | ~~`extractReplyIds`~~（S8 消灭#57） `extractReactions` `extractTemplateReceived` ~~`applyMembersSnapshot`~~（S7 消灭）— **本仓禁区 grep == 0** |
 | 合并/对账状态（tmp→server·upsert·dedup） | `applyMessageItem` ~~`applyMemberUpdated`~~（S7 消灭·extractMemberIds/memberChangeField 删） `applyMessagesQueryResult` `applyOlderLoaded` |
 | 归一 wire 格式 | `normalizeNotice` `normalizeIsTop` `toReadBits` |
 | 编码业务规则 | ~~`role→admin`（CREATOR/MANGER→admin）~~（S7 消灭·下沉 helix role_is_admin）· `isSystemNotice`(NOTICE 分类)· `unread++` |
@@ -50,6 +50,7 @@ loopforge 的 TS **只能做四件事**：
 - **进度（S5 后·2026-06-26·issue #54）**：精确闸门 grep **22 → 17 命中**（applyDialogList 迁移·删 normalizeNotice/normalizeIsTop def+call 共 4 + 清 1 处陈旧注释）；helix dialogList 升 render-ready（8 终态键·helix 834af2a）；applyDialogList 退纯绑定（直绑 displayName/notice/isTop/createAt/unread/mention/lastMessage/urgent）+ applyChannelUpdateByPost 删 unread++（改触发 dialogList 重查·未读累加下沉 helix）+ CL 模板加 data-last-message/data-urgent/data-mention。BOUND_GREEN 🟩 **2/19**（+applyDialogList·UC-5.1/5.2/5.3/5.4/1.10 四面绿 + UC-4.1 CL render-ready DOM 实测 last-message/unread 直绑·真 HTTP+WS 零 mock）。UC-5.5 isTop 绑定经探针实证正确（top→'1'）但 auto im:channel:update 这会话未到达（后端 WS echo·非 S5 回归·见 NEED_HELIX.log）；UC-4.1/4.2 增量/gap 面需冷启 run.sh 种子（set_uc/hello 时序·orthogonal）。
 - **进度（S6 后·2026-06-26·issue #55）**：精确闸门 grep **17 → 15 命中**（消灭 applyMessagesQueryResult/applyOlderLoaded 的 2 个 `_rows().findIndex` 全表扫）；helix 升 render-ready（新 `render_ready::shape_message_rows`·读族 DB snake / wire camel 统一整形 + 批内去重保序·下沉 helix；`emit_post_sending` +text/type render-ready 乐观终态行·helix 255aeb1）；applyMessagesQueryResult/applyOlderLoaded/applyPostSending 三条退纯绑定（`bindRenderReadyRow` 1:1 + `upsertHistoryRow` **O(1) 锚 upsert** 替代 findIndex）。BOUND_GREEN 🟩 **3→6/19**（+applyMessagesQueryResult UC-2.1 四面 green×2·+applyOlderLoaded UC-2.2 ①② 读族 green×2·+applyPostSending UC-1.4 四面 green×2 + UC-send-1 六面 green×2）。UC-1.5 撤回连跑 2 次 1 绿 1 红（红在 ②投影/④落库「无投影 emit」= 后端 cses-im-server WS posts_update echo 非确定性到达·**非 S6 回归**·DOM `data-revoke=1` 两次都对·applyBatchUpdated wire 未动·见 `docs/migration/NEED_CSES_IM_SERVER_FIX.md`）。
 - **进度（S7 后·2026-06-26·issue #56）**：成员族禁区**全清零**——消灭 `applyMembersSnapshot`（byIds extract loop）+ `applyMemberUpdated`（四源 extractMemberIds/memberChangeField 合并）+ `role===CREATOR/MANGER/ADMIN`（admin 判定），三段 shaping 下沉 helix `render_ready_members`（helix 964d90d·新投影 `im:channel:members{memberId,nickname,admin,leaves}`·`role_is_admin` 统一判 raw+归一 role·byIds body 解析 + 双源 emit）。壳 `applyChannelMembers` 退**纯绑定**（keyed upsert + leaves 删行·同 S6 upsertHistoryRow）。分母 19→**18**（−applyMembersSnapshot −applyMemberUpdated +applyChannelMembers）。残留禁区 code-ref **5 条全为他 UC**（extractReplyIds=UC-2.4 replies ×3 / toReadBits=read bits ×2·成员族 0 命中）。BOUND_GREEN 🟩 **6→7/18**（+applyChannelMembers·UC-6.1/6.4 ②④ 契约面照旧绿 + ③ data-members/data-admin render-ready 直绑）。冻结契约零改：im:channel:member-updated{channel_id,channel} / im:read:result{req_id,body} / im:channel:memberNickname 三投影键集原样（额外 emit 新通道·C004 只读护栏不破）。
+- **进度（S8 后·2026-06-26·issue #57·终局切）**：**第二北极星 100% 达成**——精确闸门 grep **5 → 0 命中**（消灭最后禁区 `extractReplyIds`×5·删 `read-result-extract.ts` 整文件）。回复链 postId 抽取（rootPost/replies/data/list 探针 + 去重保序）下沉 helix `render_ready_replies`（helix 5198b28·新投影 `im:channel:replies{reqId, replyIds}`·`OutboundReplies` 双 emit 臂：`im:read:result` verbatim 照旧 + `im:channel:replies` render-ready）；待办族 helix `todo.rs` 额外吐 `todoId/todoType` 终态键。壳 `applyChannelReplies`（新增·纯绑定 replyIds→data-reply-id）+ `applyTodoUpdated`（退纯绑定·1:1 取 todoId/todoType/canDel·不 filter/抽）+ `applyReadResult`（仅留 member-drop + health 透传·零 extract）。分母 18→**19**（+applyChannelReplies）。**`HITS == 0 ⟺ 第二北极星 100%`**（C013 §4 BASELINE 5→0·gate.sh 8b 机器强制）。BOUND_GREEN 🟩 **7→10/19**（+applyChannelReplies UC-2.4 ①② green×2 + im:channel:replies render-ready 双 emit 实证·+applyTodoUpdated UC-10.1 ①②③ green×2·14 items render-ready todoId/todoType·+applyReadResult UC-6.4 ①② green·该行禁区归零·UC-12.1 健康探针 ② backend read-relay 未回灌 echo-gated 非回归）。回归核验零破：UC-6.4/8.x-vote/8.x-average/9.x 读族全绿。冻结契约零改：im:read:result{req_id,body} / im:todo:updated{items} 外层键集原样（额外 render-ready 通道 + inner 额外键·C004 只读护栏不破）。
 - **辅助仪表（缺口版）**：本仓挂起的「helix 投影缺口」条目数 → 0（驱动去 helix 补，不是本仓补）。
 
 ---
@@ -86,8 +87,9 @@ loopforge 的 TS **只能做四件事**：
 | ~~`applyMemberUpdated`~~ ✅ | (删·并入 applyChannelMembers) | MB 行 | ✅ | **S7 已迁(#56)**：四源合并下沉 helix·壳删 extractMemberIds/memberChangeField |
 | **`applyChannelMembers`** 🟩 | im:channel:members(render-ready) | MB 行 | ✅ | **S7 新增(#56)**：helix 双源(WS member_update + byIds)吐 render-ready{memberId,nickname,admin,leaves}·壳纯绑定(keyed upsert + leaves 删行) |
 | `applyMemberNickname` | im:channel:memberNickname | MB 行 | 〜 | 已 keyed 单行 upsert·纯绑定（helix 该 WS 帧无全量名册·保留绑 memberNickname） |
-| `applyReadResult`(reply) | im:read:result(getReplies) | AX reply chip | ❌ | `im:channel:replies` render-ready id[] |
-| `applyTodoUpdated` | im:todo:updated | AX todo chip | ❌ | render-ready todo[]（本仓不 filter/抽） |
+| `applyReadResult` 🟩 | im:read:result(member-drop+health) | — / data-health | ✅ | **S8 已迁(#57)**：回复抽取下沉 helix·仅留 member byIds 认领 drop + health body.status 1:1 透传·零 extract（UC-6.4 green·UC-12.1 health echo-gated） |
+| **`applyChannelReplies`** 🟩 | im:channel:replies(render-ready) | AX reply chip | ✅ | **S8 新增(#57)**：helix `render_ready_replies` 抽好 postId 双 emit·壳纯绑定 replyIds→data-reply-id（UC-2.4 ①② green×2） |
+| `applyTodoUpdated` 🟩 | im:todo:updated(render-ready) | AX todo chip | ✅ | **S8 已迁(#57)**：helix todo.rs 额外吐 todoId/todoType 终态键·壳退纯绑定 1:1 取（不 filter/抽·UC-10.1 ①②③ green×2） |
 
 ---
 

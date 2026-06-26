@@ -28,15 +28,17 @@ NEED_LOG="$MIGRATION_DIR/NEED_HELIX.log"
 
 [ -d "$MIGRATION_DIR" ] || die "迁移信号目录不存在：$MIGRATION_DIR"
 
-# ── 台账全行集 = 18 条 apply* 渲染路径（真源：docs/纯渲染壳-铁律与helix迁移台账.md §4·
-#    实测 `grep -rhoE '\bapply[A-Z][a-zA-Z]*\s*\(' src/app/im/*.ts` 的 18 个方法定义（S7 #56：−applyMembersSnapshot −applyMemberUpdated +applyChannelMembers））──
-# 维护规则：src/app/im 新增/删除一个 apply* 渲染路径 → 同步增删本清单 + 台账 §4（保持 18 这个分母诚实）。
+# ── 台账全行集 = 19 条 apply* 渲染路径（真源：docs/纯渲染壳-铁律与helix迁移台账.md §4·
+#    实测 `grep -roE 'private apply[A-Z][a-zA-Z]*\(' src/app/im/im-store.service.ts` 的 19 个方法定义
+#    （S7 #56：−applyMembersSnapshot −applyMemberUpdated +applyChannelMembers；S8 #57：+applyChannelReplies））──
+# 维护规则：src/app/im 新增/删除一个 apply* 渲染路径 → 同步增删本清单 + 台账 §4（保持分母诚实）。
 LEDGER=(
   applyBatchUpdated
   applyChannelClosed
   applyChannelCreated
   applyChannelIncrement
   applyChannelMembers
+  applyChannelReplies
   applyChannelUpdate
   applyChannelUpdateByPost
   applyChannelUpdatePost

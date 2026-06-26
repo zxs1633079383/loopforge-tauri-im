@@ -20,3 +20,6 @@
 2026-06-26T13:44:27Z	applyOlderLoaded	B	render-ready merged·helix 255aeb1(顺序+批内去重下沉)·loopforge re-pin feat/s6
 2026-06-26T13:44:27Z	applyPostSending	B	render-ready merged·helix 255aeb1(emit_post_sending +text/type)·loopforge re-pin feat/s6
 2026-06-26T14:14:02Z	applyChannelMembers	B	render-ready merged·helix 964d90d (fix/im-wire-body-build·im:channel:members 双源·role→admin 下沉)·loopforge re-pin feat/s7-members-bind(Cargo.lock #964d90d1)
+2026-06-26T14:58:34Z	applyChannelReplies	B	render-ready merged·helix 5198b28 (fix/im-wire-body-build·im:channel:replies 双 emit)·loopforge re-pin feat/s8-replies-todo-bind(Cargo.lock #5198b287)
+2026-06-26T14:58:34Z	applyTodoUpdated	B	render-ready merged·helix 5198b28(todo.rs todoId/todoType 终态键)·loopforge re-pin feat/s8
+2026-06-26T14:58:34Z	applyReadResult	B	render-ready merged·helix 5198b28(回复抽取下沉·读族仅留 member-drop+health 透传)·loopforge re-pin feat/s8
