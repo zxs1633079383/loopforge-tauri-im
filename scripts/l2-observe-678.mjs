@@ -1,11 +1,11 @@
 // scripts/l2-observe-678.mjs —— L2 双账号「observe-<B>」轻量 WS 观测原语。
 //
 // 命题：L2 某些面（拉/踢人广播 #43、admin 广播 #45、退公司广播 #48）的观测端是**第二账号 B**
-// ——A=444 做动作（暖栈 app / l2-act.sh），B=678 收广播。本脚本以 B 身份连 go-mattermost WS，
+// ——A=444 做动作（暖栈 app / l2-act.sh），B=678 收广播。本脚本以 B 身份连 cses-im-server WS，
 // 捕获所有推送帧落 JSONL，供 reducer / 人审读「B 到底收没收到广播」。
 //
-// 鉴权（探明·2026-06-26·memory cookieid_equals_userid）：go 在 WS upgrade 阶段按 `cookieId`
-// header 建 session（cookieId=userId·无独立 token）。故握手带 `cookieId: <B>` 头即可，go 回 hello。
+// 鉴权（探明·2026-06-26·memory cookieid_equals_userid）：服务端在 WS upgrade 阶段按 `cookieId`
+// header 建 session（cookieId=userId·无独立 token）。故握手带 `cookieId: <B>` 头即可，回 hello。
 // 用 Node 22 内建全局 WebSocket（undici·支持 { headers } options bag·无需 npm ws 依赖）。
 //
 // 用法：
@@ -14,7 +14,7 @@
 //
 // env：
 //   L2_USER         观测账号 cookieId（默认 678）
-//   L2_WS           ws url（默认 ws://localhost:8065/api/v4/websocket）
+//   L2_WS           ws url（默认 ws://localhost:8066/api/v4/websocket·cses-im-server）
 //   L2_TEAM         companyId（默认 64118eebd2b665246b7880eb）
 //   L2_OBSERVE_OUT  帧 JSONL 落点（默认 /tmp/loopforge/l2-<user>.jsonl）
 //   L2_OBSERVE_MS   运行毫秒数（默认 0 = forever·SIGTERM 收）
@@ -27,7 +27,7 @@ import { mkdirSync, createWriteStream } from 'node:fs';
 import { dirname } from 'node:path';
 
 const USER = process.env.L2_USER ?? '678';
-const WS_URL = process.env.L2_WS ?? 'ws://localhost:8065/api/v4/websocket';
+const WS_URL = process.env.L2_WS ?? 'ws://localhost:8066/api/v4/websocket';
 const TEAM = process.env.L2_TEAM ?? '64118eebd2b665246b7880eb';
 const OUT = process.env.L2_OBSERVE_OUT ?? `/tmp/loopforge/l2-${USER}.jsonl`;
 const RUN_MS = Number(process.env.L2_OBSERVE_MS ?? 0);

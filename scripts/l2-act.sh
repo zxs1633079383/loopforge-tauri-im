@@ -6,7 +6,7 @@
 # 本脚本让 B 以自身身份发 cses HTTP（发消息 / 已读 / 加人…），触发 go 向 A 推送。
 #
 # 鉴权（探明·2026-06-26）：CSES `cookieId=userId` 桥（memory cookieid_equals_userid）——
-#   go-mattermost WS/HTTP 入站直接拿 `cookieId` header 当 userId 建 session，无独立 token。
+#   cses-im-server WS/HTTP 入站直接拿 `cookieId` header 当 userId 建 session，无独立 token。
 #   故 act-as-678 = 所有出站 HTTP 带 `cookieId: 678` 头即可（实测 posts/create→`post sender
 #   success`、channels/view→`viewChannel success` 均 200）。
 #
