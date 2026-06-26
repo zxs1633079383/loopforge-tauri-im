@@ -45,7 +45,8 @@ loopforge 的 TS **只能做四件事**：
 - **一条渲染路径** = store 里一个 `apply*` 投影处理函数（投影 channel → 渲染某区行/卡）。
 - **判「纯绑定」当且仅当**：函数体只做「**按 key upsert + 把投影字段直接赋值**」，零 extract/normalize/合并对账/业务规则。
 - **背靠背机器判据**：`src/app/im/*.ts` 禁区 grep 命中数 → 单调降到 0。**覆盖率 100% ⟺ 禁区命中 0**。
-- **基线（2026-06-26·实测校正）**：精确闸门 grep（C013 §4 模式）= **31 命中**（已复核·准）；分母 = 全 src `apply*` 渲染路径**实测 19**（非早先误填的 24·`grep -rhoE '\bapply[A-Z]' src/app/im/*.ts | sort -u` 计数）；纯绑定 ≈ 4/19 ≈ **21%**。
+- **基线（2026-06-26·实测校正）**：分母 = 全 src `apply*` 渲染路径**实测 19**（非早先误填的 24）。
+- **进度（S4 后·2026-06-26）**：精确闸门 grep（C013 §4 模式）**31 → 22 命中**（applyMessageItem 迁移·降 9·props-extract.ts 删除）；BOUND_GREEN 🟩 **1/19**（applyMessageItem）；纯绑定（含〜近纯）≈ 5/19 ≈ **26%**。剩余 2 个 `_rows().findIndex` 在 applyMessagesQueryResult/applyOlderLoaded（S6 行）。
 - **辅助仪表（缺口版）**：本仓挂起的「helix 投影缺口」条目数 → 0（驱动去 helix 补，不是本仓补）。
 
 ---
@@ -68,7 +69,7 @@ loopforge 的 TS **只能做四件事**：
 | `applyChannelCreated` | im:channel:created | CL 行 | 〜 | — |
 | `applyChannelClosed` | im:channel:closed | CL 删行 | 〜 | — |
 | `applyPostDeleted` | im:post:deleted | ML 删行 | 〜 | — |
-| **`applyMessageItem`** | im:post:received(fat) | ML 行 | ❌❌ | **render-ready 终态行**：已对账(server_id)、status=sent、reactions/template/system 成品。**头阵** |
+| ~~**`applyMessageItem`**~~ ✅ | im:post:received(fat) | ML 行 | ✅ | **S4 已迁(6abe5df)**：helix 吐 render-ready 终态行(sendStatus/reactions/templateReceived/systemNotice + type 默认下沉)·壳退纯绑定 + O(1) upsert·六面绿·禁区归零 |
 | `applyPostSending` | im:post:sending | ML 乐观行 | ❌ | helix 吐 sending 终态（本仓不造乐观） |
 | `applyMessagesQueryResult` | im:messages:query_result | ML 行 | ❌ | render-ready 消息行（非 DB snake 整形） |
 | `applyOlderLoaded` | im:messages:older_loaded | ML prepend | ❌ | render-ready 行 + 顺序（本仓不 dedup） |
