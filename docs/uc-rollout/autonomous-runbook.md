@@ -1,6 +1,6 @@
 # UC Rollout 自主长任务 Runbook（下班后喂给长任务跑）
 
-> **一句话**：按依赖序解决 GitHub issues #7-#41，每个 UC 走「author 契约 → 接最简 UI → run.sh seeded 四面 → 绿翻台账+勾+关 issue+commit / 红→四段日志定位·确认 loopforge/helix 缺陷即修+验证（契约只读不改 oracle）」闭环；每阶段全绿打 tag + 补用例。
+> **一句话**：按依赖序解决 GitHub issues #7-#41，每个 UC 走「author 契约 → 接最简 UI → run.sh seeded 四面 → 绿翻台账+勾+关 issue+commit / 红→三段日志定位（后端=cses-im-server :8066）·确认 loopforge/helix 缺陷即修+验证（契约只读不改 oracle）」闭环；每阶段全绿打 tag + 补用例。
 > **真源（开局必读）**：根 `CLAUDE.md` §8 rollout 纪律 + §9 harness · `docs/harness/C001-C012` · `docs/spec/angular-ui-plan.md` · `docs/uc-rollout/rollout-checklist.md` · `coverage-crossmap.md` · `docs/uc-coverage-ledger.md`。
 > **分支**：`feat/uc-rollout`（在此推进·**绝不 merge main**）。
 
@@ -49,10 +49,10 @@ bash scripts/gate.sh                    # 应绿
    ```
 5. **四面 reducer 判（C009 绿由 reducer 裁定·非自我点头）**：
    - **绿**：翻 `docs/uc-coverage-ledger.md` ✅ + 勾 `rollout-checklist.md` + `gh issue close #N --comment "四面全绿 corr_key=..."` + `git commit`（conventional 中文·触发则 5 段 body）。
-   - **红**：看 reducer「断在哪一跳」+ 四段日志联调（§6.1）**定位到底哪一端**，然后**修 + 验证**（不只标记）：
+   - **红**：看 reducer「断在哪一跳」+ 三段日志联调（§6.1）**定位到底哪一端**，然后**修 + 验证**（不只标记）：
      - **loopforge 本仓**（壳/reducer/接线·corr 未探 posts[] / storage rows‖keys·C005）缺陷 → 改本仓 → 复跑转绿。
-     - **helix 引擎缺陷**（四段日志确认后）→ **在 helix 仓修 + 验证**（契约只读 C004：改实现不改冻结 oracle；绿由 reducer 裁定 C009）→ 复跑转绿。
-     - **go-server 默认对**；仅 gRPC 或诡异问题才怀疑它 → gRPC 按 **§6.1** 修 + 重启 cses-java + 重发请求。
+     - **helix 引擎缺陷**（三段日志确认后）→ **在 helix 仓修 + 验证**（契约只读 C004：改实现不改冻结 oracle；绿由 reducer 裁定 C009）→ 复跑转绿。
+     - **cses-im-server（:8066）默认对**；仅后端未起/挂/诡异才怀疑它 → 按 **§6.1** 查 health + 重启 cses-im-server + 重发请求。
      - 实在定位不了/超预算 → 写 bug 报告 + ledger 标 🟡 + 不阻塞继续（兜底，非首选）。
 
 ## 4. 每阶段收口（C006）
@@ -68,34 +68,37 @@ bash scripts/gate.sh                    # 应绿
 - **预算门**：到 token 预算 / 连续 ≥3 issue 无进展 → stall-stop，写终态行收尾。
 - **沙箱门**：禁 `push`/`merge main`/`reset --hard`/`rm -rf`；**commit 前验** `pwd` 在仓内 + branch=`feat/uc-rollout`。
 - **验证门**：绿 = reducer 全绿（C009）+ `gate.sh` 绿才 commit；**绝不**「我觉得改好了」式自我点头。
-- **红转绿改实现（确认后修+验证·非只标记）**：四段日志（§6.1）定位是 **loopforge 本仓** 或 **helix 引擎** 缺陷就**直接修 + 复跑验证**（契约只读·不改冻结 oracle·绿由 reducer 裁定·C004/C009）。go-server 默认对，仅 gRPC/诡异才怀疑。〔早先「helix 只标记不改」是另一 workflow 在改 helix 时的临时约束，本长任务**已解除**——但仍**不改冻结契约**。〕
+- **红转绿改实现（确认后修+验证·非只标记）**：三段日志（§6.1）定位是 **loopforge 本仓** 或 **helix 引擎** 缺陷就**直接修 + 复跑验证**（契约只读·不改冻结 oracle·绿由 reducer 裁定·C004/C009）。cses-im-server（:8066）默认对，仅后端未起/挂/诡异才怀疑。〔早先「helix 只标记不改」是另一 workflow 在改 helix 时的临时约束，本长任务**已解除**——但仍**不改冻结契约**。〕
 - **绝不自动 merge main**：全程在 `feat/uc-rollout`，留 PR/merge 给人。helix 仓修复也单独 commit、不自动 merge helix 主线。
 - **每 issue 完成/中断写终态行**（全局铁律）：`✅ DONE UC-X #N @ts | commit | 四面绿 | 分支` 追加到 `docs/harness/log.md` 或 ledger；中断写 `⚠️ PARTIAL ... 卡在 ...`。
 
-## 6.1 四段日志联调 + gRPC 处置（定位「问题在哪一端」）
-四端（红时同时看，锁定断在哪段，再按 §3/§6「确认即修+验证」）：
+## 6.1 三段日志联调（定位「问题在哪一端」）
+
+> **2026-06-26 切流**：后端从旧 mattermost 单体（:8065·gRPC→cses-java 后端）切到 **cses-im-server**（:8066·Go·自包含 PG/Redis/Pulsar·**无 cses-java/gRPC/telepresence**）。四段 →**三段**。HTTP 前缀 `/api/cses` + WS `/api/v4/websocket` 与旧 mattermost **一致·仅端口 8065→8066**。完整切流 spec/checklist/影响范围见 `docs/cutover/`。旧四段（mattermost+gRPC+cses-java）做法见本节末「附：旧 mattermost 四段（已弃）」。
+
+三端（红时同时看，锁定断在哪段，再按 §3/§6「确认即修+验证」）：
 
 | 端 | 实时日志 | 说明 |
 |---|---|---|
 | **loopforge**（本仓） | `/tmp/loopforge/run-app.log`（Rust 引擎装配/hello/increment/出站·`run.sh` 自动落）· `run-ng.log`（前端 TS 编译·**C007 假死查这**）· `wdio-out.log`（e2e）· `run.jsonl`（四面 hop·reducer 读） | run.sh 自动写·开箱即用 |
 | **helix**（引擎） | 同 `/tmp/loopforge/run-app.log` → `grep helix_im` / `grep -iE "im::ws\|increment\|acl\|gate"` | helix 跑在 loopforge 进程内·tracing 进 run-app.log |
-| **mattermost-go**（默认对·仅 gRPC/诡异疑） | **`/Users/mac28/workspace/mmlog/mattermost.log`**（app 自带 FileAppender·**GoLand/IDE 启动也照写·不必重定向**） | config `server/config/config.json` LogSettings.FileLocation·IDE 启动直接 tail 此文件 |
-| **cses-java** | **`/tmp/cses-java.log`**（logback FileAppender·2026-06-26 加·**IntelliJ 启动也照写**）+ STDOUT（IDE 控制台） | gradle root `/Users/mac28/workspace/java/cses`·logback `gen/src/main/resources/logback.xml`（加 FileAppender 后须 rebuild+重启生效） |
+| **cses-im-server**（Go 后端·默认对·仅诡异才疑） | **`/tmp/cses-im-server.log`**（slog **stdout-only·无 FileAppender**→启动须重定向：`go run ./cmd/server > /tmp/cses-im-server.log 2>&1 &`·建议 `CSES_IM_LOG_FORMAT=json` 便于 reducer/grep） | repo `/Users/mac28/workspace/golangProject/cses-im-server`·`CSES_IM_LISTEN_ADDR=:8066`·自包含 PG/Redis/Pulsar |
 
-> **IDE 启动进程的日志怎么直接观察（不必重定向）**：`lsof -p <pid> \| grep -iE "\.log"` 即得该进程实际写的日志文件（app 的 FileAppender 与 IDE 控制台是并行两路）。go=mattermost.log、cses-java=（加 FileAppender 后）/tmp/cses-java.log。`<gopid>=$(lsof -ti:8065)`、`<jpid>=$(lsof -ti:3399)`。
+> **IDE 启动的 cses-im-server 怎么直接观察**：slog 只写 stdout，**没有 FileAppender**——GoLand 控制台启动则日志只在控制台，`lsof` 找不到 .log 文件。要落文件必须命令行启动加 `> /tmp/cses-im-server.log 2>&1`（或在 GoLand Run Config 配 "Redirect output to file"）。验进程：`lsof -ti:8066`。
 
-四段 tail：`tail -f /tmp/loopforge/run-app.log /Users/mac28/workspace/mmlog/mattermost.log /tmp/cses-java.log`（+ run.jsonl 给 reducer）。
+三段 tail：`tail -f /tmp/loopforge/run-app.log /tmp/cses-im-server.log`（+ run.jsonl 给 reducer）。
 
-### gRPC 出问题时（确认是 gRPC/连接·非 loopforge/helix 逻辑）
-**🔔 特征信号（归一类·见此即判 gRPC 隧道断）**：mattermost-go 日志出现
-`error | no service available` + `app/grpcx9.go:367`（gRPC 客户端够不到远程服务=telepresence 隧道断/远程 service 不可达）。
-检测：`grep -E "no service available|grpcx9\.go" /tmp/mm-go.log` 命中 → 走下面三步（**不是** loopforge/helix 逻辑红，别去改本仓）。
+### cses-im-server 出问题时（确认是后端未起/挂·非 loopforge/helix 逻辑）
+**🔔 特征信号**：`curl -s localhost:8066/api/cses/health` 非 200 / 连不上 / 出站 HTTP 全 000 / WS 连不上。
+检测：`curl -s -o /dev/null -w "%{http_code}" localhost:8066/api/cses/health`（200=健康；000/拒连=后端未起）→ 走下面（**不是** loopforge/helix 逻辑红，别去改本仓）。
 
-1. **重建隧道**（telepresence 需管理员）：`sudo bash /Users/mac28/workspace/java/zlc_ai/GenericAgent/tp-connect.sh` —— 提示输密码就输**四个空格** `    `。此脚本=Clash Verge(TUN)+Telepresence 共存，重建到 k8s 远程服务的路由（gRPC 连接）。它自己 log 在 `~/Library/Logs/tp-connect.log`。
-2. **重启 cses-java**（**Micronaut 框架·非 Spring Boot**）：`pkill -f cses`（kill 旧进程）→ `cd /Users/mac28/workspace/java/cses && ./gradlew run > /tmp/cses-java.log 2>&1 &`（**`gradlew run`**·用户确认）。
-3. **重发请求复跑**：等 cses-java 起好（tail /tmp/cses-java.log 见 started）→ 重跑 `bash scripts/run.sh -- --spec test/specs/uc-X.e2e.mjs`。
-> gRPC 逻辑缺陷（非连接）参记忆 `cookieid_equals_userid`：cookieId=userId 桥·`app/grpcx9.go` headers struct 不许加 userId/teamId。
-> **判据**：go-server **默认对**——只有四段日志显示 gRPC 连接断/超时/诡异才走本节；loopforge/helix 逻辑红走 §3 直接修。
+1. **确认依赖起**：cses-im-server 自包含但需本地 **PG**（`CSES_IM_DB_DSN`·默认 `postgres://localhost:5432/cses_im?sslmode=disable`）+ **Redis**（`CSES_IM_REDIS_ADDR`·默认 `localhost:6379`）；Pulsar 留空走同步 fallback。`pg_isready` / `redis-cli ping` 自检。
+2. **重启 cses-im-server**：`pkill -f 'cmd/server'`（kill 旧进程）→ `cd /Users/mac28/workspace/golangProject/cses-im-server && CSES_IM_LISTEN_ADDR=:8066 CSES_IM_LOG_FORMAT=json go run ./cmd/server > /tmp/cses-im-server.log 2>&1 &`。
+3. **重发请求复跑**：等就绪（`tail /tmp/cses-im-server.log` 见 `listening addr=:8066`）→ 重跑 `bash scripts/run.sh -- --spec test/specs/uc-X.e2e.mjs`。
+> 鉴权：cookieId=userId 桥（memory `cookieid_equals_userid`）——cses-im-server 入站拿 `cookieId` header 当 userId 建 session，无独立 token。
+> **判据**：cses-im-server **默认对**——只有三段日志/health 显示后端未起/挂/诡异才走本节；loopforge/helix 逻辑红走 §3 直接修。
+
+> **附：旧 mattermost 四段（已弃·仅历史排障参考）**：旧后端=mattermost-go(:8065·FileAppender `/Users/mac28/workspace/mmlog/mattermost.log`)→gRPC(`app/grpcx9.go`·telepresence `tp-connect.sh` 密码四空格)→cses-java(Micronaut·`/tmp/cses-java.log`·`./gradlew run`·端口 3399/7091/3391)。gRPC 断特征 `no service available`+`grpcx9.go:367`。**切到 cses-im-server 后此链整体退役**，不再适用。
 
 ## 7. 完成判据（整任务收尾）
 - #7-#12,#14-#41 的 ready-for-agent issues 全绿关闭（helix-blocked 的标 🟡 + bug 报告·不算失败）。
