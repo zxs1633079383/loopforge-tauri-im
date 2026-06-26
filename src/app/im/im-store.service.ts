@@ -1708,49 +1708,39 @@ export class ImStoreService {
       const id = row["id"];
       if (typeof id !== "string" || !id) continue;
       ids.push(id);
-      // UC-5.4 群属性回读：dialogList 行 = channel 表行（display_name / notice 列·patch.rs
-      // collect_present 白名单）。改群名后 im:channel:update（thin）触发本 dialog 重查 → fat
-      // dialogList 携新 display_name → 把 CL 区行 displayName/notice 刷新（data-channel-display-name/
-      // -notice 回读·壳纯渲染只透传 channel 列·不在 JS 合成）。notice 列形态透传（JSON/字符串兼容）。
-      // UC-5.5 置顶回读：channel 表 is_top 列（INTEGER·SELECT * 原样透传·1=置顶/0=否）→ data-channel-top。
-      // 改置顶后 im:channel:update（thin·increment_channel_end 触发）→ 本 dialog 重查 → fat dialogList
-      // 携新 is_top → 把 CL 区行 top 刷新（壳纯渲染只透传 channel 列·不在 JS 合成置顶态）。
+      // S5（issue #54·C013 纯绑定）：helix dialogList 已 render-ready，CL 行字段直绑——壳零
+      // normalize/零计算。每行携 displayName / notice(归一终值) / isTop(bool) / createAt /
+      // unread(终值) / mention(bool) / lastMessage(预览) / urgent(bool)。壳只把投影字段 1:1
+      // 落到 ChannelRow（undefined 跳过·加法式不覆盖既有）。
+      //   - UC-5.4 改群名/UC-5.5 置顶回读：im:channel:update（thin）触发本 dialog 重查 → render-ready
+      //     dialogList 携新 displayName/notice/isTop → 直绑刷 data-channel-display-name/-notice/-top。
       this.upsertChannelRowFields(id, {
-        displayName:
-          typeof row["display_name"] === "string"
-            ? (row["display_name"] as string)
-            : undefined,
-        notice: this.normalizeNotice(row["notice"]),
-        top: this.normalizeIsTop(row["is_top"]),
-        // channel 创建时间（DB 列 create_at·snake；兼容 camel createAt）→ CL 区升序排序键。
-        createAt:
-          typeof row["create_at"] === "number" && Number.isFinite(row["create_at"])
-            ? (row["create_at"] as number)
-            : typeof row["createAt"] === "number" && Number.isFinite(row["createAt"])
-              ? (row["createAt"] as number)
-              : undefined,
+        displayName: this.str(row["displayName"]),
+        notice: this.str(row["notice"]),
+        top: this.bool(row["isTop"]),
+        createAt: this.num(row["createAt"]),
+        unread: this.num(row["unread"]),
+        mention: this.bool(row["mention"]),
+        lastMessage: this.str(row["lastMessage"]),
+        urgent: this.bool(row["urgent"]),
       });
     }
     if (!this._activeChannel() && ids.length > 0) this._activeChannel.set(ids[0]);
   }
 
-  /** notice 列透传归一：channel 表 notice 列可能是 JSON 字符串 `{"text":".."}` 或纯文本。
-   *  壳纯渲染只把它落成 data-channel-notice 可比对的字符串（出站 body 真源是 `{text}` map·
-   *  ④ 落库列存序列化字符串）。非字符串/空 → undefined（行不带该属性）。 */
-  private normalizeNotice(v: unknown): string | undefined {
-    if (typeof v !== "string" || v.length === 0) return undefined;
-    return v;
+  /** 投影字段纯展示取值（非 string → undefined·行不带该属性·零业务整形·C013(b)）。 */
+  private str(v: unknown): string | undefined {
+    return typeof v === "string" && v.length > 0 ? v : undefined;
   }
 
-  /** is_top 列透传归一：channel 表 is_top 列是 INTEGER（SELECT * 原样透传·1=置顶/0=否·SQLite
-   *  也可能回 number/string/bool）。壳纯渲染只把它落成布尔 → data-channel-top（true→'1'·false→无属性）。
-   *  非真值/缺 → undefined（行不带置顶态·加法式不覆盖既有值时由 upsert 跳过 undefined）。 */
-  private normalizeIsTop(v: unknown): boolean | undefined {
-    if (v === undefined || v === null) return undefined;
-    if (typeof v === "boolean") return v;
-    if (typeof v === "number") return v !== 0;
-    if (typeof v === "string") return v === "1" || v.toLowerCase() === "true";
-    return undefined;
+  /** 投影字段纯展示取值（非 bool → undefined·helix 已吐终态 bool·壳零归一·C013(b)）。 */
+  private bool(v: unknown): boolean | undefined {
+    return typeof v === "boolean" ? v : undefined;
+  }
+
+  /** 投影字段纯展示取值（非有限 number → undefined·C013(b)）。 */
+  private num(v: unknown): number | undefined {
+    return typeof v === "number" && Number.isFinite(v) ? v : undefined;
   }
 
   /** 按 channelId 补/更新行字段（加法式·仅覆盖传入的非 undefined 字段·行不存在则先建）。 */
@@ -1926,9 +1916,11 @@ export class ImStoreService {
 
   /**
    * UC-4.2：im:channel:update-by-post（{channel_id, event_seq, msg_id}·瘦·sync 回放每条可见 type1
-   * 新消息触发·badge 触发位）→ 把该频道行 unread badge +1（data-unread 累加·channel-row 级未读
-   * 计数）。壳纯渲染：每条 update-by-post 信号即未读 +1（投影驱动累加·不在 JS 解析 increment 帧/
-   * unreadCount 重组业务·与 fat im:post:received 配对：后者驱动 ML 增量行追加·本者驱动 CL badge）。
+   * 新消息触发·badge 触发位）→ 确保 CL 行存在 + **触发 dialogList 重查**把 unread 终值回读刷 badge。
+   *
+   * S5（issue #54·C013 纯绑定·**壳不再 ++**）：未读终值是 helix DB unread_count 权威，由 render-ready
+   * dialogList（applyDialogList 直绑 data-unread）产出。壳收到本瘦 badge 信号只「发 IPC」重查（C013(d)），
+   * 不在 JS 累加/重组 unreadCount 业务——badge 累加这件事下沉 helix（unread_count SQL 自增·dialogList 吐终值）。
    * channel_id 缺 → noop（无定点目标·守边界零信任·snake 信号锚）。行不存在则先 upsert 锚 data-channel-id。
    */
   private applyChannelUpdateByPost(
@@ -1939,13 +1931,9 @@ export class ImStoreService {
       (typeof data.channel_id === "string" && data.channel_id) || "";
     if (!channelId) return;
     this.upsertChannelRow(channelId);
-    this._channels.update((rows) =>
-      rows.map((c) =>
-        c.channelId === channelId
-          ? { ...c, unread: (c.unread ?? 0) + 1 }
-          : c,
-      ),
-    );
+    // 瘦 badge 信号 → 重查 dialogList：render-ready 行携 unread 终值 → applyDialogList 直绑 data-unread
+    // （壳纯绑定·未读累加在 helix·壳零 ++）。非 Tauri / 命令缺失 → 静默。
+    this.bridge.invoke<void>("im_query_dialog_list").catch(() => {});
   }
 
   /**
@@ -2054,7 +2042,7 @@ export class ImStoreService {
    * thin 信号只带 channel_id（无属性载荷·projection-schema 行61 留瘦）——要拿到新 is_top 等必须重查
    * dialogList（im_query_dialog_list → im:channels:projection → applyDialogList 透传 channel 列）。
    *   - UC-5.5 频道置顶：change/top → update_channel PATCH(is_top) → im:channel:update → 本重查 →
-   *     dialogList 携新 is_top → applyDialogList normalizeIsTop → data-channel-top 回读刷新。
+   *     render-ready dialogList 携新 isTop(bool 终值·S5 helix 归一) → applyDialogList 直绑 data-channel-top。
    *   - UC-4.1 hello 批次结束同走此信号（确保行存在·dialogList 重查幂等无害）。
    * 注：UC-5.4 改群名/公告的 displayName/notice 回读走 channelUpdate 系统 post（applyChannelUpdatePost·
    *   message-row fat 分支·server 改名推系统 post 非 update_channel）——两路径互补不冲突。

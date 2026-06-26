@@ -14,3 +14,5 @@
 # 解析规则：以 # 开头的行 = 注释；空行忽略；apply_name = 第 2 列。
 # 追加只用 `>> HELIX_READY.log`（绝不重写整文件）→ 零 merge 冲突。
 2026-06-26T11:40:43Z	applyMessageItem	B	render-ready merged·helix 0396174 (feat/im-post-received-render-ready-rebased)·loopforge re-pin commit 1c1b4fe
+2026-06-26T13:12:15Z	applyDialogList	B	render-ready merged·helix 834af2a (fix/im-wire-body-build·dialogList 8 终态键)·loopforge re-pin feat/s5-channel-list-bind(Cargo.lock #834af2a3)
+2026-06-26T13:12:15Z	applyChannelUpdateByPost	B	render-ready merged·helix 834af2a(unread 终值下沉 unread_count)·loopforge re-pin feat/s5

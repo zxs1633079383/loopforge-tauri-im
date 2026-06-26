@@ -32,7 +32,7 @@
 ```bash
 # 禁区命中数（覆盖率背靠背指标·应单调 ≤ 基线·冻结=不增）
 HITS=$(grep -roE "extract[A-Z][A-Za-z]+|normalize[A-Z][A-Za-z]+|_rows\(\)\.findIndex|role *=== *['\"]CREATOR|role *=== *['\"]ADMIN|role *=== *['\"]MANGER" src/app/im/*.ts | wc -l | tr -d ' ')
-BASELINE=22   # S4(applyMessageItem 迁移)后下调 31→22·随迁移单调下调·禁上调
+BASELINE=17   # S5(applyDialogList 迁移·删 normalizeNotice/normalizeIsTop)后下调 22→17·随迁移单调下调·禁上调
 echo "纯渲染壳禁区命中: $HITS / 基线 $BASELINE"
 [ "$HITS" -gt "$BASELINE" ] && echo "⛔ C013 违反：本仓新增了处理逻辑（应去 helix 补投影/指令）" && exit 1
 echo "✅ C013：未新增本仓处理逻辑（冻结生效）"

@@ -9,12 +9,10 @@
     "dom": "docs/spec/angular-ui-plan.md CL 区 + issue #7 ③：data-ready（增量收齐置位）+ 每 channel 行 data-channel-id。",
     "storage": "helix/crates/helix-im/src/acl/storage_effects.rs::upsert_channel_full（batch_upsert channel）+ advance_cursor（monotonic_upsert channel_event_cursor）。"
   },
-
   "corrAnchor": {
     "note": "领域锚 = channelId（ch 维）。UC-4.1 无 tmp/sid（非发送 round-trip）。e2e 运行时把活动频道 id（增量流首个真实频道）填入本字段 ch，reducer 按 ch 锁定目标束（projection im:channel:increment + storage channel 行均带 channel_id → 同束）。",
     "ch": null
   },
-
   "outbound": {
     "method": "POST",
     "urlEndsWith": "channels/load/increment",
@@ -22,28 +20,32 @@
       "timestamp": "*",
       "cursors": "*"
     },
-    "bodyForbidden": ["channel_id", "from_seq"],
+    "bodyForbidden": [
+      "channel_id",
+      "from_seq"
+    ],
     "_note": "increment_http_trigger：body {timestamp:0, cursors:[{channelId, fromSeq}]}。全 camelCase；cursors[].channelId / cursors[].fromSeq（snake_case 泄漏即 fail）。值用 * = 仅校验键存在。\n⚠️ AMBIGUITY（交人审·见 ledger UC-4.1 + autonomous-runbook §5）：本 ① 出站是『批量 sync 请求』（一条请求带 N 个 channel 的 cursors），无单一 channel corr_key——decorator extract_corr_key 只探 top-level + .data 的 channelId（event.rs:104-110），HTTP hop payload 是 {method,url,body} 且 cursors 嵌在 body.cursors[0] → 抽不到 ch → outbound 落 unkeyed 束，无法与 per-channel 的 ② projection 同束。current four-facet-reducer.mjs（per-corr_key 束）天然不表达 batch-outbound。需人审决策：(a) reducer 增『batch 面』直接对 unkeyed outbound 束做 URL/body-shape 断言；或 (b) 装饰器 extract_corr_key 增 cursors[0].channelId 探针。在该决策落地前，① 面在 reducer 下预期不进目标束 = 预期红（非 wire 缺陷）。"
   },
-
   "projection": {
     "event": "im:channel:increment",
-    "dataKeys": ["channel_id", "increment"],
+    "dataKeys": [
+      "channel_id",
+      "increment"
+    ],
     "_note": "projection-schema §B-rest 行 60 emit_channel_increment：data {channel_id, increment}（increment = 透传 increment_channel 帧 data，含 lastEventSeq/mentionList/urgentPostList）。UC-4.1 hello 链共 emit 三投影：im:channels:loaded（{items:[]}·无 channel_id → unkeyed 束·冷启动补齐信号）、im:channel:increment（{channel_id, increment}·keyed by ch·本面锚）、im:channel:update（{channel_id}·瘦·批次结束）。reducer actualProjection 按 preferEvent=im:channel:increment 选 → 锚 keyed 那条，避免误取 channels:loaded 瘦集。"
   },
-
   "storage": {
     "op": "batch_upsert",
     "table": "channel",
     "minRows": 1,
     "_note": "upsert_channel_full → BatchUpsert channel（52 列·conflict_key=id）。装饰器 facet④ payload {op:'batch_upsert', table:'channel', rows:N}（storage.rs:61）。cursor 推进 advance_cursor → monotonic_upsert channel_event_cursor（payload 只带 {scope,value} 无 rows → 不作 minRows 锚·④ 锚 channel batch_upsert）。corr_cols 抽 channel_id → 与 ② 同束。"
   },
-
   "dom": {
     "dataAttrs": {
       "ready": "true",
-      "channel-id": "*"
+      "channel-id": "*",
+      "last-message": "*"
     },
-    "_note": "issue #7 ③：① data-ready=true（store.ready() probe im_ready·increment_channel_end 收齐 + inflight0 + cursor 稳后置位）；② 目标频道行 data-channel-id 非空（store.channels() 由 im:channel:increment 投影填入）。e2e 读 [data-channel-id=<ch>] 行 data-* + [data-ready] 注入 reducer。"
+    "_note": "issue #7 ③：① data-ready=true（store.ready() probe im_ready·increment_channel_end 收齐 + inflight0 + cursor 稳后置位）；② 目标频道行 data-channel-id 非空（store.channels() 由 im:channel:increment 投影填入）。e2e 读 [data-channel-id=<ch>] 行 data-* + [data-ready] 注入 reducer。 S5(issue #54)：+ data-last-message 非空（CL 行 render-ready·helix dialogList lastMessage 直绑·锚频道有增量 post → last_post 非空·壳零 normalize）。"
   }
 }

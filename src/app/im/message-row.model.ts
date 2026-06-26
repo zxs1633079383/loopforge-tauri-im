@@ -26,8 +26,14 @@ export interface ChannelRow {
   notice?: string;
   /** data-channel-top：channelIsTop（UC-5.5 频道置顶） */
   top?: boolean;
-  /** data-unread：cursor/unread_count badge（UC-4.2 增量后） */
+  /** data-unread：unread_count **终值**（helix dialogList render-ready·UC-4.2·壳不再 ++） */
   unread?: number;
+  /** data-last-message：最后一条消息预览（helix dialogList render-ready·last_post 解析·S5/UC-4.1） */
+  lastMessage?: string;
+  /** data-urgent：加急 badge（helix dialogList render-ready·last_post 加急标·S5/UC-1.9） */
+  urgent?: boolean;
+  /** data-mention：艾特标记 badge（helix dialogList render-ready·mention_count>0·S5/UC-4.2） */
+  mention?: boolean;
   /** data-has-schedule：channel.has_schedule_post（UC-1.10） */
   hasSchedule?: boolean;
   /** channel 创建时间（int64 毫秒·dialogList 行 create_at 列透传·非 DOM 属性）：
