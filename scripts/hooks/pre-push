@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# pre-push hook —— push 前自动跑提交闸门（铁律③ 机器强制·借鉴 helix install-hooks）
+# 钩子不进版本库；装入：bash scripts/install-hooks.sh
+# gate 红 → 退出非 0 → push 被拦下。临时绕过（不推荐）：git push --no-verify
+ROOT="$(git rev-parse --show-toplevel)"
+echo "[pre-push] 跑 scripts/gate.sh（红则拦下 push）…"
+exec bash "$ROOT/scripts/gate.sh"

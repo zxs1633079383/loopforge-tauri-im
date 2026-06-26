@@ -1,0 +1,41 @@
+{
+  "$schema-note": "四面期望文件 (UC-10.3 全模块读·modules/getAll) — 读族 oracle（只读契约·contract-readonly-autofix.md §1 / C004）。读族 (request-response 传输·HTTP 体即数据·无 WS 回声·同 UC-5.8/6.4/4.5) 断面退化为 ①②：① outbound HTTP wire body（modules/getAll·**无 body**·handler 不解析请求体 → 出站为空 {}·method POST + urlEndsWith 逐字检 + bodyForbidden 锚 snake 泄漏）；② projection envelope（im:read:result {req_id, body} 外层键集 + req_id 锚本次 invoke）。③ DOM / ④ storage = N/A（读路径无 write 驱动 DOM·模块列表由前端从透传 body 抽渲染·非冻结契约面·reducer runFourFacetRead 不裁定）。reducer runFourFacetRead 裁定 ①②。",
+  "ucId": "UC-10.3",
+  "title": "获取全部功能模块（读族 request-response·断面 ①②）",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/full-map/partials/3--backend-http-user-misc.md §8 modules/getAll：method POST · path /api/cses/modules/getAll（PathPrefix /getAll）· handler getAllModules **不解析 body**（无请求结构）→ 出站 wire body 为空 {}。全 camelCase 约定（本域 cses 自定义结构）。",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1.2 read_relay::emit_read_result (im:read:result {req_id, body})。body = 后端 dto.CommonRes 信封 data = []*ent.Modules 原样透传（裸 ent·id/name/label/url·camelCase）。",
+    "migration": "helix/crates/helix-im/docs/csesapi-migration/full-map/partials/11--gap-user-misc.md §8：**已迁移**（含修笔误）·路由注册 handlers.go:28（PathPrefix /getAll）·data=[]*ent.Modules·本仓 handler 直接 SetData 不 SetMessage（已修源硬编码 \"channelMemberChange success\" 笔误）。go-served HTTP 读路径可真跑 ①②。",
+    "dom": "N/A (读族无 write 驱动 DOM 契约面·模块列表由前端从透传 body 抽渲染·非冻结契约面)",
+    "storage": "N/A (查询为只读·无落库 write·装饰器 facet④ 不暴露读路径·reducer 不裁定 ④)"
+  },
+
+  "corrAnchor": {
+    "note": "读族无四维领域键（modules/getAll 无 body·无 condition·不可抽 ch/tmp/sid 别名键；projection req_id 由 e2e invoke 时生成·经 bridge 透传·helix module::read_req_id 抠出注册回灌上下文）。reducer runFourFacetRead 在 set_uc 窗口内按 endpoint（urlEndsWith modules/getAll）找 ① 出站·按 req_id 锚 ② 投影。req_id 由 e2e 注入到 runFourFacetRead({reqId})。",
+    "req_id": null
+  },
+
+  "modulesGetAll": {
+    "_note": "① modules/getAll endpoint 子期望（flat·reducer diffOutbound 直消费）。wire body 真源 partial 3 §8：handler getAllModules **不解析 body** → 出站 body 为空 {}（无 bodyFields 必填字段·非臆造）。① 可证伪性来自 method POST + urlEndsWith modules/getAll（错 url/缺 invoke → 无匹配出站 → ① 红）+ bodyForbidden 锚（无 body 请求绝不应出现分页/condition 等 snake 旧形态泄漏）。② projection im:read:result {req_id, body}。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "modules/getAll",
+      "bodyFields": {},
+      "bodyForbidden": ["page_number", "page_size", "req_id", "channel_id", "user_id", "condition", "pageOpts"]
+    },
+    "projection": {
+      "event": "im:read:result",
+      "dataKeys": ["req_id", "body"],
+      "_note": "projection-schema §1.2：读族回灌外层恒 {req_id, body}（成功）。body = 后端 modules/getAll 响应体原样透传（dto.CommonRes 信封 data=[]*ent.Modules 查询结果）·inner 不冻结（前端直消费抽模块渲染）。键集 = 2 键严格对齐（多/缺即红）。"
+    }
+  },
+
+  "storage": {
+    "_note": "N/A (读路径·查询只读无 write)。装饰器 facet④ 不暴露读路径。reducer runFourFacetRead 不裁定 ④ 面。"
+  },
+
+  "dom": {
+    "_note": "N/A (读族无 write 驱动 DOM 契约面)。模块列表 data-* 由前端从透传 body 抽模块后渲染·属前端渲染非冻结契约面·reducer 不裁定 ③ 面。"
+  }
+}

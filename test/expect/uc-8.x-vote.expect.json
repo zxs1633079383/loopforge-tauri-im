@@ -1,0 +1,100 @@
+{
+  "$schema-note": "四面期望文件 (UC-8.x 投票 CRUD) — vote/score 第二网关 :3399（partials/6 集合八）。五命令分写族/读族两类断面：写族 createVote/vote/closeVote/deleteVote（helix is_read=false·fire-and-forget·数据走 server WS post_updated 回声·HTTP 响应仅 ack 可丢）→ 断面 = ① 出站 wire body 逐字检（urlEndsWith + bodyFields camelCase + bodyForbidden 禁 snake/req_id 泄漏），② 投影标 optional（写族无读族回灌·单账号 L1 无 server WS post_updated 可观测·真 server-data/WS-dep·见 ledger UC-8.x；reducer isProjectionOptional 短路总绿·守可证伪——少 ① 出站仍红）。③ DOM data-vote / ④ message.props 由 server WS 回声驱动·单账号 L1 物理够不到（写族 fire-and-forget·无本账号自身可观测 echo）= 真 server-data/WS-dep（同 ledger）。读族 readVote（helix is_read=true）→ 断面 ①②：① 出站 {id} 逐字检；② 投影 im:read:result {req_id, body} 外层键集 + req_id 锚（emit_read_result 200 OR emit_read_error 500 皆回灌 im:read:result·envelope 恒可观测·与「需真 vote id 见 200」的 inner data-dep 解耦——envelope 面不依赖真 id）。reducer runFourFacetRead 裁定（写族走 projection.optional 短路·读族走 dataKeys 严格）。",
+  "ucId": "UC-8.x",
+  "title": "投票 CRUD（vote/score 第二网关·写族 4 ① + 读族 1 ①②·create/do/read/close/delete）",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/full-map/partials/6--client-usecases.md §用例集合八（投票/平均分）L257-272：createVote /vote/createVote {fromUserId,fromUserName,title,content,votes,isReal,finishTime,options[],orgIds[],joinCount,source?}（整 args 透传）· vote /vote/vote {id,postId?,indexes:string[]} · readVote /vote/readVote {id} · closeVote /vote/closeVote {id} · deleteVote /vote/deleteVote {id}；helix outbound/vote_score.rs VoteCreate/VoteDo/VoteRead/VoteClose/VoteDeleteCommand 实证 wire body 全 camelCase·createVote 整 obj 透传·其余字段显式构造",
+    "projection-read": "helix/crates/helix-im/docs/projection-schema.md §1.2 query::emit_read_result (im:read:result {req_id, body}) · emit_read_error (im:read:result {req_id, error})",
+    "projection-write": "helix/crates/helix-im/docs/projection-schema.md §to_effect::emit_post_updated (im:post:updated fat) — 写族 vote 经 server WS post_updated 回声驱动·单账号 L1 无 server 回声可观测（真 server-data/WS-dep·见 uc-coverage-ledger.md UC-8.x）→ 本期望写族 ② 标 optional",
+    "dom": "N/A 单账号 L1（data-vote 由 emit_post_updated props.vote 透传渲染·写族 fire-and-forget 无本账号自身可观测 echo·真 server-data/WS-dep）",
+    "storage": "N/A 单账号 L1（message.props vote 由 server WS 回声落库·写族无本账号可观测 echo·真 server-data/WS-dep）"
+  },
+
+  "corrAnchor": {
+    "note": "vote 命令无四维领域键（outbound wire body 携 id/title/options 等·非 ch/tmp/sid 别名）。写族在 set_uc 窗口内按 endpoint(urlEndsWith) 找 ① 出站唯一·② optional 短路。读族 readVote 的 projection req_id 由 e2e invoke 时生成经 bridge 透传·helix read_req_id 抠出注册回灌·reducer 按 req_id 锚 ②。",
+    "req_id": null
+  },
+
+  "voteCreate": {
+    "_note": "① /vote/createVote 写族子期望（flat·diffOutbound 直消费·projection.optional → ② N/A 短路）。整 args 透传：e2e 经 im_vote_create({fields}) 注入 camelCase wire 字段（title/content/options/isReal/votes）→ helix VoteCreateCommand 整 obj 透传出站 body。bodyFields 锚 e2e 注入的字段；bodyForbidden 锚 snake 泄漏（is_real/title 误写无）+ req_id 泄漏（写族不应携 reqId·createVote 整透传若误带 reqId 会污染 body·守可证伪）+ snake user_id。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "vote/createVote",
+      "bodyFields": {
+        "title": "*",
+        "content": "*",
+        "options": "*",
+        "isReal": "*",
+        "votes": "*"
+      },
+      "bodyForbidden": ["is_real", "req_id", "reqId", "user_id", "fromUserId"]
+    },
+    "projection": { "optional": true }
+  },
+
+  "voteDo": {
+    "_note": "① /vote/vote 写族子期望。wire body 真源 partials/6 §vote：{id, indexes:string[], postId?}。helix VoteDoCommand 显式构造 {id, indexes, postId?}。bodyFields 锚 id+indexes（postId 可选·e2e 提供则在·不强断）；bodyForbidden 锚 snake(post_id) + req_id 泄漏。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "vote/vote",
+      "bodyFields": {
+        "id": "*",
+        "indexes": "*"
+      },
+      "bodyForbidden": ["post_id", "req_id", "reqId", "indexs"]
+    },
+    "projection": { "optional": true }
+  },
+
+  "voteRead": {
+    "_note": "①② /vote/readVote 读族子期望（is_read=true·im:read:result 回灌）。wire body 真源 partials/6 §readVote：{id}。helix VoteReadCommand id_body 只取 id（req_id 经 payload 透传但 id_body 不泄漏进 wire body·read_req_id 抠出注册回灌）。① bodyFields 锚 id·bodyForbidden 锚 req_id/reqId 泄漏（守 id_body 不漏 reqId）+ snake。② projection im:read:result 外层 {req_id, body}（emit_read_result 200 或 emit_read_error 500 皆产此 envelope·envelope 键集恒可观测·与 inner 真 vote id data-dep 解耦）。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "vote/readVote",
+      "bodyFields": {
+        "id": "*"
+      },
+      "bodyForbidden": ["req_id", "reqId", "vote_id"]
+    },
+    "projection": {
+      "event": "im:read:result",
+      "dataKeys": ["req_id", "body"],
+      "_note": "projection-schema §1.2：读族回灌外层恒 {req_id, body}（成功）。注：HTTP500（坏 vote id·见 ledger）走 emit_read_error → im:read:result {req_id, error}·dataKeys 变 {req_id, error}。期望取成功 envelope {req_id, body}；若本机 server 对该 id 恒 500 则键集为 {req_id, error}（②会红）→ 此为真 inner data-dep·按 C004 改环境（喂真 vote id）或标 yellow 留证据·非改 oracle。"
+    }
+  },
+
+  "voteClose": {
+    "_note": "① /vote/closeVote 写族子期望。wire body 真源 partials/6 §closeVote：{id}（helix VoteCloseCommand id_body）。bodyForbidden 锚 req_id 泄漏 + snake。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "vote/closeVote",
+      "bodyFields": {
+        "id": "*"
+      },
+      "bodyForbidden": ["req_id", "reqId", "vote_id"]
+    },
+    "projection": { "optional": true }
+  },
+
+  "voteDelete": {
+    "_note": "① /vote/deleteVote 写族子期望。wire body 真源 partials/6 §deleteVote：{id}（helix VoteDeleteCommand id_body）。bodyForbidden 锚 req_id 泄漏 + snake。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "vote/deleteVote",
+      "bodyFields": {
+        "id": "*"
+      },
+      "bodyForbidden": ["req_id", "reqId", "vote_id"]
+    },
+    "projection": { "optional": true }
+  },
+
+  "storage": {
+    "_note": "N/A 单账号 L1（写族 fire-and-forget·message.props vote 由 server WS post_updated 回声落库·本账号无可观测 echo·真 server-data/WS-dep·见 ledger UC-8.x）。reducer 不裁定 ④ 面。"
+  },
+
+  "dom": {
+    "_note": "N/A 单账号 L1（data-vote 由 emit_post_updated props.vote 透传渲染·写族无本账号自身可观测 echo·真 server-data/WS-dep）。reducer 不裁定 ③ 面。"
+  }
+}

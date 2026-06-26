@@ -1,0 +1,51 @@
+{
+  "$schema-note": "四面期望文件 (UC-11.2 退出公司·teams/member/quit) — oracle 本体。只读契约 (contract-readonly-autofix.md §1 / harness C004)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现 / 本仓渲染壳 / 机器件（reducer target 选择·装饰器抽键·seed）。契约真过时 → 出『契约变更提案 + 证据』交人审。退公司路径（LeaveAllChannelsForTeam·退该 team 下所有 channel）四面：① 出站 DELETE teams/member/quit（body {userId, teamId}·QuitTeamReq·真源 quit_team.go:3-6 + partials/3 §6）— **L1 单账号严格可验绿**；②③④ 离群移除（投影/DOM/落库）= **L2-facet**：server `quit_company` 多播给 `idsByTeamId`（同 team 其余受影响用户·非退出者本人），退出者本连接收不到 removal push（实证 run.jsonl：DELETE 200 success 后零 quit_company/channel_close WS 帧），helix `quit_company` handler 亦 graceful no-op（无独立投影/落库），故 ②③④ L1 单账号结构性造不出 → 须 L2 双账号（追踪 issue 见下）。",
+  "ucId": "UC-11.2",
+  "title": "退出公司：UI 退出件 → 出站 DELETE teams/member/quit {userId, teamId}（L1 ① 严格绿）·server LeaveAllChannelsForTeam 退所有群 + quit_company 多播他人（②③④ L2-facet·退出者本连接不可观测）",
+  "contractReadonly": true,
+  "l1Facets": ["outbound"],
+  "l2Facets": ["projection", "storage", "dom"],
+  "l2TrackingIssue": "UC-11.2 ②③④ 离群移除 push 走 quit_company 多播给同 team 其余受影响用户（idsByTeamId·非退出者本人）→ 退出者本连接收不到 removal 帧（run.jsonl 实证：DELETE 200 success 后零 quit_company/channel_close）→ L1 单账号结构性造不出·须 L2 双账号（B 在公司·A 退公司 → B 收 quit_company → B 视图移除 A 相关 channelMember）。与 UC-5.3b member-leave 广播（#44）同族（broadcast 给他人）。",
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/src/outbound/user_misc.rs TeamQuitCommand（#5 im_team_quit → DELETE teams/member/quit · body {userId, teamId}·真源 QuitTeamReq{userId,teamId}·quit_team.go:3-6·registry outbound_method 按命令名产 DELETE·现网 Methods(\"DELETE\") 且 body 仍带·partials/3 §6）。coverage-crossmap.md teams/member/quit → UC-11.2。成功无响应体（现网源 bug·HTTP 200 空 body·helix 透传·实证 run.jsonl）。",
+    "projection": "(L2) helix/crates/helix-im/src/ws/handlers/quit_company.rs：quit_company graceful no-op（router 默认 vec![]·无独立投影）；离群本地态本应由配套 channel_close 覆盖（emit_channel_closed·im:channel:closed），但 server quit_company 多播给 idsByTeamId（同 team 其余受影响用户·partials/5 §2.18 + §4 UserIds 多用户定向）而非退出者本连接 → 退出者 L1 单账号收不到（须 L2 双账号·B 观测）。",
+    "dom": "(L2) docs/uc-coverage-ledger.md §UC-11.2 ③ channel 行移除依赖 ② im:channel:closed 投影驱动 applyChannelClosed 删行——退出者本连接无 ② push → ③ L1 不可达（须 L2）。",
+    "storage": "(L2) 配套 channel_close.rs handle → channel_set_cols（StorageOp::BatchUpdate channel）依赖收到 channel_close WS——退出者本连接无该 push → ④ L1 不可达（须 L2）。"
+  },
+
+  "corrAnchor": {
+    "note": "L1 领域锚：退公司退该 team 下所有 channel·① 出站 DELETE teams/member/quit body {userId,teamId} 无 channelId → reducer 经 createOutbound fallback 按 URL endsWith teams/member/quit 归束（窗口内唯一一条 quit·非 tautology）。ch 字段 e2e 填实退公司前本人新建的锚频道（用于 ②③④ L2 观测·L1 不依赖）。",
+    "ch": null
+  },
+
+  "outbound": {
+    "method": "DELETE",
+    "urlEndsWith": "teams/member/quit",
+    "bodyFields": {
+      "userId": "*",
+      "teamId": "*"
+    },
+    "bodyForbidden": ["channelId", "channel_id", "id", "user_id", "team_id", "displayName"],
+    "_note": "TeamQuitCommand 真源：method=DELETE（registry outbound_method 按命令名映射·现网 Methods(\"DELETE\")·写死 POST 会 404·实证）·url endsWith teams/member/quit·body = QuitTeamReq{userId, teamId}（全 camelCase·真源 quit_team.go:3-6·现网 DELETE 且 body 仍带·透传）。userId=自身 cookieId / teamId=companyId（由 Rust 命令从 profile 单一真源拼·壳不臆造 creds）。bodyForbidden 锚——退公司 body 只该携 userId/teamId，不该混入 channelId（退的是整个 team 非单频道）/ snake 别名 user_id/team_id（wire 全 camelCase）/ id / displayName。① 出站经 reducer createOutbound fallback（URL endsWith teams/member/quit·窗口内唯一一条·body 无 cursors）归束。L1 严格可验绿。"
+  },
+
+  "projection": {
+    "event": "im:channel:closed",
+    "dataKeys": ["channelId", "deleteAt"],
+    "_l2-note": "L2-facet：退公司 quit_company 帧 helix graceful no-op（quit_company.rs default vec![]）；离群移除投影本应由配套 channel_close → im:channel:closed 覆盖，但 server quit_company 多播给同 team 其余用户（idsByTeamId）而非退出者本连接 → 退出者 L1 单账号无 ② push（run.jsonl 实证零 channel_close）。须 L2 双账号验证（B 收 quit_company → B 视图移除 A 相关项）。L1 spec 不断言本面。"
+  },
+
+  "storage": {
+    "op": "batch_update",
+    "table": "channel",
+    "minRows": 1,
+    "_l2-note": "L2-facet：配套 channel_close → channel batch_update（delete_at+is_active=0）依赖收到 channel_close WS·退出者本连接无该 push → ④ L1 不可达。须 L2 双账号。L1 spec 不断言本面。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "channel-id": "!absent"
+    },
+    "_l2-note": "L2-facet：channel 行移除依赖 ② im:channel:closed 投影驱动 applyChannelClosed 删行·退出者本连接无 ② push → ③ L1 不可达。须 L2 双账号。L1 spec 不断言本面。"
+  }
+}

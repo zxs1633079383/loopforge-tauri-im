@@ -7,3 +7,11 @@ serde       = { version = "1", features = ["derive"] }
 serde_json  = "1"
 bytes       = "1"
 async-trait = "0.1"
+
+# clippy 轻量卫生（全 warn·不破现有构建；disallowed-methods 名单见根 clippy.toml）。
+# crate 经 `[lints] workspace = true` opt-in。escalate 到 deny 须先清干净对应 lint。
+[workspace.lints.clippy]
+dbg_macro    = "warn"   # dbg! 不该 ship
+todo         = "warn"   # todo!() 不该 ship
+unwrap_used  = "warn"   # 非测试 unwrap 浮现（不破构建）
+panic        = "warn"   # 显式 panic! 浮现

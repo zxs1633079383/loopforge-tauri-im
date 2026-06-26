@@ -1,0 +1,76 @@
+{
+  "$schema-note": "四面期望文件 (UC-5.6r 公告读族 acceptList/list/detail) — 读族 oracle（只读契约·contract-readonly-autofix.md §1）。三端点均为纯读 announcement 表（partial 1 §28 acceptList / §30 list / §31 detail·WS 事件列 '—'·无 post_update 回声），故 (request-response 传输·HTTP 体即数据·同 UC-5.8/6.4/4.5) 断面退化为 ①②：① 三端点出站 wire body 逐字检（urlEndsWith /post 单数前缀 + bodyFields 恒在字段 camelCase + bodyForbidden 禁 snake/复数前缀泄漏）；② projection envelope（im:read:result {req_id, body} 外层键集 + req_id 锚本次 invoke）。③ DOM / ④ storage = N/A（读路径无 write 驱动 DOM·查询结果由前端从透传 body 抽公告渲染·非冻结契约面·reducer runFourFacetRead 不裁定）。三端点各自一束·按 req_id 独立锚·reducer runFourFacetRead 逐个裁定 ①②。",
+  "ucId": "UC-5.6r",
+  "title": "公告读族 acceptList/list/detail（读族 request-response·断面 ①②）",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/full-map/partials/1--backend-http-posts.md §28 acceptList (param {postId string}·L102-104) / §30 list (param {channelId string, postId string}·L138-141·ChannelId 空回退 PostId) / §31 detail (param {postIds []string}·L162-164)；helix outbound/posts_read_ext.rs #14 AnnounceAcceptListCommand → ('post/announcement/acceptList', {postId}) · #15 → ('post/announcement/list', {channelId}+可选 postId) · #16 → ('post/announcement/detail', {postIds:[]})·全 camelCase·/post 单数前缀",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1.2 read_relay::emit_read_result (im:read:result {req_id, body})·成功路径 body=后端响应体透传 (acceptList=acceptList / list=postList / detail=announcementRows)",
+    "dom": "N/A (读族无 write 驱动 DOM 契约面·查询结果由前端从透传 body 抽公告渲染·非冻结契约面)",
+    "storage": "N/A (三端点纯读 announcement 表·无落库 write·装饰器 facet④ 不暴露读路径·reducer 不裁定 ④)"
+  },
+
+  "corrAnchor": {
+    "note": "读族无四维领域键（公告读 outbound wire body 携 postId/channelId/postIds·非 ch/tmp/sid 别名抽键；projection req_id 由 e2e invoke 时生成·经 bridge 透传·helix module::read_req_id 抠出注册回灌上下文）。reducer runFourFacetRead 在 set_uc 窗口内按 endpoint 找 ① 出站·按 req_id 锚 ② 投影。三端点各注入独立 reqId 到 runFourFacetRead({reqId})。",
+    "req_id": null
+  },
+
+  "acceptList": {
+    "_note": "① post/announcement/acceptList 子期望（flat·reducer diffOutbound 直消费）。wire body 真源 partial 1 §28 param {postId string}·helix posts_read_ext.rs #14 → json!({postId: post_id})·camelCase。bodyFields 锚恒在 postId（'*'=有值即过·不硬编值·读路径 postId 随被查公告变）。bodyForbidden 锚 snake 泄漏 post_id + 复数前缀 posts/announcement/acceptList（urlEndsWith 已隐含 /post 单数守护·此处加固）。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "post/announcement/acceptList",
+      "bodyFields": {
+        "postId": "*"
+      },
+      "bodyForbidden": ["post_id", "posts/announcement/acceptList"]
+    },
+    "projection": {
+      "event": "im:read:result",
+      "dataKeys": ["req_id", "body"],
+      "_note": "projection-schema §1.2：读族成功回灌外层恒 {req_id, body}。body = 后端 acceptList 响应体原样透传（公告接受记录列表）·inner 不冻结（前端直消费抽渲染）。键集 = 2 键严格对齐（多/缺即红）。"
+    }
+  },
+
+  "list": {
+    "_note": "① post/announcement/list 子期望。wire body 真源 partial 1 §30 param {channelId string, postId string}·helix posts_read_ext.rs #15 → json!({channelId: channel_id}) + 可选 postId·camelCase。bodyFields 只锚恒在 channelId（postId 可选·不强断避免臆造可选契约）。bodyForbidden 锚 snake 泄漏 channel_id + 复数前缀 posts/announcement/list。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "post/announcement/list",
+      "bodyFields": {
+        "channelId": "*"
+      },
+      "bodyForbidden": ["channel_id", "posts/announcement/list"]
+    },
+    "projection": {
+      "event": "im:read:result",
+      "dataKeys": ["req_id", "body"],
+      "_note": "projection-schema §1.2：读族成功回灌外层恒 {req_id, body}。body = 后端 list 响应体原样透传（postList 公告列表）·inner 不冻结。键集 = 2 键严格对齐。"
+    }
+  },
+
+  "detail": {
+    "_note": "① post/announcement/detail 子期望。wire body 真源 partial 1 §31 param {postIds []string}·helix posts_read_ext.rs #16 → json!({postIds: post_ids})·camelCase 数组。bodyFields 锚恒在 postIds（'*'=有值即过·数组内容随被查公告变）。bodyForbidden 锚 snake 泄漏 post_ids + 复数前缀 posts/announcement/detail。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "post/announcement/detail",
+      "bodyFields": {
+        "postIds": "*"
+      },
+      "bodyForbidden": ["post_ids", "posts/announcement/detail"]
+    },
+    "projection": {
+      "event": "im:read:result",
+      "dataKeys": ["req_id", "body"],
+      "_note": "projection-schema §1.2：读族成功回灌外层恒 {req_id, body}。body = 后端 detail 响应体原样透传（announcementRows 仅公告表）·inner 不冻结。键集 = 2 键严格对齐。"
+    }
+  },
+
+  "storage": {
+    "_note": "N/A (三端点纯读 announcement 表·查询只读无 write)。装饰器 facet④ 不暴露读路径。reducer runFourFacetRead 不裁定 ④ 面。"
+  },
+
+  "dom": {
+    "_note": "N/A (读族无 write 驱动 DOM 契约面)。查询结果列表由前端从透传 body 抽公告后渲染·属前端渲染非冻结契约面·reducer 不裁定 ③ 面。"
+  }
+}

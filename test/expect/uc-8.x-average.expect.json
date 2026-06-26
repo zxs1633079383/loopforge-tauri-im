@@ -1,0 +1,100 @@
+{
+  "$schema-note": "四面期望文件 (UC-8.x 平均分 CRUD) — vote/score 第二网关 :3399（partials/6 集合八）。五命令分写族/读族两类断面：写族 publish/attend/close/delete（helix is_read=false·fire-and-forget·数据走 server WS post_updated 回声·HTTP 响应仅 ack 可丢）→ 断面 = ① 出站 wire body 逐字检（urlEndsWith + bodyFields camelCase + bodyForbidden 禁 snake/req_id 泄漏），② 投影标 optional（写族无读族回灌·单账号 L1 无 server WS post_updated 可观测·真 server-data/WS-dep·见 ledger UC-8.x；reducer isProjectionOptional 短路总绿·守可证伪——少 ① 出站仍红）。③ DOM data-average / ④ message.props 由 server WS 回声驱动·单账号 L1 物理够不到（写族 fire-and-forget·无本账号自身可观测 echo）= 真 server-data/WS-dep（同 ledger·同 vote 族）。读族 averageRead（helix is_read=true）→ 断面 ①②：① 出站 {id} 逐字检；② 投影 im:read:result {req_id, body} 外层键集 + req_id 锚（emit_read_result 200 OR emit_read_error 500 皆回灌 im:read:result·envelope 恒可观测·与「需真 average id 见 200」的 inner data-dep 解耦——envelope 面不依赖真 id）。reducer runFourFacetRead 裁定（写族走 projection.optional 短路·读族走 dataKeys 严格）。",
+  "ucId": "UC-8.x-average",
+  "title": "平均分 CRUD（vote/score 第二网关·写族 4 ① + 读族 1 ①②·publish/attend/read/close/delete）",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/src/outbound/vote_score.rs §average 命令族（真源 partials/6 §用例集合八 / message.service.ts 29-110）：average/publish AveragePublishCommand 整 args 透传 {title,content,maxScore,minScore,isDelMaxMin,isAnonymous,cutoff,members[],hasDecimal?,decimalPlaces?,source?}（同 createVote 整 obj 透传）· average/attend AverageAttendCommand {id, score:number, postId?}（id 必填·score 必为 number·postId 可选）· average/read AverageReadCommand {id}（读族·id_body）· average/close AverageCloseCommand {id, postId?} · average/delete AverageDeleteCommand {id}（id_body）；全 camelCase wire",
+    "projection-read": "helix/crates/helix-im/docs/projection-schema.md §1.2 query::emit_read_result (im:read:result {req_id, body}) · emit_read_error (im:read:result {req_id, error})",
+    "projection-write": "helix/crates/helix-im/docs/projection-schema.md §to_effect::emit_post_updated (im:post:updated fat) — 写族 average 经 server WS post_updated 回声驱动·单账号 L1 无 server 回声可观测（真 server-data/WS-dep·见 uc-coverage-ledger.md UC-8.x）→ 本期望写族 ② 标 optional",
+    "dom": "N/A 单账号 L1（data-average 由 emit_post_updated props.average 透传渲染·写族 fire-and-forget 无本账号自身可观测 echo·真 server-data/WS-dep）",
+    "storage": "N/A 单账号 L1（message.props average 由 server WS 回声落库·写族无本账号可观测 echo·真 server-data/WS-dep）"
+  },
+
+  "corrAnchor": {
+    "note": "average 命令无四维领域键（outbound wire body 携 id/title/score 等·非 ch/tmp/sid 别名）。写族在 set_uc 窗口内按 endpoint(urlEndsWith) 找 ① 出站唯一·② optional 短路。读族 averageRead 的 projection req_id 由 e2e invoke 时生成经 bridge 透传·helix read_req_id 抠出注册回灌·reducer 按 req_id 锚 ②。",
+    "req_id": null
+  },
+
+  "averagePublish": {
+    "_note": "① /average/publish 写族子期望（flat·diffOutbound 直消费·projection.optional → ② N/A 短路）。整 args 透传：e2e 经 im_average_publish({fields}) 注入 camelCase wire 字段（title/content/maxScore/minScore/isDelMaxMin/isAnonymous/cutoff/members）→ helix AveragePublishCommand 整 obj 透传出站 body。bodyFields 锚 e2e 注入的字段；bodyForbidden 锚 snake 泄漏（max_score/min_score 误写无）+ req_id 泄漏（写族不应携 reqId·整透传若误带 reqId 会污染 body·守可证伪）+ snake user_id/fromUserId。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "average/publish",
+      "bodyFields": {
+        "title": "*",
+        "content": "*",
+        "maxScore": "*",
+        "minScore": "*",
+        "isAnonymous": "*"
+      },
+      "bodyForbidden": ["max_score", "min_score", "is_anonymous", "req_id", "reqId", "user_id", "fromUserId"]
+    },
+    "projection": { "optional": true }
+  },
+
+  "averageAttend": {
+    "_note": "① /average/attend 写族子期望。wire body 真源 vote_score.rs AverageAttendCommand：{id, score:number, postId?}（score 必为 number）。bodyFields 锚 id+score（postId 可选·e2e 提供则在·不强断）；bodyForbidden 锚 snake(post_id) + req_id 泄漏。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "average/attend",
+      "bodyFields": {
+        "id": "*",
+        "score": "*"
+      },
+      "bodyForbidden": ["post_id", "req_id", "reqId"]
+    },
+    "projection": { "optional": true }
+  },
+
+  "averageRead": {
+    "_note": "①② /average/read 读族子期望（is_read=true·im:read:result 回灌）。wire body 真源 vote_score.rs AverageReadCommand id_body：{id}。req_id 经 payload 透传但 id_body 不泄漏进 wire body·read_req_id 抠出注册回灌。① bodyFields 锚 id·bodyForbidden 锚 req_id/reqId 泄漏（守 id_body 不漏 reqId）+ snake。② projection im:read:result 外层 {req_id, body}（emit_read_result 200 或 emit_read_error 500 皆产此 envelope·envelope 键集恒可观测·与 inner 真 average id data-dep 解耦）。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "average/read",
+      "bodyFields": {
+        "id": "*"
+      },
+      "bodyForbidden": ["req_id", "reqId", "average_id"]
+    },
+    "projection": {
+      "event": "im:read:result",
+      "dataKeys": ["req_id", "body"],
+      "_note": "projection-schema §1.2：读族回灌外层恒 {req_id, body}（成功）。注：HTTP500（坏 average id）走 emit_read_error → im:read:result {req_id, error}·dataKeys 变 {req_id, error}。期望取成功 envelope {req_id, body}；若本机 server 对该 id 恒 500 则键集为 {req_id, error}（②会红）→ 此为真 inner data-dep·按 C004 改环境（喂真 average id）或标 yellow 留证据·非改 oracle。"
+    }
+  },
+
+  "averageClose": {
+    "_note": "① /average/close 写族子期望。wire body 真源 vote_score.rs AverageCloseCommand：{id, postId?}。bodyFields 锚 id（postId 可选不强断）·bodyForbidden 锚 req_id 泄漏 + snake(post_id)。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "average/close",
+      "bodyFields": {
+        "id": "*"
+      },
+      "bodyForbidden": ["post_id", "req_id", "reqId", "average_id"]
+    },
+    "projection": { "optional": true }
+  },
+
+  "averageDelete": {
+    "_note": "① /average/delete 写族子期望。wire body 真源 vote_score.rs AverageDeleteCommand id_body：{id}。bodyForbidden 锚 req_id 泄漏 + snake。",
+    "outbound": {
+      "method": "POST",
+      "urlEndsWith": "average/delete",
+      "bodyFields": {
+        "id": "*"
+      },
+      "bodyForbidden": ["req_id", "reqId", "average_id"]
+    },
+    "projection": { "optional": true }
+  },
+
+  "storage": {
+    "_note": "N/A 单账号 L1（写族 fire-and-forget·message.props average 由 server WS post_updated 回声落库·本账号无可观测 echo·真 server-data/WS-dep·见 ledger UC-8.x）。reducer 不裁定 ④ 面。"
+  },
+
+  "dom": {
+    "_note": "N/A 单账号 L1（data-average 由 emit_post_updated props.average 透传渲染·写族无本账号自身可观测 echo·真 server-data/WS-dep）。reducer 不裁定 ③ 面。"
+  }
+}

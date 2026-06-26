@@ -1,0 +1,54 @@
+{
+  "$schema-note": "四面期望文件 (UC-2.2) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现或本仓渲染壳。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-2.2",
+  "title": "上拉加载更老历史：多轮 postContext query → messages:older_loaded 投影 → prepend 消息行",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/01-接口可达性清单.md §3.2 posts.go line177 postContext",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1.3 im:messages:older_loaded",
+    "dom": "loopforge-tauri-im docs/spec/send-message-vertical-slice.md (prepend older messages)",
+    "storage": "helix/crates/helix-im/docs/projection-schema.md §4 DB 列（message 表）"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：首轮 query 的 postId 与返回的第一条更早消息的 channelId/eventSeq 锚定；query 多轮累积消息至 hasMore=false。",
+    "postId": "*",
+    "firstMsgSeq": "*"
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "posts/postContext",
+    "bodyFields": {
+      "postId": "*",
+      "before": "*"
+    },
+    "bodyForbidden": ["post_id", "before_id"],
+    "_note": "真源 01-接口可达性清单 §3.2 line177：postContext body={postId,before}（camelCase）。多轮调用，moving anchor 机制推进。before 值由上轮返回结果决定（>=0 数字或字符串标记）。禁 snake_case 泄漏。"
+  },
+
+  "projection": {
+    "event": "im:messages:older_loaded",
+    "dataKeys": [
+      "channelId",
+      "messages",
+      "hasMore"
+    ],
+    "_note": "projection-schema §1.3：im:messages:older_loaded 外层键集恒为 {channelId, messages, hasMore}。messages=严格更早 wire Post 升序数组透传（camelCase createAt/temporaryId/id/type/message 等，inner 字段由后端定不冻结）。hasMore=true 表尚有更早消息；false 表到顶（凑够 target 或服务端无更早或轮数耗尽）。缺 outer 键即漂移。"
+  },
+
+  "storage": {
+    "_note": "N/A (读族编排·无 write)。冻结真源 projection-schema §1.3 行 137：older_context::emit_older_loaded = 『helix-im 编排，前端 prepend』——older_context.rs 只产 Effect::Http(多轮 postContext) + Effect::Emit(older_loaded)，**无 Effect::Persist**（与 UC-2.4 getReplies 同读族形态·不落新行·cursor 不推进）。reducer runFourFacetRead 不裁定 ④ 面。〔Phase1 草拟 expect 曾据 issue 锚『④ message upsert』填 batch_upsert·与 round6 实现 + projection-schema §1.3 冲突·按 C004 以冻结真源 projection-schema 校正为 N/A。〕"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "msg-id": "*",
+      "event-seq": "*",
+      "temporary-id": "*",
+      "channel-id": "*",
+      "send-status": "*"
+    },
+    "_note": "prepend 逻辑：消息行由旧（高 seq）到新（低 seq）累积到 DOM 头部（history 方向）。data-msg-id 应为 server id（非 tmp），data-event-seq 单调递增（history 消息 seq 逆序可能），data-send-status 多为 sent 或 received。行选择器贯穿全部返回消息（非仅最后一条）。"
+  }
+}

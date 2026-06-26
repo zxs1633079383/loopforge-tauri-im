@@ -1,0 +1,49 @@
+{
+  "$schema-note": "四面期望文件 (UC-5.5 频道置顶·per-member channel pin) — oracle 本体。只读契约 (contract-readonly-autofix.md §1 / harness C004)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现 / 本仓渲染壳 / 机器件（reducer target 选择·装饰器抽键·seed）。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-5.5",
+  "title": "频道置顶（per-member 对话置顶）：UI 置顶开关 → 出站 channel/change/top {channelId, top} → WS update_channel PATCH（channelIsTop→is_top 列）→ ④ channel 表 batch_update + ② im:channel:update（thin·{channel_id}·increment_channel_end 批次结束触发）→ ③ DOM data-channel-top 回读",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/src/outbound/channel_change.rs ChangeTopCommand（im_channel_change_top → POST channel/change/top · body {channelId, top}·全 camelCase·#18 command.UpdateChannelTopCommand per-member 置顶）。真源 partials/6 UC-5.5 + coverage-crossmap.md 行93（channel/change/top·partial·UC-5.5）。",
+    "projection": "helix/crates/helix-im/src/acl/projection_control_effects.rs::emit_channel_update + projection-schema.md 行61（to_effect::emit_channel_update → im:channel:update·{channel_id}·留瘦 channel-row·WS increment_channel_end 批次结束触发）。频道置顶**不**走独立 channelUpdate 系统 post（≠ UC-5.4 改群名/公告 server NOTICE echo）——走真 update_channel WS PATCH path2 + 批次结束 thin emit（与 UC-4.1 ② im:channel:update 同形态）。",
+    "dom": "docs/uc-coverage-ledger.md §UC-5.5 ③ data-channel-top（is_top 列回读·壳 applyDialogList normalizeIsTop 把 channel.is_top 列落成布尔 → data-channel-top='1'·壳纯渲染只透传 channel 列不在 JS 臆造置顶态）。",
+    "storage": "helix/crates/helix-im/src/acl/storage_effects.rs::update_channel_partial（StorageOp::BatchUpdate channel·key_col=id·patch 含 is_top 列·channel_write/program.rs:60 channelIsTop→is_top INTEGER）。装饰器 facet④ payload {op:'batch_update', table:'channel', id:<channelId>, keys:1}（storage.rs:66）。"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：频道置顶作用于已存在的 channelId（出站 body {channelId, top} 的 channelId = 该 channelId）。① 出站 channel/change/top 经标准 body.channelId 探针（ch 别名）归 ch 束（窗口内唯一一条 change/top）。② im:channel:update（thin·{channel_id}·ch 锚）④ channel batch_update（table=channel·key_col=id→表感知归一 channel.id→ch）均经 ch 与 ① 同束。e2e 选锚频道（本人新建·有 admin 权限）填实 ch 覆写本字段。",
+    "ch": null
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "channel/change/top",
+    "bodyFields": {
+      "channelId": "*",
+      "top": "*"
+    },
+    "bodyForbidden": ["id", "channel_id", "displayName", "notice"],
+    "_note": "ChangeTopCommand 真源：body = {channelId, top}（channelId=目标频道·top=bool 置顶/取消·全 camelCase）。bodyForbidden 锚——置顶 body 只该携 channelId+top，不该混入 id（≠ displayName/notice 族用 id 键·top 族用 channelId·helix channel_change.rs 同族不同键注释）/ channel_id 别名（snake 泄漏）/ displayName / notice（改名改公告族字段·置顶无）。① 出站经标准 body.channelId 探针（ch 别名·窗口内唯一一条 channel/change/top）归锚 ch 束。"
+  },
+
+  "projection": {
+    "event": "im:channel:update",
+    "dataKeys": ["channel_id"],
+    "_note": "频道置顶 server echo = update_channel WS PATCH（path2·collect_present 收 channelIsTop→is_top 列）→ 批次结束 increment_channel_end 触发 emit_channel_update → im:channel:update（thin·{channel_id} 单键·projection-schema 行61 留瘦 channel-row）。字段集严格 {channel_id} 单键（缺/多即 fail）。≠ UC-5.4 改群名走 channelUpdate 系统 post（im:post:received·fat）——置顶是真 update_channel 路径（与 UC-4.1 ② 同 emit_channel_update 工厂·thin 形态）。"
+  },
+
+  "storage": {
+    "op": "batch_update",
+    "table": "channel",
+    "minRows": 1,
+    "_note": "update_channel_partial → StorageOp::BatchUpdate channel（key_col=id·key_vals=[channelId]·patch 含 is_top INTEGER 列）。装饰器 facet④ batch_update payload {op:'batch_update', table:'channel', id:<channelId>, keys:N}（storage.rs:66-75·keys=key_vals.len()·reducer rows ?? keys 归一 → minRows≥1）。表感知归一（table=channel·id 即 channelId·无 channel_id）→ 经 ch 与 ②① 同束（≠ UC-5.4 displayName 走 message batch_upsert 系统 post 落库）。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "channel-id": "*",
+      "channel-top": "1"
+    },
+    "_note": "ledger §UC-5.5 ③：data-channel-top（is_top 列回读·置顶后 update_channel PATCH→is_top=1→im:channel:update thin 触发 dialogList 重查→fat dialogList 携 is_top→壳 applyDialogList normalizeIsTop 落 ChannelRow.top=true→data-channel-top='1'·壳纯渲染只透传 channel 列不在 JS 臆造）。e2e 等该行 data-channel-top=='1' 后读注入 reducer。"
+  }
+}

@@ -55,4 +55,6 @@ pub struct AppState {
     pub ctx: InstrumentCtx,
     /// 就绪 probe 状态。
     pub probe: Arc<ReadinessProbe>,
+    /// 本机身份（profile 真源·team_id/self user_id）——`im_create_channel` 拼 body 用。
+    pub identity: crate::engine::ImIdentity,
 }

@@ -1,0 +1,23 @@
+{
+  "$schema-note": "四面期望文件 (UC-12.1 健康探针·连通性) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现或本仓渲染壳。健康探针四面：① 出站 GET /api/cses/health（无请求体·真源 partials/3 §15 healthCheck → 裸 {status:OK}·不走业务信封）② 投影 N/A（本 UC 仅 ① 面·读族 im:read:result 为回灌副产·非冻结业务面·标 optional 不裁定）③ DOM data-health（可选·非冻结面）④ 落库 N/A（健康端点无 DB 表）。本 UC = 连通性探针·只验 ① 出站 GET health + 200。",
+  "ucId": "UC-12.1",
+  "title": "健康探针：UI 触发 → 出站 GET /api/cses/health（无请求体）→ 200 连通性",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/csesapi-migration/full-map/partials/3--backend-http-user-misc.md §15 GET /api/cses/health（healthCheck·health.go:9·无请求体·不走业务信封·裸 ReturnStatusOK → {\"status\":\"OK\"}）；helix outbound/user_misc.rs HealthCommand 实证：(\"health\", json!({})) GET·base = api_base_url（含 /api/cses）→ url 以 /api/cses/health 结尾。",
+    "projection": "本 UC 仅 ① 面（issue #41·连通性+200）。读族 is_read=true → helix read_relay::emit_read_result 回灌 im:read:result{req_id, body:{status:OK}} 为副产·非冻结业务面 → expect.channelHealth.projection 缺省 = optional（reducer isProjectionOptional → ② N/A 不裁定·守可证伪：少 ① 出站仍红）。",
+    "dom": "docs/uc-coverage-ledger.md §UC-12.1 ③ data-health（可选·H 区指示件·store._health 由 im:read:result body.status 设）。本 UC 验收不依赖 ③（仅 ① 面）。",
+    "storage": "健康端点无 DB 表（partials/3 §15 DB 表: 无）→ ④ N/A。"
+  },
+
+  "channelHealth": {
+    "ucId": "UC-12.1",
+    "outbound": {
+      "method": "GET",
+      "urlEndsWith": "/api/cses/health",
+      "bodyFields": {},
+      "bodyForbidden": ["channel_id", "channelId", "id", "status"],
+      "_note": "真源 partials/3 §15：GET /api/cses/health·**无请求体**（healthCheck 不 decode 请求体）。method=GET·url 以 /api/cses/health 结尾（base api_base_url 含 /api/cses + path health）。bodyFields 空（GET 空 body·helix HealthCommand 产 json!({}) → 序列化 {}·diffOutbound 不强求字段·空对象即合法）。bodyForbidden 锚——健康探针不该携任何业务字段（channelId/id/status 等·健康是裸连通性请求）。① 出站经 reducer runFourFacetRead 在 UC 窗口内按 urlEndsWith /api/cses/health 找唯一 GET（窗口隔离·非 tautology：少 invoke 即 ① 红）。"
+    }
+  }
+}

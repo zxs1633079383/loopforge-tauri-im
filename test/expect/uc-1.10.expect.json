@@ -1,0 +1,52 @@
+{
+  "$schema-note": "四面期望文件 (UC-1.10) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现或本仓渲染壳。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-1.10",
+  "title": "定时消息 create — 乐观上屏 → echo schedule-created + hasSchedulePost flag",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/src/outbound/posts_existing.rs §3 im_create_schedule（endpoint posts/createSchedule 行 70-97）",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1 表行 72（to_effect_s1::emit_schedule_created）",
+    "dom": "docs/spec/send-message-vertical-slice.md §4 DOM 契约 + 本 UC data-has-schedule-post",
+    "storage": "helix/crates/helix-im/docs/projection-schema.md §4 channel 表列 has_schedule_post"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：schedule-created echo 帧的 channelId 由 e2e 在运行时填实值后覆写本字段（占位 *）；reducer 用它锁定目标束。",
+    "ch": null
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "posts/createSchedule",
+    "bodyFields": {
+      "post": "*",
+      "schedulePostAt": "*"
+    },
+    "bodyForbidden": [],
+    "_note": "helix posts_existing.rs 行 93-96：body 含嵌套 post 对象（channelId, message, temporaryId?）+ schedulePostAt int64 毫秒戳。响应 HTTP200。"
+  },
+
+  "projection": {
+    "event": "im:channel:schedule-created",
+    "dataKeys": [
+      "channelId",
+      "hasSchedulePost"
+    ],
+    "_note": "projection-schema.md 行 72：emit_schedule_created 工厂产出，触发路径 WS post_schedule_created action。数据键集冻结 2 字段，缺/多即 fail（FixB 反转：少一字段=漂移）。命名 camelCase 对齐现网 wire 透传。"
+  },
+
+  "storage": {
+    "op": "batch_update",
+    "table": "channel",
+    "minRows": 1,
+    "_note": "projection-schema.md §4 DB 列：channel 表的 has_schedule_post bool 列被 schedule-created WS 帧 patch 后落库。装饰器 facet④ 暴露 {op,table,keys}（keys=更新键数·reducer 归一 rows≥1）。op=batch_update：helix storage port 无 plain `update` op（ports/storage.rs:82 注 `update(single_row)` == `batch_update(len=1)`），单行 channel patch 即 batch_update（与 UC-1.5/1.8/1.9 row-patch 同 op·run.jsonl 实证 {op:batch_update,keys:1,table:channel}）。Phase1 草拟误写 `update`·2026-06-25 据 run.jsonl + helix port API 纠正。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "has-schedule-post": "true",
+      "channel-id": "*"
+    },
+    "_note": "spec §4 契约：schedule-created echo 后，对应 channel 行 DOM 节点 data-has-schedule-post 覆写为 true。选择器锚 [data-channel-id=ch]。"
+  }
+}

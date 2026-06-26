@@ -88,3 +88,64 @@ helix 引擎（上游 path dep）              helix-core 零改 · helix-im 零
 ## 7. 提交规范
 
 Conventional Commits（中文 description/body）；触发结构化 body 条件命中时按 5 段（影响范围/改动影响面/功能改进/Harness 更新/验证）。禁 `wip`/`update xxx`，禁 attribution。
+
+---
+
+## 8. UC Rollout 纪律（强约束 · 每次铺 UC 必遵）
+
+> 真源：`docs/uc-rollout/rollout-checklist.md`（依赖序 阶段0-7 共 31 UC + L2 4·勾选）· `coverage-crossmap.md`（124 HTTP/19 WS 逐个对 UC）· `uc-coverage-ledger.md`（四面契约）。
+> **长任务执行 runbook**：`docs/uc-rollout/autonomous-runbook.md`（autonomous 跑 issues #7-#41 的单一执行真源·开局先读）。GitHub issues：Epic #6 + UC #7-#45。
+
+1. **按依赖序铺**：阶段 0 就绪(4.1) → 1 建频道(5.1/5.2) → 2 发消息(1.x) → 3 对消息操作(已读/撤回/转发) → 4 历史(2.x) → 5 频道/成员(5.x/6.x) → 6 杂项 → 7 teams/运维(5.8/11.1/11.2/12.1) → L2 双账号。**没有群聊无法发消息**，后序复用前序真实数据。
+2. **闭环**：接最简 UI → `bash scripts/run.sh -- --spec test/specs/uc-X.e2e.mjs`（**seeded db** `/tmp/loopforge-im.db`，否则无 active channel）→ 四面 reducer →「断在哪一跳」。红多为校正 Phase1 草拟契约 / 复用已有修复（corr-key posts[]、storage rows‖keys）。
+3. **e2e 四面全绿驱动收口（每 UC）**：翻台账 ✅ + 勾 checklist + commit + tag（按需）。**红 → 四段日志（runbook §6.1）定位哪一端 → 确认 loopforge/helix 缺陷即修 + 验证**（契约只读永久不变·绿由 reducer 裁定 C009）；go-server 默认对除 gRPC/诡异（gRPC 按 §6.1 修 + 重启 cses-java + 重发）。〔早先「helix 只标记不改」临时约束已解除·见 C004。〕
+4. **每阶段全部 UC 四面全绿 → 立即打 tag** `v0.x-phaseN-<slug>`（message 带覆盖 commit 范围 + 该阶段 UC 列表 + 验证状态），**并补全该阶段每个 UC** 的 `test/specs/uc-X.e2e.mjs` + `test/expect/uc-X.expect.json`（e2e 真跑过）。
+5. **bot/agent 整域不测**（37 HTTP+1 WS 已移除）；UC-1.3 文件上传 🌙 按需（接口在 java）；5.6/5.7/7.x/4.3 ⛔ 后端阻塞不管。
+6. **已立 tag**：`v0.1-basic`（foundation + 竖切 3 绿 UC-1.1/1.2/1.5 基线）。
+
+---
+
+## 9. Harness Engineering（长运行约束 · 开局必读索引）
+
+> 方法论真源（Layer C·按需 Read）：`/Users/mac28/workspace/angular/cses-client/docs/harness-Engineer最佳实战.md`。Layer B 索引：`docs/harness/README.md`。**不要把方法论全文拷进本文件**。
+
+**三铁律**：① 踩坑→写 `/workspace/java/logs/{date}.json`（hook 自动）② 同根因 ≥3 / 用户明确 / Spec 拍板 → 即时新建 `docs/harness/C{NNN}-*.md`（同会话内）③ harness active 增删 → 即时同步本 §9 索引表 + `docs/harness/README.md`（一次 commit）。
+**何时 Read 方法论全文**：autonomous/长任务开始前 · 第一次新建 card · active 升 merged/deprecated · 用户问「怎么不再踩同一个坑」。
+**card 须有可执行 §4 Verification**（grep/CI/test），写不出 → 不是 harness（走 SESSION/log/coding-style）。
+
+**在册 harness（active）**：
+| 编号 | 标题（一句话） | 状态 |
+|---|---|---|
+| C001 | helix 依赖单一 git 快照（全 helix-* 同源同 rev·禁 path/git 混用） | active |
+| C002 | 就绪 probe 判据与投影名解耦（禁硬编 name.contains("increment")） | active |
+| C003 | live 验证须 seeded DB（清 DB 无 active channel·send 族全卡） | active |
+| C004 | 四面契约只读·红转绿改实现不改 oracle（helix/loopforge 缺陷确认即修+验证） | active |
+| C005 | reducer 跨形态归一（corr-key 探 posts[]·storage rows‖keys） | active |
+| C006 | UC rollout 依赖序 + 每阶段全绿→tag+补用例 | active |
+| C007 | Angular 模板加 (event) 必同步加组件方法（否则 ng serve 挂·run 假死） | active |
+| C008 | 测试可证伪铁律——破坏即 fail·禁墙钟下界·禁 tautology（借鉴 helix HX-C011） | active |
+| C009 | 自动修复 agent 禁自产自判——红转绿由独立 reducer 裁定（借鉴 helix HX-C009/C012） | active |
+| C010 | 金标帧=现网真抓非手写猜测·补帧 playbook（借鉴 helix golden fixtures） | active |
+| C011 | UC 台账诚实出账——分级图例·禁橡皮章借证据冒充（借鉴 helix ledger） | active |
+| C012 | 提交闸门机器强制——pre-push hook 跑 gate.sh + clippy 卫生（借鉴 helix install-hooks/clippy） | active |
+
+> 闸门：`bash scripts/gate.sh`（镜像/harness 索引不变量/录放 feature 闸/reducer 自测/expect JSON/helix 单版本/行数/clippy）。新 clone 跑 `bash scripts/install-hooks.sh` 装 pre-push 自动强制。
+
+---
+
+## Agent skills
+
+> Matt Pocock 工程 skills 全家桶的本仓配置（`setup-matt-pocock-skills` 2026-06-24 产出）。
+> 主线：`/grill-with-docs` →（必要时 `/handoff`↔`/prototype`）→ `/to-prd` → `/to-issues` →（每 issue 新会话）`/implement`；拿不准用 `/ask-matt`；入口前置即本节。
+
+### Issue tracker
+
+GitHub Issues（`github.com/zxs1633079383/loopforge-tauri-im`·`gh` CLI；**外部 PR 也作 `/triage` 请求面**）。See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+默认 5 角色标签（`needs-triage`/`needs-info`/`ready-for-agent`/`ready-for-human`/`wontfix`·标签名=角色名）。See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context（根 `CONTEXT.md` + `docs/adr/`·懒创建；helix 引擎是外部 path-dep 不算本仓 context）。See `docs/agents/domain.md`.

@@ -1,0 +1,47 @@
+{
+  "$schema-note": "四面期望文件 (UC-5.3 关闭/退出群·channel close) — oracle 本体。只读契约 (contract-readonly-autofix.md §1 / harness C004)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现 / 本仓渲染壳 / 机器件（reducer target 选择·装饰器抽键·seed）。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-5.3",
+  "title": "关闭/退出群：UI 关闭/退出群件 → 出站 channel/close {channelId} → WS channel_close（broadcast 到 channelId·自己也收）→ ④ channel 表 batch_update（delete_at + is_active=0 定点 patch）+ ② im:channel:closed{channelId, deleteAt}（独立 broadcast 推送·非批次结束 thin）→ ③ DOM channel 行移除（data-channel-id !absent）",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/src/outbound/channel_existing.rs ChannelCloseCommand（#27 im_channel_close → POST channel/close · body {channelId}·真源 {ChannelId}·真机curl真源 §6）。coverage-crossmap.md channel/close → UC-5.3。",
+    "projection": "helix/crates/helix-im/src/acl/to_effect_s1.rs::emit_channel_closed（channel_close → im:channel:closed·真源 channel.rs:593 `{channelId, deleteAt}`·全 camelCase）。关闭群 server echo = WS channel_close action（ws/handlers/channel_close.rs·broadcast 到 channelId·自己也收）→ 独立 broadcast 推送（≠ UC-5.5 置顶批次结束 thin im:channel:update）。",
+    "dom": "docs/uc-coverage-ledger.md §UC-5.3 ③ channel 行移除：im:channel:closed 投影 → 壳 applyChannelClosed 把该 channelId 行从 CL 区 filter 删除（data-channel-id 消失·壳纯渲染只消费投影删行·不在 JS 臆造软删态）。e2e 等该行 data-channel-id 缺失（!absent）后注入 reducer。",
+    "storage": "helix/crates/helix-im/src/ws/handlers/channel_close.rs handle → to_effect_s1::channel_set_cols（StorageOp::BatchUpdate channel·key_col=id·key_vals=[channelId]·patch=delete_at + is_active=0·对齐现网 update_fields）。装饰器 facet④ payload {op:'batch_update', table:'channel', id:<channelId>, keys:1}（storage.rs:66-75·keys=key_vals.len()·reducer rows ?? keys 归一 → minRows≥1）。"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：关闭群作用于已存在的 channelId（出站 body {channelId} 的 channelId = 该 channelId）。① 出站 channel/close 经标准 body.channelId 探针（ch 别名·窗口内唯一一条 channel/close）归 ch 束。② im:channel:closed（data.channelId·ch 锚·extract_corr_key 顶层 channelId 探针）④ channel batch_update（table=channel·key_col=id→表感知归一 channel.id→ch）均经 ch 与 ① 同束。e2e 选锚频道（本人新建·有 admin 权限关闭）填实 ch 覆写本字段。",
+    "ch": null
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "channel/close",
+    "bodyFields": {
+      "channelId": "*"
+    },
+    "bodyForbidden": ["id", "channel_id", "top", "displayName", "notice", "deleteAt"],
+    "_note": "ChannelCloseCommand 真源：body = {channelId}（channelId=目标频道·全 camelCase·#27 真源 {ChannelId}）。bodyForbidden 锚——关闭 body 只该携 channelId，不该混入 id（≠ displayName/notice 族用 id 键·close 族用 channelId）/ channel_id 别名（snake 泄漏）/ top / displayName / notice（其他 change 族字段·close 无）/ deleteAt（deleteAt 是 server 端 channel_close 帧回带·非出站 body·出站不臆造删除时间）。① 出站经标准 body.channelId 探针（ch 别名·窗口内唯一一条 channel/close）归锚 ch 束。"
+  },
+
+  "projection": {
+    "event": "im:channel:closed",
+    "dataKeys": ["channelId", "deleteAt"],
+    "_note": "关闭群 server echo = WS channel_close action（ws/handlers/channel_close.rs·broadcast 到 channelId）→ emit_channel_closed → im:channel:closed（{channelId, deleteAt}·全 camelCase·真源 channel.rs:593）。字段集严格 {channelId, deleteAt}（缺/多即 fail）。≠ UC-5.5 置顶走 emit_channel_update（thin·{channel_id}·批次结束）——关闭是独立 broadcast 推送（channel_close action 即时 emit·非 increment_channel_end 批次结束 thin）。"
+  },
+
+  "storage": {
+    "op": "batch_update",
+    "table": "channel",
+    "minRows": 1,
+    "_note": "channel_close.rs handle → channel_set_cols（StorageOp::BatchUpdate channel·key_col=id·key_vals=[channelId]·patch=delete_at + is_active=0）。装饰器 facet④ batch_update payload {op:'batch_update', table:'channel', id:<channelId>, keys:1}（storage.rs:66-75·keys=key_vals.len()·reducer rows ?? keys 归一 → minRows≥1）。表感知归一（table=channel·id 即 channelId·无 channel_id）→ 经 ch 与 ②① 同束（与 UC-5.5 置顶同落库路径·不同 patch 列）。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "channel-id": "!absent"
+    },
+    "_note": "ledger §UC-5.3 ③：channel 行移除（im:channel:closed 投影 → 壳 applyChannelClosed 把该 channelId 行从 CL 区 filter 删除·data-channel-id 消失·壳纯渲染只消费投影删行·不在 JS 臆造软删态）。!absent 语义：该 data-channel-id 必须**不存在**（行已移除）·行仍在即 ③ 红（删行未发生·非 tautology·守可证伪）。e2e 等该行 data-channel-id 缺失后注入 reducer。"
+  }
+}

@@ -1,0 +1,9 @@
+# clippy 轻量卫生 deny-list（借鉴 helix「约束嵌进工具链——犯错触发 CI 红而非等人 review」）
+# lint 级别在 workspace Cargo.toml [workspace.lints.clippy]（unwrap/panic/dbg/todo 等）；
+# 本文件放 disallowed-* 名单（针对具体危险调用）。
+# 注：loopforge 核心不变量（helix 零改 / release 不带录放 / 仪表只在 instrument）clippy 表达不了，
+#     由 scripts/gate.sh 的 grep 步骤拦（gate.sh 第 3/6 步）。
+
+disallowed-methods = [
+  { path = "std::process::exit", reason = "Tauri 壳禁硬退出——走正常生命周期 / RunEvent::Exit" },
+]

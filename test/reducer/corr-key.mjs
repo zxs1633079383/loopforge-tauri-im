@@ -8,7 +8,11 @@
 // 领域映射（spec §2 / four-facet-oracle）：
 //   ch  = channelId   (channel_id / channelID)
 //   tmp = temporaryId (temporary_id)
-//   sid = serverId    (id / postId / post_id / serverId / server_id)
+//   sid = serverId    (id / postId / post_id / serverId / server_id / msg_id)
+//         msg_id 是投影 envelope（im:post:received/updated）携 server post id 的键——加入 sid 别名
+//         使「投影(msg_id) ↔ 出站(postId) ↔ 落库(id)」三面经 sid 聚同束（UC-1.9 加急 post_update
+//         投影用 msg_id 非 id；不加则投影只抽 tmp/ch/seq·与 sid 锚的出站/落库不并束 → ④ 永红）。
+//         tmp 仍是 send 主事件首选锚（sameEvent tmp 优先），msg_id 入 sid 为附加锚·不破坏 tmp 聚束。
 //   seq = eventSeq    (event_seq / seq)
 //
 // ⚠️ 只读语义：本文件是 oracle 的领域规则，属契约族；改抽键规则 = 改对账口径，
@@ -21,7 +25,7 @@ export const DIMS = /** @type {const} */ (['ch', 'tmp', 'sid', 'seq']);
 const ALIASES = {
   ch: ['channelId', 'channel_id', 'channelID'],
   tmp: ['temporaryId', 'temporary_id'],
-  sid: ['id', 'postId', 'post_id', 'serverId', 'server_id'],
+  sid: ['id', 'postId', 'post_id', 'serverId', 'server_id', 'msg_id'],
   seq: ['eventSeq', 'event_seq', 'seq'],
 };
 
@@ -41,9 +45,53 @@ function pickFrom(obj, keys) {
  * `sid` 的空串特殊处理：outbound send body 的 `id:""` 不算 server_id（发送时 server 未分配）。
  */
 export function extractDims(payload) {
-  const probes = [payload, payload?.data, payload?.body, payload?.body?.data].filter(
-    (p) => p && typeof p === 'object'
-  );
+  // URL 感知归一（UC-5.4 ① 群属性修改出站 channel/change/*）：出站 body = {id, displayName}
+  // / {id, notice} 等——此处 `id` == **channelId**（helix outbound channel_change*.rs 真源），
+  // 非 server post id。但 id 在 sid 别名里会被误抽成 sid → 与 ② im:channel:update（ch 锚）/
+  // ④ channel PATCH（ch 锚）不并束。专探：当出站 url 含 channel/change/ 且 body.id 非空字符串 →
+  // 组 ch 键，使 ① 与 ②④ 同束（与装饰器 event.rs::extract_corr_key channel/change/→ch 规则同步）。
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    typeof payload.url === 'string' &&
+    payload.url.includes('channel/change/') &&
+    payload.body &&
+    typeof payload.body === 'object' &&
+    typeof payload.body.id === 'string' &&
+    payload.body.id.length > 0
+  ) {
+    return { ch: payload.body.id };
+  }
+  // 表感知归一（UC-4.1 ④ storage channel 落库）：channel 表主键 `id` == channelId（非 server
+  // post id）→ 必抽成 ch 而非 sid，使 ④ 与 ② im:channel:increment（ch 锚）同束。
+  // 判据：payload.table === 'channel' 且无独立 channel_id（落库 payload {id,op,table,rows} 形态）。
+  // 不影响 post echo（{channel_id,id} → id 仍 sid）与 message 落库（table=message → id 仍 sid）。
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    payload.table === 'channel' &&
+    typeof payload.id === 'string' &&
+    payload.id.length > 0 &&
+    payload.channel_id === undefined &&
+    payload.channelId === undefined
+  ) {
+    return { ch: payload.id };
+  }
+  const probes = [
+    payload,
+    payload?.data,
+    payload?.body,
+    payload?.body?.data,
+    // 批量信封（im:post:batch-updated `data.posts:[{id,...}]`）：post id 嵌在数组元素内，
+    // 顶层只有 channel_id。探入 posts[0] 取 sid，使撤回/批量事件的投影能与出站(postId)、
+    // 落库(sid) 聚同一束。多 post 信封(转发 UC-1.7)首元素代表，后续按需扩展。
+    payload?.data?.posts?.[0],
+    payload?.posts?.[0],
+    // batch sync 出站（channels/load/increment）：channelId 嵌在 body.cursors[0]，
+    // 顶层/.data/.body 都无单频道锚。探 body.cursors[0] 取锚频道，使 ① 出站与
+    // per-channel ② projection / ④ storage 聚同一束（UC-4.1 ① 面·与装饰器 event.rs 对齐）。
+    payload?.body?.cursors?.[0],
+  ].filter((p) => p && typeof p === 'object');
   /** @type {{ch?:string,tmp?:string,sid?:string,seq?:string}} */
   const dims = {};
   for (const dim of DIMS) {
@@ -56,6 +104,22 @@ export function extractDims(payload) {
         break;
       }
     }
+  }
+  // UC-3.2 单条已读出站 `post/read`：body = {channelId, posts:[postId]}。posts 是**字符串**数组
+  // （元素非对象→上面 probes[posts[0]] 取不到 sid，pickFrom 要求 object）。当 sid 仍缺且 posts[0]
+  // 是非空字符串（postId == 投影 msg_id 同一 server post id）→ 补 sid，使出站经 sid 与投影
+  // im:post:read（msg_id）/落库（id）同束。契约不变（仅抽键探针增强·与 event.rs::extract_corr_key 同步）。
+  if (dims.sid === undefined) {
+    const p0 = payload?.posts?.[0] ?? payload?.body?.posts?.[0];
+    if (typeof p0 === 'string' && p0.length > 0) dims.sid = p0;
+  }
+  // 会话已读出站（channels/view·UC-3.1）：body = {channels:[{id:channelId}]}。channels[0].id 是
+  // **channelId**（非 server post id）→ 上面 probes 不下探 channels[0]，且 id 在 sid 别名里会被误抽。
+  // 专探：当 ch 仍缺且 body.channels[0].id 是非空字符串 → 补 ch（非 sid），使 ① 出站与 per-channel
+  // ②④（ch 锚）同束（与装饰器 event.rs::extract_corr_key channels[0].id→ch 规则同步）。
+  if (dims.ch === undefined) {
+    const c0 = payload?.channels?.[0]?.id ?? payload?.body?.channels?.[0]?.id;
+    if (typeof c0 === 'string' && c0.length > 0) dims.ch = c0;
   }
   return dims;
 }
@@ -96,6 +160,11 @@ export function sameEvent(a, b) {
   if (a.tmp && b.tmp) return a.tmp === b.tmp;
   if (a.sid && b.sid) return a.sid === b.sid;
   if (a.ch && b.ch && a.seq && b.seq) return a.ch === b.ch && a.seq === b.seq;
+  // UC-4.1 纯频道事件（hello 增量）：②投影 + ④落库都只有 ch（无 tmp/sid/seq）→ 按 ch 聚。
+  // 仅当**两侧都无 tmp/sid/seq**（纯频道范围）才走 ch-only，避免把同频道多条 post（带 tmp/sid）误并。
+  const aScoped = !a.tmp && !a.sid && !a.seq;
+  const bScoped = !b.tmp && !b.sid && !b.seq;
+  if (a.ch && b.ch && aScoped && bScoped) return a.ch === b.ch;
   return false;
 }
 

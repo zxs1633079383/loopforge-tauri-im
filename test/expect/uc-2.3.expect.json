@@ -1,0 +1,50 @@
+{
+  "$schema-note": "四面期望文件 (UC-2.3) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现或本仓渲染壳。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-2.3",
+  "title": "按 postId 定位：query 加载频道 → query_result 投影 → 命中行 data-highlighted 高亮 + Scan message",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/docs/projection-schema.md §1 query 路径（读族纯本地 Scan·无 HTTP 出站）；posts/getPostsAfterIndex 是越界翻页 HTTP 兜底（L2/真翻页另路·非本 L1 单账号闭环）",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1 query::emit_message_query_result",
+    "dom": "docs/spec/send-message-vertical-slice.md §4 DOM 契约（data-msg-id + UC-2.3 定位 data-highlighted）",
+    "storage": "helix/crates/helix-im/docs/projection-schema.md §4 message 表（读路径 Scan·无写）"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：定位目标频道 channelId 由 e2e 在运行时注入 ch 锚；reducer 用它锁定 query_result 束（读族纯本地 Scan·无 tmp/sid·按 ch 聚束·同 UC-2.1）。",
+    "ch": null
+  },
+
+  "outbound": {
+    "method": "*",
+    "urlEndsWith": "*",
+    "bodyFields": {},
+    "bodyForbidden": [],
+    "_note": "读族纯本地 Scan 路径（UC-2.3 单账号 L1·定位目标在 query_result 已加载首屏内·≤500 条）→ invoke im_query_messages_by_channel 不产 HTTP 出站（facet ① 为空/仅 lifecycle）。method/url=* 即不约束 ①（同 UC-2.1 ✅ 读族 optional 出站）。越界翻页 posts/getPostsAfterIndex{postIds:postId}（单 id string·posts.go:318·helix im_get_posts_after_index）是 HTTP 兜底·L2/真翻页另路·不在本 L1 闭环。"
+  },
+
+  "projection": {
+    "event": "im:messages:query_result",
+    "dataKeys": [
+      "channel_id",
+      "messages"
+    ],
+    "_note": "projection-schema §1 query::emit_message_query_result 外层 2 键集（channel_id + messages 数组·透传 wire/DB Post 行·inner 字段不逐一冻结·同 §1.3 透传规则）。定位前先 queryMessages 拉首屏→产此投影（与 UC-2.1 同一投影路径）。缺外层键即 fail。"
+  },
+
+  "storage": {
+    "op": "scan",
+    "table": "message",
+    "minRows": 0,
+    "_note": "读路径（无写）：im_query_messages_by_channel 触发 Scan(message WHERE channel_id ORDER BY create_at DESC)。harness 记 op=scan/table=message（payload 仅暴露 {op,table} 防隐私）。minRows=0 允许空频道·读路径无最小行约束（同 UC-2.1）。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "msg-id": "*",
+      "channel-id": "*",
+      "highlighted": "true"
+    },
+    "_note": "spec §4 + UC-2.3：定位命中行渲染 data-msg-id=server postId（已定稿 id）+ data-channel-id + data-highlighted=\"true\"（client locate 高亮·store._locateTarget 命中·非投影字段·壳纯渲染）。无 data-temporary-id（query 结果非乐观行）、无 data-send-status（已终态）。e2e 读 [data-msg-id=目标][data-highlighted=\"true\"] 行验定位命中。"
+  }
+}
