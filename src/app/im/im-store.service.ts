@@ -28,8 +28,8 @@ import {
   MESSAGE_ROW_CHANNELS,
   MEMBER_NICKNAME_CHANNEL,
   MemberNicknameData,
-  MEMBER_UPDATED_CHANNEL,
-  MemberUpdatedData,
+  CHANNEL_MEMBERS_CHANNEL,
+  ChannelMembersData,
   MESSAGES_QUERY_RESULT_CHANNEL,
   MessageItemData,
   MessagesQueryResultData,
@@ -505,8 +505,9 @@ export class ImStoreService {
    * outbound/channel_existing.rs MemberChangeCommand 透传到 POST channel/member/change。壳只供 channelId
    * （目标频道）+ joinUserIds（拉进群成员 userId）+ leaveUserIds（踢出群成员 userId）。WS 回
    * channel_member_update（broadcast 到 channelId·channel 全量帧含 memberChange.join/leave）→ ④
-   * channel_member 表 BatchUpsert（join）/ BatchDelete（leave）+ ② im:channel:member-updated →
-   * applyMemberUpdated 把 MB 区成员行刷新（壳纯渲染只透传投影成员集·无乐观合成）。无 channelId → 不发。
+   * channel_member 表 BatchUpsert（join）/ BatchDelete（leave）+ ② im:channel:member-updated（冻结
+   * ② 契约面）；S7（#56）helix 额外 emit render-ready im:channel:members → applyChannelMembers 纯绑定
+   * 刷 MB 区成员行（keyed upsert + leaves 删行·壳零 extract/role 判/合并）。无 channelId → 不发。
    * 非 Tauri / 命令缺失 → 静默。
    */
   async changeMember(
@@ -1592,12 +1593,12 @@ export class ImStoreService {
       this.applyMemberNickname(env.payload?.data as MemberNicknameData | undefined);
       return;
     }
-    // UC-6.1 拉/踢人：im:channel:member-updated（{channel_id, channel}·WS channel_member_update 透传帧）→
-    // 从 channel 对象成员源（memberChange.join[] + 四源 members[]）upsert MB 区成员行 + memberChange.leave[]
-    // 移除离场行 + 刷 data-members 在册串（壳纯渲染只透传投影成员 id·不在 JS 合成）。先于 message-row 分支
-    // （member-row 信号·非 message_item_data fat 集）。
-    if (channel === MEMBER_UPDATED_CHANNEL) {
-      this.applyMemberUpdated(env.payload?.data as MemberUpdatedData | undefined);
+    // UC-6.1/6.4 成员族 render-ready：im:channel:members（{channelId, members, leaves}·helix 已把
+    // role→admin + 四源/byIds 解析下沉·S7 issue #56）→ 壳纯绑定 applyChannelMembers（keyed upsert +
+    // leaves 删行·零 extract/role 判/合并）。冻结的 member-updated{channel_id,channel} / read:result
+    // {req_id,body} 二投影仅供 ② 契约面裁定·壳不再据其派生成员。先于 message-row 分支（member-row 信号）。
+    if (channel === CHANNEL_MEMBERS_CHANNEL) {
+      this.applyChannelMembers(env.payload?.data as ChannelMembersData | undefined);
       return;
     }
 
@@ -1771,11 +1772,12 @@ export class ImStoreService {
    */
   private applyReadResult(data: ReadResultData | undefined): void {
     if (!data || typeof data !== "object") return;
-    // UC-6.4 成员快照回灌（按 req_id 认领·body={status,data:{channelId:[{id,role,nickName}]}}·
-    // 壳纯渲染只透传 id→data-member-id / nickName→data-nickname / role→data-admin·不解析重组业务）。
+    // UC-6.4 成员快照回灌：S7（issue #56·C013）后成员渲染走 helix render-ready im:channel:members
+    // （helix port_reply 解析 byIds body 额外 emit·壳 applyChannelMembers 纯绑定）。本读族回报仅 ② 契约面
+    // （im:read:result{req_id,body}·UC-6.4 frozen）——壳不再解析 body（消灭 applyMembersSnapshot extract +
+    // role→admin 禁区）。认领命中即 drop（防 byIds body{status,data} 误入下方 health/reply 透传分支）。
     if (typeof data.req_id === "string" && this.pendingMemberReqs.has(data.req_id)) {
       this.pendingMemberReqs.delete(data.req_id);
-      if (data.error === undefined) this.applyMembersSnapshot(data.body);
       return;
     }
     if (data.error !== undefined) {
@@ -1794,40 +1796,34 @@ export class ImStoreService {
   }
 
   /**
-   * UC-6.4 成员快照 → MB 区成员行（载族「载」自愈名册·不依赖广播·补 byIds 回灌断链）。
-   * body=`{status, data:{channelId:[{id,teamId,role,nickName}]}}`（channels/member/byIds verbatim·
-   * map[channelId][]IdWithCompanyExt）。壳纯渲染只透传 id→memberId·nickName→nickname·role→admin
-   * （CREATOR/MANGER/ADMIN 判 admin·MEMBER 否），不解析重组业务。多 channelId 扁平去重；data 空（老群
-   * 444 非成员→data:{}）→ 清空成员列表（如实反映"无成员行"·守可证伪·不残留旧群名册）。
+   * UC-6.1/6.4 成员族 render-ready 纯绑定（im:channel:members·issue #56 S7·C013 第二北极星）。
+   *
+   * helix 已把 role→admin 业务规则 + 四源/byIds 解析重组下沉（render_ready_members）→ 本壳**纯绑定**：
+   * 按 `memberId` keyed upsert（直接赋 helix 给的 nickname/admin 成品·不 extract / 不判 role / 不合并四源）
+   * + `leaves` 删 MB 区成员行（拉踢人离场）。双源同形态：① 拉/踢人 WS（members=应在册·leaves=离场）
+   * ② byIds 成员快照（载族自愈·members=快照·leaves 空）。data 缺 → noop（守边界零信任·不清旧名册）。
+   * 与 S6 applyMessageItem/upsertHistoryRow 同款（O(1) keyed bind·非 tmp→server 对账合并）。
    */
-  private applyMembersSnapshot(body: unknown): void {
-    const rows: MemberRow[] = [];
-    const seen = new Set<string>();
-    const data =
-      body && typeof body === "object"
-        ? (body as Record<string, unknown>)["data"]
-        : undefined;
-    if (data && typeof data === "object") {
-      for (const arr of Object.values(data as Record<string, unknown>)) {
-        if (!Array.isArray(arr)) continue;
-        for (const m of arr) {
-          if (!m || typeof m !== "object") continue;
-          const rec = m as Record<string, unknown>;
-          const id = typeof rec["id"] === "string" ? (rec["id"] as string) : "";
-          if (!id || seen.has(id)) continue;
-          seen.add(id);
-          const role = typeof rec["role"] === "string" ? (rec["role"] as string) : "";
-          const nick = typeof rec["nickName"] === "string" ? (rec["nickName"] as string) : "";
-          rows.push({
-            memberId: id,
-            nickname: nick || undefined,
-            admin: role === "CREATOR" || role === "MANGER" || role === "ADMIN" || undefined,
-          });
-        }
+  private applyChannelMembers(data: ChannelMembersData | undefined): void {
+    if (!data || typeof data !== "object") return;
+    const members = Array.isArray(data.members) ? data.members : [];
+    const leaves = new Set(Array.isArray(data.leaves) ? data.leaves : []);
+    this._members.update((rows) => {
+      const byId = new Map(rows.map((m) => [m.memberId, m] as const));
+      for (const m of members) {
+        if (!m || typeof m.memberId !== "string" || !m.memberId) continue;
+        byId.set(m.memberId, {
+          memberId: m.memberId,
+          nickname: m.nickname || undefined,
+          admin: m.admin || undefined,
+        });
       }
-    }
-    this._members.set(rows);
-    this._membersAttr.set(rows.map((m) => m.memberId).sort().join(","));
+      for (const id of leaves) byId.delete(id);
+      return [...byId.values()];
+    });
+    this._membersAttr.set(
+      this._members().map((m) => m.memberId).sort().join(","),
+    );
   }
 
   /**
@@ -1960,78 +1956,6 @@ export class ImStoreService {
       // 成员行缺 → upsert（投影驱动成员入列·data-member-id=userId·data-nickname=nickName）。
       return [...next, { memberId: userId, nickname: nickName }];
     });
-  }
-
-  /**
-   * UC-6.1：im:channel:member-updated（{channel_id, channel}·WS channel_member_update 透传帧·broadcast
-   * 到 channelId）→ 从 channel 对象成员源 upsert/移除 MB 区成员行 + 刷 data-members 在册串。
-   *
-   * channel 是后端全量帧（透传不解析重组）·成员源与 helix channel_write::collect_members 同口径：
-   *   - 在册成员 = memberChange.join[] + 四源 members[]/adminUsers[]/boss[]/owner（各取 id/userId）。
-   *   - 离场成员 = memberChange.leave[]（移除对应行）。
-   * 壳纯渲染只透传投影成员 id（不在 JS 臆造成员关系·权威在 DB channel_member 复合 PK upsert/delete）。
-   * data-members = MB 区当前在册成员 id 升序逗号串（回读锚·拉进的 userId 必现·踢出的必消失·守可证伪）。
-   */
-  private applyMemberUpdated(data: MemberUpdatedData | undefined): void {
-    if (!data || typeof data !== "object") return;
-    const channel = data.channel;
-    if (!channel || typeof channel !== "object") return;
-    const ch = channel as Record<string, unknown>;
-
-    // 收集应在册成员 id（memberChange.join + 四源·与 helix collect_members 同口径·只取 id 不重组）。
-    const joinIds = this.extractMemberIds(this.memberChangeField(ch, "join"));
-    const sourceIds = [
-      ...joinIds,
-      ...this.extractMemberIds(ch["members"]),
-      ...this.extractMemberIds(ch["adminUsers"]),
-      ...this.extractMemberIds(ch["boss"]),
-      ...this.extractMemberIds(ch["owner"] ? [ch["owner"]] : undefined),
-    ];
-    const leaveIds = new Set(
-      this.extractMemberIds(this.memberChangeField(ch, "leave")),
-    );
-
-    this._members.update((rows) => {
-      const byId = new Map(rows.map((m) => [m.memberId, m] as const));
-      for (const id of sourceIds) {
-        if (!id || leaveIds.has(id)) continue;
-        if (!byId.has(id)) byId.set(id, { memberId: id });
-      }
-      for (const id of leaveIds) byId.delete(id);
-      return [...byId.values()];
-    });
-
-    // data-members 在册串（升序逗号·壳纯渲染只透传当前成员行 id 集·不在 JS 合成额外态）。
-    const ids = this._members()
-      .map((m) => m.memberId)
-      .sort();
-    this._membersAttr.set(ids.join(","));
-  }
-
-  /** 取 channel.memberChange.{join|leave}（透传帧字段·缺则 undefined·零信任不 panic）。 */
-  private memberChangeField(
-    ch: Record<string, unknown>,
-    field: "join" | "leave",
-  ): unknown {
-    const mc = ch["memberChange"];
-    if (!mc || typeof mc !== "object") return undefined;
-    return (mc as Record<string, unknown>)[field];
-  }
-
-  /** 从成员对象数组抽 id 集（每元素取 id ?? userId·缺/空跳过·与 helix member_row_from_value 同口径）。 */
-  private extractMemberIds(value: unknown): string[] {
-    if (!Array.isArray(value)) return [];
-    const out: string[] = [];
-    for (const item of value) {
-      if (!item || typeof item !== "object") continue;
-      const rec = item as Record<string, unknown>;
-      const id =
-        (typeof rec["id"] === "string" && rec["id"]) ||
-        (typeof rec["userId"] === "string" && rec["userId"]) ||
-        "";
-      if (id) out.push(id);
-    }
-    return out;
   }
 
   /**

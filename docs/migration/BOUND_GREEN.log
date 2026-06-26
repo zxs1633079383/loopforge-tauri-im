@@ -19,3 +19,4 @@
 2026-06-26T13:44:27Z	applyMessagesQueryResult	A2	UC-2.1 四面 reducer green×2(16 行 render-ready 直绑)·禁区消灭 findIndex·O(1) upsertHistoryRow
 2026-06-26T13:44:27Z	applyOlderLoaded	A2	UC-2.2 四面 reducer green×2(①②读族绿·prepend O(1)·server 无更早历史 ③ 行数不变 documented)·禁区消灭 findIndex
 2026-06-26T13:44:27Z	applyPostSending	A2	UC-1.4 四面 green×2 + UC-send-1 六面 green×2(乐观 sending render-ready text/type 直绑·不再 pendingText/pendingType)
+2026-06-26T14:23:56Z	applyChannelMembers	A2	UC-6.4 ①② green×2(im:read:result 保留 + im:channel:members byIds 渲染路径实证·memberId:444)·UC-6.2 ①③ green×2(data-admin 乐观)·UC-6.3 四面 green×2(data-nickname via applyMemberNickname)·UC-6.1 ③④ echo-gated(channel_member_update WS 不到达·见 NEED_CSES_IM_SERVER_FIX·非回归)·成员禁区 grep 归零·role→admin 下沉 helix

@@ -6,7 +6,7 @@
 #   migration-dir 缺省 = docs/migration/（可传 fixture 目录供测试）。
 #
 # 输入：<dir>/{HELIX_READY,BOUND_GREEN,NEED_HELIX}.log（单写者 append-only·见 orchestration/README §4）。
-# 输出：19 条 apply* 渲染路径逐行状态 + 汇总行 `PENDING n / 🟦m / 🟨b / 🟩k`。
+# 输出：18 条 apply* 渲染路径逐行状态 + 汇总行 `PENDING n / 🟦m / 🟨b / 🟩k`。
 #
 # ── 泳道状态语义（4 lane · 3 log 派生·见 README §3 解锁状态机 / conductor.md §1）──
 #   ⬛ PENDING      = 该行 ∉ HELIX_READY.log ∧ ∉ BOUND_GREEN.log（helix 还没吐 render-ready）
@@ -28,21 +28,20 @@ NEED_LOG="$MIGRATION_DIR/NEED_HELIX.log"
 
 [ -d "$MIGRATION_DIR" ] || die "迁移信号目录不存在：$MIGRATION_DIR"
 
-# ── 台账全行集 = 19 条 apply* 渲染路径（真源：docs/纯渲染壳-铁律与helix迁移台账.md §4·
-#    实测 `grep -rhoE '\bapply[A-Z][a-zA-Z]*\s*\(' src/app/im/*.ts` 的 19 个方法定义）──
-# 维护规则：src/app/im 新增/删除一个 apply* 渲染路径 → 同步增删本清单 + 台账 §4（保持 19 这个分母诚实）。
+# ── 台账全行集 = 18 条 apply* 渲染路径（真源：docs/纯渲染壳-铁律与helix迁移台账.md §4·
+#    实测 `grep -rhoE '\bapply[A-Z][a-zA-Z]*\s*\(' src/app/im/*.ts` 的 18 个方法定义（S7 #56：−applyMembersSnapshot −applyMemberUpdated +applyChannelMembers））──
+# 维护规则：src/app/im 新增/删除一个 apply* 渲染路径 → 同步增删本清单 + 台账 §4（保持 18 这个分母诚实）。
 LEDGER=(
   applyBatchUpdated
   applyChannelClosed
   applyChannelCreated
   applyChannelIncrement
+  applyChannelMembers
   applyChannelUpdate
   applyChannelUpdateByPost
   applyChannelUpdatePost
   applyDialogList
   applyMemberNickname
-  applyMemberUpdated
-  applyMembersSnapshot
   applyMessageItem
   applyMessagesQueryResult
   applyOlderLoaded
