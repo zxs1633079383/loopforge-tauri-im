@@ -13,6 +13,8 @@
 - [x] 记忆 `four-segment-log-debug.md` 三段重写 + `MEMORY.md` 索引 + `uc-rollout-domain-a.md` 已弃标注
 - [x] 新建 `docs/cutover/` spec + checklist
 - [x] test specs（5.5b/5.6w/3.2）+ src（app.component/im-store）注释 `go-mattermost :8065`→`cses-im-server :8066`（spec §5.2·im-store:2355 z-base-32 保留）
+- [x] `src-tauri/src/commands.rs` ×4 注释（im_announcement_save/read/delete + im_post_pin）`go-mattermost`→`cses-im-server`·并把陈旧「阻于 cses-java」诚实重述为「阻于后端 WS 业务广播链（切 cses-im-server 后待复验）」（2026-06-26 补·§5.2 漏项·镜像 app.component:981/im-store:1188 既有处理）
+- [x] `CLAUDE.md` + `AGENTS.md` §8.3 line 101 「四段日志…重启 cses-java」→「三段日志…cses-im-server :8066 默认对」（镜像对齐·gate 镜像闸复验绿）
 - [ ] **复验后再改**（禁 find-replace·C011）：`docs/uc-coverage-ledger.md` / `coverage-crossmap.md` / `pure-ui-audit` 的「go :8065 真绿」可达性断言——须重跑 e2e 复验绿后再就地更新（spec §5.3）
 - [x] 不碰：`test/expect/*.expect.json`（冻结 oracle·C004）+ `docs/harness/log.md`（append-only）+ pre/prod.json（路径不变）（spec §5.4）
 

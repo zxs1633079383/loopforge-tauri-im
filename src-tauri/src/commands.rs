@@ -760,8 +760,8 @@ pub async fn im_announcement_detail(
 /// 原始标识符 `r#type` 接收（Tauri 2 macro `.unraw()` → JS 键 `type`·tauri-macros wrapper.rs:440）。
 ///
 /// WS 回 `post_update`（按 channelId 广播·EventKind::PostEdit）→ 投影 `im:post:updated`（fat）→
-/// edit_content_op patch message 行（保留本地 read_bits）。**⛔ 当前阻于 cses-java（WS 广播链断）·
-/// ① 出站经 go-mattermost 可真跑·②④ 待后端恢复**。薄壳纪律：只翻译入参 + 补身份 + 入泵·endpoint
+/// edit_content_op patch message 行（保留本地 read_bits）。**⛔ 当前阻于后端 WS 业务广播链（切 cses-im-server 后待复验）·
+/// ① 出站经 cses-im-server 可真跑·②④ 待复验**。薄壳纪律：只翻译入参 + 补身份 + 入泵·endpoint
 /// 全在 helix-im·本壳不臆造 body。
 #[tauri::command]
 pub async fn im_announcement_save(
@@ -803,7 +803,7 @@ pub async fn im_announcement_save(
 /// ChannelId json:channelId}`）。
 ///
 /// WS 回 `post_update`（co-tx + 按 channelId 广播·EventKind::PostEdit）→ 投影 `im:post:updated`（fat）→
-/// edit_content_op patch message 行。**⛔ 当前阻于 cses-java·① 出站经 go-mattermost 可真跑·②④ 待恢复**。
+/// edit_content_op patch message 行。**⛔ 当前阻于后端 WS 业务广播链（切 cses-im-server 后待复验）·① 出站经 cses-im-server 可真跑·②④ 待复验**。
 /// 薄壳纪律：只翻译入参 + 入泵·endpoint/casing 全在 helix-im·本壳不臆造。
 #[tauri::command]
 pub async fn im_announcement_read(
@@ -836,8 +836,8 @@ pub async fn im_announcement_read(
 /// json:postIds}`）。
 ///
 /// WS 回 `post_update`（gap §69 announcement* → post_update ✅·删除过期公告广播）→ 投影
-/// `im:post:updated`（fat）→ edit_content_op patch message 行。**⛔ 当前阻于 cses-java·① 出站经
-/// go-mattermost 可真跑·②④ 待恢复**。薄壳纪律：只翻译入参 + 入泵·body 双字段成形全在 helix-im·本壳不臆造。
+/// `im:post:updated`（fat）→ edit_content_op patch message 行。**⛔ 当前阻于后端 WS 业务广播链（切 cses-im-server 后待复验）·① 出站经
+/// cses-im-server 可真跑·②④ 待复验**。薄壳纪律：只翻译入参 + 入泵·body 双字段成形全在 helix-im·本壳不臆造。
 #[tauri::command]
 pub async fn im_announcement_delete(
     state: State<'_, AppState>,
@@ -870,7 +870,7 @@ pub async fn im_announcement_delete(
 /// WS 回 `post_pin`（cses_channel.go:1840 NewWebSocketEvent(WebsocketEventPostPin)·broadcast channelId·
 /// payload=pinned post 信息）→ 实现 phase 经 emit_post_updated 投出 `im:post:updated`（pinned 态·
 /// post-targeted sid 锚·用户拍板 2026-06-26）→ patch message 行 pinned 态 + DOM data-pinned。**⛔ 当前
-/// 阻于 cses-java 业务 WS 广播链断·① 出站经 go-mattermost 可真跑·②③④ 待恢复**。薄壳纪律：只翻译入参
+/// 阻于后端 WS 业务广播链（切 cses-im-server 后待复验）·① 出站经 cses-im-server 可真跑·②③④ 待复验**。薄壳纪律：只翻译入参
 /// + 入泵·endpoint/casing 全在 helix-im·本壳不臆造。
 #[tauri::command]
 pub async fn im_post_pin(
