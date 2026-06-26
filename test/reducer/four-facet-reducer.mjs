@@ -1290,3 +1290,184 @@ export function runFourFacet({ jsonl, expect, dom, ucId }) {
         }`,
   };
 }
+
+// ── P0b 6 面 oracle 扩展（test-only·docs/orchestration/6-facet-oracle.md）──────────
+//
+// 在四面（① outbound / ② projection / ④ storage / ③ DOM）之上补**输入侧两个面**：
+//   ⓪ IpcIn（facet=ipc-in）  : src-tauri command 层 tee {command, args}（壳收到的原始 invoke 入参）
+//     Inbound（facet=inbound）: command-dispatch 装饰器 tee {command, args}（进引擎泵的指令）
+//   纯壳不变量（C013 量化）：同 UC 窗口内 IpcIn.args ≡ Inbound.args（casing 归一后逐字段相等·
+//     壳只能透传 + 1:1 绑定·禁中间 shaping）。不等 → 指出「壳在 IPC→helix 加工了字段 X」。
+//   WsRecv 断言化：入站 go echo 帧从只观测（串 corr_key）升级为可断言（vs expect.wsRecv）。
+//
+// 全 test-only：dev/release 不挂 ipc-in/inbound tee（webdriver feature 闸·见 src-tauri）；
+// 这两个面 + 纯壳不变量是 reducer（独立 node 工具·进程外）。守 invariant #4 + C008 可证伪。
+
+/** snake_case → camelCase（单段·不动已 camel）。`channel_id`→`channelId`·`temporaryId`→`temporaryId`。 */
+function camelizeKey(key) {
+  return String(key).replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
+}
+
+/** 递归把对象/数组的 key 归一为 camelCase（值原样·用于跨 casing 比对 args）。 */
+function normalizeArgs(v) {
+  if (Array.isArray(v)) return v.map(normalizeArgs);
+  if (v && typeof v === 'object') {
+    /** @type {Record<string, unknown>} */
+    const out = {};
+    for (const [k, val] of Object.entries(v)) out[camelizeKey(k)] = normalizeArgs(val);
+    return out;
+  }
+  return v;
+}
+
+/**
+ * 纯壳不变量核（C013）：IpcIn.args 透传到 Inbound.args 是否「壳零加工」。
+ * 规则（归一 casing 后）：
+ *   - IpcIn 的每个字段必须在 Inbound 原值出现（壳不得丢失 / 篡改 user arg）。
+ *   - Inbound 多出的字段必须在 injectedKeys 白名单（否则=壳擅自 shaping·须下沉 helix 或人审登记）。
+ * 返回 issues 数组（空=纯壳·非空=壳加工了·每条指出断点字段）。faithful：篡改/丢/注入皆红（见单测对偶）。
+ *
+ * @param {object} ipcArgs   IpcIn payload.args
+ * @param {object} inboundArgs Inbound payload.args
+ * @param {Array<string>} [injectedKeys] 人审授权的壳注入字段（身份/默认·如 userId/type）
+ * @returns {Array<string>}
+ */
+export function diffPureShellInvariant(ipcArgs, inboundArgs, injectedKeys = []) {
+  const a = normalizeArgs(ipcArgs ?? {});
+  const b = normalizeArgs(inboundArgs ?? {});
+  const inj = new Set((injectedKeys ?? []).map(camelizeKey));
+  const issues = [];
+  for (const [k, want] of Object.entries(a)) {
+    if (!(k in b)) {
+      issues.push(`壳在 IPC→helix 丢失字段 ${k}（纯壳须透传·C013）`);
+      continue;
+    }
+    if (!valEq(b[k], want))
+      issues.push(
+        `壳在 IPC→helix 篡改字段 ${k}：IpcIn=${JSON.stringify(want)} Inbound=${JSON.stringify(b[k])}（纯壳禁中间 shaping·C013）`
+      );
+  }
+  for (const k of Object.keys(b)) {
+    if (k in a) continue;
+    if (!inj.has(k))
+      issues.push(
+        `壳在 IPC→helix 注入未授权字段 ${k}（C013 纯壳禁 shaping·如确为身份/默认注入须下沉 helix 或登记 pureShell.injectedKeys 经人审）`
+      );
+  }
+  return issues;
+}
+
+/**
+ * ⓪ 纯壳不变量面：UC 窗口内找 IpcIn + Inbound tee，比对 args（IpcIn≡Inbound）。
+ *
+ * optional 语义（叠加面对旧 UC 零破坏）：未声明 expect.pureShell（或显式 optional:true）→ 不裁定
+ * （总绿）。声明了但缺任一侧 tee → 红（壳透传纯度不可证·非放水·守可证伪）。
+ *
+ * @param {object} args
+ * @param {string} args.jsonl
+ * @param {object} args.expect  期望（expect.pureShell {injectedKeys?, optional?}·expect.ucId）
+ * @param {string} [args.ucId]
+ * @returns {{facet:'pure-shell', ok:boolean, issues:string[], actual:object}}
+ */
+export function checkPureShellInvariant({ jsonl, expect, ucId }) {
+  const uc = ucId ?? expect.ucId;
+  const ps = expect.pureShell;
+  if (ps === undefined || ps === null || ps.optional === true)
+    return facetReport('pure-shell', [], { optional: true });
+  const { events } = parseJsonl(jsonl);
+  const inWin = (e) => uc === undefined || e.uc_id === uc;
+  const ipc = events.find((e) => inWin(e) && e.facet === 'ipc-in');
+  const inb = events.find((e) => inWin(e) && e.facet === 'inbound');
+  if (!ipc)
+    return facetFail('pure-shell', '无 IpcIn tee（断在 invoke 埋点·壳透传纯度不可证）', { expect: ps });
+  if (!inb)
+    return facetFail('pure-shell', '无 Inbound tee（断在 command-dispatch 埋点·壳透传纯度不可证）', {
+      expect: ps,
+    });
+  const issues = diffPureShellInvariant(ipc.payload?.args, inb.payload?.args, ps.injectedKeys);
+  return facetReport('pure-shell', issues, {
+    command: { ipcIn: ipc.payload?.command, inbound: inb.payload?.command },
+  });
+}
+
+/**
+ * WsRecv 断言面：UC 窗口内找 action/event 匹配的入站 go echo 帧，断言 data 字段（vs expect.wsRecv）。
+ *
+ * optional 语义：未声明 expect.wsRecv（或 optional:true）→ 不裁定（旧 UC 叠加面零破坏）。
+ * faithful：声明了则窗口内须有匹配 action 的入站帧且 dataFields 对齐——无帧/字段缺即红（见单测对偶）。
+ *
+ * @param {object} expect  期望（expect.wsRecv {action|event, dataFields, optional?}）
+ * @param {Array<object>} events  parseJsonl 后的事件
+ * @param {string} [uc]  UC 窗口（uc_id 过滤）
+ * @returns {{facet:'ws-recv', ok:boolean, issues:string[], actual:object}}
+ */
+export function diffWsRecv(expect, events, uc) {
+  const wexp = expect.wsRecv;
+  if (wexp === undefined || wexp === null || wexp.optional === true)
+    return facetReport('ws-recv', [], { optional: true });
+  const inWin = (e) => uc === undefined || e.uc_id === uc;
+  const wantAction = wexp.action ?? wexp.event;
+  const frames = events.filter((e) => inWin(e) && e.facet === 'ws-recv' && e.hop === 'ws-recv');
+  const hit = frames.find((e) => {
+    const p = e.payload ?? {};
+    const act = p.action ?? p.event;
+    return wantAction ? act === wantAction : true;
+  });
+  if (!hit)
+    return facetFail(
+      'ws-recv',
+      `无匹配入站帧（期望 action/event=${wantAction}·断在 go echo→Transport::recv 这跳）`,
+      { expect: wexp }
+    );
+  const issues = [];
+  const data = hit.payload?.data ?? {};
+  for (const [k, want] of Object.entries(wexp.dataFields ?? {})) {
+    if (!(k in data)) issues.push(`入站帧 data 缺字段 ${k}`);
+    else if (want !== '*' && !valEq(data[k], want))
+      issues.push(`入站帧 data.${k} 期望 ${JSON.stringify(want)} 实得 ${JSON.stringify(data[k])}`);
+  }
+  return facetReport('ws-recv', issues, {
+    action: hit.payload?.action ?? hit.payload?.event,
+    dataKeys: Object.keys(data),
+  });
+}
+
+/**
+ * 六面合并入口（四面 runFourFacet + ⓪纯壳不变量 + WsRecv 断言）。
+ *
+ * 链路顺序（断点定位）：pure-shell（输入侧最上游）→ outbound → ws-recv → projection → storage → dom。
+ * 旧 UC（未声明 pureShell/wsRecv）走此入口 = 两新面 optional 不裁定 → 退化为原四面（叠加面零破坏）。
+ *
+ * @param {object} args
+ * @param {string} args.jsonl
+ * @param {object} args.expect  四面期望 + 可选 expect.pureShell / expect.wsRecv
+ * @param {object} [args.dom]
+ * @param {string} [args.ucId]
+ * @returns {object} 六面报告
+ */
+export function runSixFacet({ jsonl, expect, dom, ucId }) {
+  const uc = ucId ?? expect.ucId;
+  const four = runFourFacet({ jsonl, expect, dom, ucId: uc });
+  const { events } = parseJsonl(jsonl);
+  const wsRecv = diffWsRecv(expect, events, uc);
+  const pureShell = checkPureShellInvariant({ jsonl, expect, ucId: uc });
+
+  const facets = { ...four.facets, 'ws-recv': wsRecv, 'pure-shell': pureShell };
+  const order = ['pure-shell', 'outbound', 'ws-recv', 'projection', 'storage', 'dom'];
+  const brokenAt = order.find((f) => facets[f] && !facets[f].ok) ?? null;
+  const green = brokenAt === null && four.parseErrors.length === 0;
+
+  return {
+    ucId: uc,
+    green,
+    brokenAt,
+    corrKey: four.corrKey ?? null,
+    facets,
+    parseErrors: four.parseErrors,
+    summary: green
+      ? `✅ ${uc} 六面全绿（⓪纯壳 IpcIn≡Inbound·WsRecv 断言·corr_key=${four.corrKey ?? 'n/a'}）`
+      : `❌ ${uc} 断在 [${brokenAt ?? 'parse'}] 面：${
+          brokenAt ? facets[brokenAt].issues.join('; ') : `JSONL 解析 ${four.parseErrors.length} 行坏`
+        }`,
+  };
+}
