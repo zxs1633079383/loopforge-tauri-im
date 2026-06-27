@@ -1,7 +1,24 @@
 # loop-Engine — STATUS（人读快照）
 
-> 占位。本文件由 wind-down agent **每 pass 重生成**（SPEC §5）：resume manifest + 终态行 +
-> 重复 pattern 趋势 + 缺 UI 截图，给早上一眼审。机器真相在 `events.jsonl`（append-only），
-> 本文件只是从日志折叠出的人读视图，可随时重建。
+> 由 `state-ledger.renderStatus` 从 `events.jsonl` 折叠重生成（SPEC §5）。
+> 机器真相在 `events.jsonl`（append-only），本文件可随时由日志重建。
 
-_（尚无 run。首个 loop-engine run 跑完后此处由 wind-down agent 覆写。）_
+## 终态行
+
+✅ 0 绿 / 0 park / 0 quarantine · pattern 趋势 （无 metrics）
+
+## Resume manifest
+
+- logCursor: 1
+- phasesRemaining: []
+- gainEnvelope: N=3 K=3 (N∈[2, 5])
+- metrics: pass=0 regen_rate=— convergence_min=— pattern_count=—
+
+## Issues
+
+_（无 issue 事件）_
+
+## Gap ledger
+
+_（无 gap）_
+
