@@ -28,3 +28,24 @@
 # 北极星：第二(壳纯度/禁区0)=100% ✅ | render-board BOUND_GREEN 🟩10/19(余9无禁区 trivially pure·欠 e2e reducer 确认)
 # helix render-ready 累积 fix/im-wire-body-build(5198b28)=S4-S8 全套+parser债收口 | 6 面 oracle(IpcIn/Inbound/WsRecv/纯壳不变量) test-only 上线
 # 待办尾巴(非回归·已 NEED_FIX 归档)：后端 cses-im-server WS echo 非确定到达(UC-1.5撤回/1.10定时/6.1拉踢/12.1健康) + helix quickReply reactions(UC-1.8 跨分支cherry破债线) + helix 远端push(user_misc.rs预存债)
+2026-06-27T12:06:19Z	applyBatchUpdated	A2	UC-1.5 撤回四面 reducer green×2(--warm·DOM data-revoke=1 + ② im:post:batch-updated 投影 + ④ revoke=1 落库)·spec 已修(关窗前 waitUntil 真 echo)·earlier flaky 已消
+2026-06-27T12:06:19Z	applyScheduleCreated	A2	UC-1.10 定时四面 reducer green×2(--warm·schedule-created echo + hasSchedulePost flag·data-* 直绑)
+2026-06-27T12:06:19Z	applyMemberNickname	A2	UC-6.3 改昵称四面 reducer green×2(--warm·channel/member/change/nickname 出站 + memberNickname 投影 + channel_member upsert 落库 + DOM data-nickname 回读)
+2026-06-27T12:09:39Z	applyChannelCreated	A2	UC-5.1/5.2 建群四面 reducer green×2+污染序(--warm·channel/create 出站 + im:channel:created 投影 + channel 行落库 + DOM 新频道行直绑)
+2026-06-27T12:09:39Z	applyChannelUpdatePost	A2	UC-5.4 四面 reducer green×2+污染序(--warm)
+# ===== 阶段A loop 收口（2026-06-27·9 PENDING 跑绿）=====
+# ✅ 本轮收 5/9 PENDING → BOUND_GREEN（render-board 10→15/19）：
+#    applyBatchUpdated(1.5) applyScheduleCreated(1.10) applyMemberNickname(6.3)
+#    applyChannelCreated(5.1/5.2) applyChannelUpdatePost(5.4)·均 --warm 连绿×2(+污染序)·reducer 裁定
+# ⚠️ 余 4 PENDING 阻塞·绑定均纯/正确·非渲染壳缺陷·诚实标范围（禁假绿）：
+#  [BLOCKED·cses-im-server] applyChannelUpdate(5.5 置顶)：单播 update_channel WS echo 不到达客户端传输层
+#    (run.jsonl 零 ws-recv·后端集成测试证已 publish·疑 connIndex.ForUser 单用户索引未登记)。见 NEED_CSES_IM_SERVER_FIX §UC-5.5。
+#  [BLOCKED·client-CL-scale] applyChannelClosed(5.3 关群)：channel_close 为频道域 echo(应到达)·断在 DOM 行未移除·
+#    120 累积频道下 Angular CL 重渲染 bug(--warm/隔离 均复现·20.7s 超时)·独立 ticket(task hint ③)·绑定 applyChannelClosed 纯。
+#  [BLOCKED·contract-ambiguity·交人审] applyChannelIncrement(4.1 就绪/增量)：expect/uc-4.1.expect.json 出站面期望
+#    channels/load/increment(bootstrap 批量增量)·但 seed-behind-cursor 触发 gap-gate→实发 channel/sync/notify·
+#    expect _note 自身已标 AMBIGUITY 交人审。绑定 applyChannelIncrement 每次 boot 跑(注册 120 channel·CL 实渲)·
+#    兄弟 UC-4.2(channel/sync/notify→im:channel:update-by-post)四面全绿(隔离)。C004 契约只读→契约变更提案待人审。
+#  [BLOCKED·no-e2e-driver] applyPostDeleted(离线撤回 fat)：UC-1.5 撤回的离线分支(emit_post_deleted)·
+#    无专属四面 spec 驱动(3.2 已读/4.4 心跳gap 均不断言 im:post:deleted)·在线兄弟 applyBatchUpdated(1.5)已绿。
+#    需新建「离线 gap-replay 携撤回 post」spec 才可裁(超本轮范围)。

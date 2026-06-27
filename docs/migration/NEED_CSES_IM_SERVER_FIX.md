@@ -59,3 +59,26 @@
   unwrap_sync_envelope 失败时应 emit_read_error{req_id} 让前端 reject 而非永久挂起（核对该兜底是否真 emit）；
   ② 或后端 cses-im-server health 端点是否应走信封。loopforge 壳侧 `applyReadResult` health body.status 1:1 绑定就绪（不 mock）。
 - **当前状态**：S8 第二北极星（禁区 grep==0）+ 回复/待办族绑定与 UC-12.1 正交·**不阻塞 S8 收口**。UC-12.1 保 `[~]` echo-gated。
+
+---
+
+## UC-5.5 频道置顶（change/top → 单播 update_channel WS echo 不到达）·阶段A loop 2026-06-27
+
+- **现象**：`harness.sh spec 5.5 --warm` 恒红，断点 `data-channel-top 未更新为 1（断在 change/top→WS
+  update_channel→投影→回读 is_top）`。`: > run.jsonl` 后单跑：① 出站 `POST channel/change/top {channelId,top}`
+  正确 + 后端 200 + 本地乐观 `storage batch_update channel(is_top)` 写入；但 run.jsonl **零** `ws-recv update_channel`
+  帧、**零** `im:channel:update` 投影。Recording Transport 装饰器记录所有 ws-recv → 帧**真没到客户端传输层**
+  （非关窗 race·非投影后丢）。
+- **后端已正确发布（实证）**：`internal/app/cses_channel_change.go:151 UpdateCsesChannelTop` → mutateMemberInTx →
+  `NewWebSocketEvent(WebsocketEventUpdateChannel, "", "", result.UserId, ...).SetData({id,userId,channelIsTop})` →
+  `a.publish`。集成测试 `TestIntegration_UpdateCsesChannelTop_Success` 断言「恰发 1 条 update_channel 单播 +
+  channelIsTop 落库」通过。即**事件确有发布**，broadcast.UserId=成员 userId（=444）。
+- **localized 根因（待后端确认）**：该事件是**单用户单播**（broadcast.UserId 非空·channelId 空）。hub 走
+  `hub_broadcast.go:31  if b.UserId != "" { for wc := range h.connIndex.ForUser(b.UserId) {...} }` →
+  仅投递给 `connIndex.ForUser("444")` 命中的连接。**对比**：UC-6.3 改昵称（`update_channel_member_nickName`·
+  **频道域** channelId 非空·`wc.inChannel` 成员扫描）+ 发消息 post echo（频道域）**都可靠到达**；唯独**单用户域**
+  update_channel(top) 不到达。强烈指向「测试 WS 连接未登记进 per-user 连接索引 `connIndex.ForUser`（或 userId 解析
+  口径不一致），致单播 ForUser 命中为空」——频道域走成员扫描兜底所以不受影响。代码静态看 `GetHubForUserId` 分片
+  路由正确，需运行期加日志确认 `connIndex.ForUser("444")` 是否空。
+- **loopforge 侧状态**：绑定 `applyChannelUpdate`（thin im:channel:update→upsertChannelRow+im_query_dialog_list 重查
+  →CL data-channel-top 回读）已就绪·纯绑定·不 mock。待后端单播 echo 到达此 UC 自动四面绿。**非渲染壳缺陷**。
