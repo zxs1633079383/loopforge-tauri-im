@@ -141,7 +141,40 @@ describe('UC-6.1 · 拉/踢人（四面契约）', () => {
     // ③ 守可证伪：拉进的 userId 必在 data-members 在册串内（未入 = ③ 红·非 tautology）。
     expect(domFacet.members.split(',')).toContain(JOIN_MEMBER_ID);
 
-    // —— 关窗口 ——
+    // —— 关窗口前等真 ② echo 落进 run.jsonl（防过早关窗·C008 反 stale-roster tautology）——
+    // 关键 flaky 修复（2026-06-27）：data-members 是壳**全局累积** roster（跨频道 upsert·不按频道重置）。
+    // 若前序 spec（如 6.4 byIds 载入含 445 的成员快照）已把 445 灌进 roster，则上面 ③ DOM waitUntil
+    // 会被**残留 445 瞬间满足** → spec 过早 set_uc('__quiescence__') 关窗 → 真 WS echo（channel_member_update
+    // → ② im:channel:member-updated + ④ channel_member upsert）晚 ~几百 ms 到达时窗口已关 → 该两 hop 落
+    // __quiescence__ → reducer 按 uc_id=UC-6.1 过滤抽空 → ②④ 假红（warm 污染序实测）。--fresh 时 roster 空·
+    // DOM 真等 render-ready members（由同一 echo 携来）→ 窗口不早关 → ②④ 在窗内 → 绿（故仅污染序暴露）。
+    // 修复：关窗前**显式等本锚频道的 member-updated 投影 hop 在 UC-6.1 窗内出现**（真 echo 到达信号·
+    // ④ 同帧必随）。faithful——echo 不来则超时红（非 tautology·守 C008）；不依赖 stale DOM 关窗时机。
+    await browser.waitUntil(
+      async () => {
+        const lines = readFileSync(RUN_JSONL, 'utf8').split('\n');
+        for (const ln of lines) {
+          if (!ln.trim()) continue;
+          let ev;
+          try { ev = JSON.parse(ln); } catch { continue; }
+          if (ev.uc_id !== 'UC-6.1') continue;
+          if (ev.facet !== 'projection' || ev.hop !== 'projection') continue;
+          const p = ev.payload ?? {};
+          if (p.event !== 'im:channel:member-updated') continue;
+          const ch = p.data?.channel_id ?? p.data?.channelId;
+          if (ch === TARGET_CHANNEL_ID) return true;
+        }
+        return false;
+      },
+      {
+        timeout: 20000,
+        interval: 200,
+        timeoutMsg:
+          '锚频道 member-updated 投影未在 UC-6.1 窗内落 run.jsonl（断在 member/change→WS channel_member_update→投影这跳·真 echo 未到）',
+      }
+    );
+
+    // —— 关窗口（真 echo 已在窗内落库·关窗安全）——
     await invokeBridge('set_uc', { uc: '__quiescence__' });
 
     // —— 四面 reducer（锚频道 ch 作锚 + dataValues 注入本次锚频道·dataAttrs.members 注入实测在册串）——
