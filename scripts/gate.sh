@@ -57,6 +57,23 @@ else
   bad "C013 违反：禁区命中 ${HITS} > 基线 ${C013_BASELINE}（本仓新增处理逻辑·应去 helix 补投影/指令）"
 fi
 
+# 9. loop-engine events.jsonl ↔ open gap issue 一致性（LE-7·SPEC §5/§8）
+#    gap_emit 的 sig 须对应仍 open 的 issue，无悬挂；坏 JSON/缺 sig/缺 issue 即红。
+#    gh 不可用/无网 → 模块内降级为结构+JSON 校验（不当作失败）。events.jsonl 缺失=跳过。
+step "9 loop-engine events.jsonl ↔ open gap issue 一致性"
+if command -v node >/dev/null 2>&1; then
+  if [ -f scripts/loop-engine/events-consistency.mjs ]; then
+    if node scripts/loop-engine/events-consistency.mjs docs/loop-engine/events.jsonl >/tmp/lf-gate-events.log 2>&1; then
+      ok "$(grep -E '✅|⏭' /tmp/lf-gate-events.log | head -1 | sed 's/^[[:space:]]*//;s/^[✅⏭][[:space:]]*//')"
+    else
+      cat /tmp/lf-gate-events.log
+      bad "events.jsonl 一致性自检红（悬挂 sig / 结构错 / 坏 JSON·见上）"
+    fi
+  else
+    printf "  ⏭ 跳过（scripts/loop-engine/events-consistency.mjs 未就绪）\n"
+  fi
+else bad "无 node"; fi
+
 # 8. clippy 卫生（慢·默认跳；GATE_CLIPPY=1 启用·deny warnings）
 step "8 clippy 卫生（默认跳·GATE_CLIPPY=1 启用）"
 if [ "${GATE_CLIPPY:-0}" = "1" ]; then
