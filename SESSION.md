@@ -8,6 +8,7 @@
 ✅ DONE 尾巴 ③helix远端push(origin/fix/im-wire-body-build) + ④flaky-harness(C014)
 ✅ DONE 尾巴 UC 全绿(独立复核): UC-1.5撤回 + UC-1.8反应 + UC-6.1拉踢 + UC-1.10定时
 ⚠️ PARTIAL UC-12.1健康 → NEED_FIX_UC-12.1_health_relay.md(配方已留·helix im_health 被冻结测试刻意排除 outbound·改需反转设计+动3冻结测试)
+✅ DONE 阶段A' 3 阻塞绿(render-board 🟩15→18/19) @2026-06-27 | loopforge commit a56353f + helix fix/im-wire-body-build b707349 | UC-5.5置顶(helix漏emit_channel_update·re-pin) + UC-5.3关群(spec选择器误命中ML消息行·scope channel-list) + applyPostDeleted离线撤回(新建uc-1.5-offline spec+驱动·冷启动重放) | 后端cses-im-server实证正确·NEED_FIX后端假设证伪(0改) | 仅剩 applyChannelIncrement/UC-4.1 契约歧义交人审(C004·未碰)
 ```
 
 ## 1. 这次干了什么（一句话）
