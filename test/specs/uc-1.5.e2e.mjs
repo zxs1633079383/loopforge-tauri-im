@@ -106,42 +106,41 @@ describe('UC-1.5 · 撤回消息 round-trip（四面契约）', () => {
     const sendBtn = await $('[data-testid="send-btn"]');
     await sendBtn.click();
 
-    // 等乐观行出现。
-    await browser.waitUntil(
-      async () => {
-        const tid = await browser.execute(
-          () =>
-            document
-              .querySelector('[data-send-status="sending"]')
-              ?.getAttribute('data-temporary-id') ?? null
-        );
-        return !!tid;
-      },
-      { timeout: 8000 }
-    );
-
-    // 等 echo 覆写（status=sent）。
+    // 等乐观 sending 行出现，并捕获其**唯一** temporary-id（本次发送的乐观行·DOM 中唯一 sending 行·
+    // data-temporary-id 贯穿 sending→覆写不变·选择器锚）。
     let tmp = null;
     await browser.waitUntil(
       async () => {
         tmp = await browser.execute(
           () =>
             document
-              .querySelector('[data-send-status="sent"]')
+              .querySelector('[data-send-status="sending"]')
               ?.getAttribute('data-temporary-id') ?? null
         );
         return !!tmp;
       },
-      { timeout: 15000, timeoutMsg: 'echo 未覆写' }
+      { timeout: 8000, timeoutMsg: '乐观 sending 行未出现' }
     );
 
-    // 取 server_id（data-msg-id，已从 tmp 覆写）。
-    MSG_ID = await browser.execute(
-      (t) => {
-        const el = document.querySelector(`[data-temporary-id="${t}"]`);
-        return el?.getAttribute('data-msg-id') ?? null;
+    // 等**该特定乐观行**（按捕获的 temporary-id 锚定）echo 覆写：data-msg-id 由 tmp 翻成 server id。
+    // 不用裸 [data-send-status="sent"] 选择器——历史/读族消息全渲染为 sent（toSendStatus 默认 sent）+
+    // warm 栈 DOM 累积旧 sent 行 → 裸选择器取首个 sent 行（最旧历史行·非本次发送）→ MSG_ID==tmp flaky
+    // 红根因（C014·UC-1.5/1.8 共因）。按本次乐观行 temporary-id 锚定杜绝串行污染。
+    MSG_ID = null;
+    await browser.waitUntil(
+      async () => {
+        MSG_ID = await browser.execute(
+          (t) => {
+            const el = document.querySelector(`[data-temporary-id="${t}"]`);
+            if (!el || el.getAttribute('data-send-status') !== 'sent') return null;
+            const sid = el.getAttribute('data-msg-id');
+            return sid && sid !== t ? sid : null; // 等覆写到真 server id（≠ tmp）
+          },
+          tmp
+        );
+        return !!MSG_ID;
       },
-      tmp
+      { timeout: 15000, timeoutMsg: 'echo 未覆写（特定乐观行 tmp→server id）' }
     );
     expect(MSG_ID).toBeTruthy();
     expect(MSG_ID).not.toBe(tmp); // 确认已覆写

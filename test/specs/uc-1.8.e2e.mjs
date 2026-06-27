@@ -102,40 +102,42 @@ describe('UC-1.8 · 快捷回复 emoji（四面契约）', () => {
     const sendBtn = await $('[data-testid="send-btn"]');
     await sendBtn.click();
 
-    // 等乐观 sending 行出现（im:post:sending 投影驱动）。
-    await browser.waitUntil(
-      async () => {
-        const tid = await browser.execute(
-          () =>
-            document
-              .querySelector('[data-send-status="sending"]')
-              ?.getAttribute('data-temporary-id') ?? null
-        );
-        return !!tid;
-      },
-      { timeout: 8000, timeoutMsg: '乐观 sending 行未出现' }
-    );
-
-    // 等 echo 覆写（status=sent）。
+    // 等乐观 sending 行出现，并捕获其**唯一** temporary-id（本次发送的乐观行·DOM 中唯一 sending 行·
+    // data-temporary-id 贯穿 sending→覆写不变·选择器锚）。
     let tmp = null;
     await browser.waitUntil(
       async () => {
         tmp = await browser.execute(
           () =>
             document
-              .querySelector('[data-send-status="sent"]')
+              .querySelector('[data-send-status="sending"]')
               ?.getAttribute('data-temporary-id') ?? null
         );
         return !!tmp;
       },
-      { timeout: 15000, timeoutMsg: 'echo 未覆写（断在 send→posts/create→echo 对账）' }
+      { timeout: 8000, timeoutMsg: '乐观 sending 行未出现' }
     );
 
-    // 取 server_id（data-msg-id 已从 tmp 覆写）作回复锚。
-    POST_ID = await browser.execute((t) => {
-      const el = document.querySelector(`[data-temporary-id="${t}"]`);
-      return el?.getAttribute('data-msg-id') ?? null;
-    }, tmp);
+    // 等**该特定乐观行**（按捕获的 temporary-id 锚定）echo 覆写：data-msg-id 由 tmp 翻成 server id。
+    // 不用裸 [data-send-status="sent"] 选择器——历史/读族消息全渲染为 sent（toSendStatus 默认 sent）+
+    // warm 栈 DOM 累积旧 sent 行 → 裸选择器取首个 sent 行（最旧历史行·非本次发送）→ POST_ID==tmp flaky
+    // 红根因（C014·UC-1.5/1.8 共因）。按本次乐观行 temporary-id 锚定杜绝串行污染。
+    POST_ID = null;
+    await browser.waitUntil(
+      async () => {
+        POST_ID = await browser.execute(
+          (t) => {
+            const el = document.querySelector(`[data-temporary-id="${t}"]`);
+            if (!el || el.getAttribute('data-send-status') !== 'sent') return null;
+            const sid = el.getAttribute('data-msg-id');
+            return sid && sid !== t ? sid : null; // 等覆写到真 server id（≠ tmp）
+          },
+          tmp
+        );
+        return !!POST_ID;
+      },
+      { timeout: 15000, timeoutMsg: 'echo 未覆写（特定乐观行 tmp→server id·断在 send→posts/create→echo 对账）' }
+    );
     expect(POST_ID).toBeTruthy();
     expect(POST_ID).not.toBe(tmp); // 确认已覆写为 server id
     console.log(`[UC-1.8 前置] 待回复消息 server postId=${POST_ID}`);
@@ -145,9 +147,19 @@ describe('UC-1.8 · 快捷回复 emoji（四面契约）', () => {
 
     const msgRow = await $(`[data-msg-id="${POST_ID}"]`);
     await msgRow.waitForExist({ timeout: 5000 });
-    const quickReplyBtn = await msgRow.$('[data-testid="quick-reply-btn"]');
-    await quickReplyBtn.waitForClickable({ timeout: 5000 });
-    await quickReplyBtn.click();
+    // 消息行操作按钮组 .msg__ops 默认 opacity:0，仅 .msg:hover 时 opacity:1（app.component.ts CSS）。
+    // WKWebView 自动化下 moveTo 不可靠触发 CSS :hover 伪类 → WebdriverIO waitForClickable 永红
+    // （opacity:0 视作不可见）。但按钮始终在 DOM/布局内（opacity 非 display:none）。改为对**真按钮元素**
+    // 派发原生 DOM click——仍触发 Angular 模板真绑定 (click)="onQuickReply(m,'👍')"（真 UI 按钮路径·
+    // C007·非直 invoke 模拟），仅绕过 hover 可见性门（自动化环境限制·非业务逻辑）。
+    const clicked = await browser.execute((sid) => {
+      const row = document.querySelector(`[data-msg-id="${sid}"]`);
+      const btn = row?.querySelector('[data-testid="quick-reply-btn"]');
+      if (!btn) return false;
+      btn.click(); // 原生点击：触发 Angular (click) 监听器（onQuickReply）
+      return true;
+    }, POST_ID);
+    expect(clicked).toBe(true);
 
     // 等 quickReply post_update 投影落地：server post_update → emit im:post:updated
     //   → 壳 applyMessageItem 从 props.quickReply 抽 emoji → data-reactions 出现（含 EMOJI）。
