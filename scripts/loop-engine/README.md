@@ -19,6 +19,7 @@
 | `events-consistency.mjs` | events.jsonl ↔ open gap issue 一致性自检：gap_emit 的 sig 须对应仍 open 的 issue，无悬挂；坏 JSON / 缺 sig / 缺 issue 即 fail。纯函数 + CLI（被 `scripts/gate.sh` 调用，gh 不可用时降级为结构校验）。 | ① Controller / gate |
 | `verifier.mjs` | 反幻觉验证深模块（自适应）：`provenanceGate`（无出处禁进）+ `verifyDepth`（爆炸半径 → light\|medium\|tournament，helix/契约/不可逆 → tournament）+ `panelVerdict`（N-skeptic 多数反驳 = block，C009 剔除作者自评）+ `divergenceTest`（两 verifier 分歧 → 收紧）+ `verifyClaim` 端到端编排。纯逻辑零 IO。 | ⑤ Architect / 验证 |
 | `retrospector.mjs` | 回路健康指标（LE-9）：读 events 算 `regen_rate`（再生 churn）/`convergence_min`（ready→green 中位耗时）/`override_freq`（人工干预占比）/`pattern_count`（反复再生 distinct sig 数）→ `recommend`（Optimizer 硬包络内调 N/K）→ `retrospect` 产 metrics 事件。纯函数 + CLI（`--append` 以 append-only 追加 metrics 事件）。 | ② Retrospector / ③ Optimizer |
+| `optimizer.mjs` | 增益自调·硬包络（LE-10）：吃 metrics（RETRO_SCHEMA）→ `recommend` 决策 → `applyRecommendation` 强制钳进硬界 N∈[2,5] / K∈[2,4]。**核心不变量：任意输入（含越界 / 损坏 envelope / NaN）→ 输出恒在硬包络内**；`optimizer` 只调旋钮 N/K，**绝不改包络边界**（改界 = HITL，夹带改界字段被剥离）。`clampInt`/`normalizeEnvelope`/`isWithinEnvelope`/`applyRecommendation`/`optimize` 纯函数 + CLI。 | ③ Optimizer |
 
 > 后续 LE-* issue 逐步补：bootstrap（折叠 events→快照）、emitter（追加事件）、reducer 裁决、
 > scheduler（拓扑前沿）、retrospector/optimizer（指标+增益自调）等。每个新模块在此表登记一行。
