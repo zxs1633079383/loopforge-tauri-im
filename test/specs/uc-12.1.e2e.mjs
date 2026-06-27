@@ -86,7 +86,11 @@ async function waitReadResult(reqId, endpoint) {
   );
 }
 
-describe('UC-12.1 · 健康探针（读族 request-response·断面 ①·连通性+200）', () => {
+// ⛔ 出范围（2026-06-27 拍板）：连通性/健康=基础设施·非渲染壳职责·壳不主动探活。
+// helix 刻意把 im_health 排除在 outbound 外（冻结测试 !is_outbound("im_health")）→ 不发 GET → 不回灌。
+// 修需反转 helix 刻意设计·而「壳探活」本就违 C013「壳=纯渲染」初衷 → 标 skip 出范围（非后端阻塞类）。
+// 配方留 NEED_FIX_UC-12.1_health_relay.md（若日后改成 helix 拥连通性+壳绑 projection 再启）。
+describe.skip('UC-12.1 · 健康探针（⛔ 出范围·健康=基础设施非渲染壳职责）', () => {
   before(async () => {
     // 就绪 probe（spec §3.1）：等 data-ready 标志。
     await browser.waitUntil(

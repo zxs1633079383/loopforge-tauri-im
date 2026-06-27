@@ -87,7 +87,7 @@ loopforge 的 TS **只能做四件事**：
 | ~~`applyMemberUpdated`~~ ✅ | (删·并入 applyChannelMembers) | MB 行 | ✅ | **S7 已迁(#56)**：四源合并下沉 helix·壳删 extractMemberIds/memberChangeField |
 | **`applyChannelMembers`** 🟩 | im:channel:members(render-ready) | MB 行 | ✅ | **S7 新增(#56)**：helix 双源(WS member_update + byIds)吐 render-ready{memberId,nickname,admin,leaves}·壳纯绑定(keyed upsert + leaves 删行) |
 | `applyMemberNickname` | im:channel:memberNickname | MB 行 | 〜 | 已 keyed 单行 upsert·纯绑定（helix 该 WS 帧无全量名册·保留绑 memberNickname） |
-| `applyReadResult` 🟩 | im:read:result(member-drop+health) | — / data-health | ✅ | **S8 已迁(#57)**：回复抽取下沉 helix·仅留 member byIds 认领 drop + health body.status 1:1 透传·零 extract（UC-6.4 green·UC-12.1 health echo-gated） |
+| `applyReadResult` 🟩 | im:read:result(member-drop+health) | — / data-health | ✅ | **S8 已迁(#57)**：回复抽取下沉 helix·仅留 member byIds 认领 drop + health body.status 1:1 透传·零 extract（UC-6.4 green·UC-12.1 健康探针 ⛔ 出范围(连通性=基础设施非渲染壳职责·2026-06-27 拍板·spec describe.skip)） |
 | **`applyChannelReplies`** 🟩 | im:channel:replies(render-ready) | AX reply chip | ✅ | **S8 新增(#57)**：helix `render_ready_replies` 抽好 postId 双 emit·壳纯绑定 replyIds→data-reply-id（UC-2.4 ①② green×2） |
 | `applyTodoUpdated` 🟩 | im:todo:updated(render-ready) | AX todo chip | ✅ | **S8 已迁(#57)**：helix todo.rs 额外吐 todoId/todoType 终态键·壳退纯绑定 1:1 取（不 filter/抽·UC-10.1 ①②③ green×2） |
 
