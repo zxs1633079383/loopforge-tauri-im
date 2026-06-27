@@ -17,7 +17,7 @@
 做一个 **UI 精简、但功能五脏俱全的轻量 IM 成品客户端**（工作名 `loopforge-tauri-im`），它：
 
 1. **内嵌真实 helix 引擎**（`helix-driver-native` + `helix-im`）作为 Tauri Rust 后端——测试验证的是 helix↔go 本身，与接管生产路线同源。这同时成为 **helix M2 Tauri 四接缝的首个落地实现**。
-2. **UI 用简化语义 DOM**：一条消息 = 一个带 `data-*` 属性的节点，属性直映投影字段，不追求像素/组件保真。
+2. **UI = 语义 DOM + 可演示**：一条消息 = 一个带 `data-*` 属性的节点（属性直映投影字段，供机器断言）；同时 UI 需**可演示/可手动测试**（demo MVP），缺 UI 由 pencil 设计→Angular 组件落地（仍守 C013 纯展示·不掺业务）。
 3. **被测性是一等公民**：单窗口、无窗口池、无 overlash 子进程、debug 构建内嵌 `tauri-plugin-webdriver`（跨平台 W3C WebDriver server，mac 已验证），WebdriverIO 直连真实 WKWebView 跑端到端。
 4. **四面契约断言**作 oracle，**双轨确定性源**（金标帧日常 + 真 go 夜间）喂自动修复闭环。
 
