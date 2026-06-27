@@ -122,7 +122,17 @@ function pickFacet(bundle, facet, hopNames) {
  * 非 tautology（cursors 不含锚 ch 则不命中 → ① 仍红，见单测可证伪对偶）。
  */
 function actualOutbound(bundle, opts = {}) {
-  const http = pickFacet(bundle, 'outbound', ['http-req']);
+  const { batchOutbound, anchorCh, createOutbound, expectUrlEndsWith } = opts;
+  // 期望端点已知（非通配 *）时只认束内**匹配端点**的 http-req——否则锚 ch 束内混入的 per-channel
+  // `channel/sync/notify`（其 cursors[0].channelId=锚 ch → 同 corr_key 归本束）会被任取为 ① →
+  // url 失配假红（UC-4.1 实测 2026-06-27：束内 sync/notify 抢答 channels/load/increment bootstrap）。
+  // 不匹配则 http 置空 → 落到下方 batch/create fallback 取真 bootstrap singleton。通配/未指定端点
+  // 时退回原行为（束内首条 http-req）。
+  const wantUrl = expectUrlEndsWith && expectUrlEndsWith !== '*' ? expectUrlEndsWith : null;
+  const httpHops = bundle.hops.filter((h) => h.facet === 'outbound' && h.hop === 'http-req');
+  const http = wantUrl
+    ? httpHops.find((h) => String(h.payload?.url ?? '').endsWith(wantUrl))
+    : httpHops[0];
   if (http) {
     return {
       kind: 'http',
@@ -134,16 +144,40 @@ function actualOutbound(bundle, opts = {}) {
   const ws = pickFacet(bundle, 'outbound', ['ws-send']);
   if (ws) return { kind: 'ws', body: ws.payload };
 
-  // batch fallback：用窗口内覆盖锚 ch 的批请求（cursors[*].channelId 含锚 ch）。
-  const { batchOutbound, anchorCh, createOutbound } = opts;
-  if (anchorCh && Array.isArray(batchOutbound)) {
-    const hit = batchOutbound.find((h) => {
-      const cursors = h.payload?.body?.cursors;
-      return (
-        Array.isArray(cursors) &&
-        cursors.some((c) => c && (c.channelId === anchorCh || c.channel_id === anchorCh))
-      );
-    });
+  // batch fallback（UC-4.1 hello bootstrap·契约决议 2026-06-27 见 expect.outbound._note）：
+  // ① 必须先按**期望端点**（expectUrlEndsWith）过滤——窗口内同样携 cursors 的批请求不止一种
+  // （hello bootstrap `channels/load/increment` + increment-end/scan 触发的 `channel/sync/notify`×N），
+  // 不过滤会被任一 cursors 覆盖锚 ch 的 sync/notify 误命中 → ① url 失配假红（实测 2026-06-27）。
+  // ② 端点过滤后优先取 cursors 覆盖锚 ch 那条（faithful·该批确实请求了锚 ch 增量）；
+  //    冷启动 race 下 bootstrap cursors 可能为空（hello 早于 scan reply·state.channels 未载 →
+  //    server 收空 cursors 走全量 bootstrap·仍真回放 increment_channel）→ 退取窗口内该端点唯一
+  //    bootstrap singleton（窗口隔离 uc_id 保证唯一·该次 hello 的 bootstrap·非任取）。
+  // 守可证伪：hello 未发 bootstrap → urlMatched 空 → 无命中 → ① 红（见单测可证伪对偶·非 tautology）。
+  if (Array.isArray(batchOutbound) && batchOutbound.length) {
+    const urlMatched = expectUrlEndsWith
+      ? batchOutbound.filter((h) => String(h.payload?.url ?? '').endsWith(expectUrlEndsWith))
+      : batchOutbound;
+    const covered = anchorCh
+      ? urlMatched.find((h) => {
+          const cursors = h.payload?.body?.cursors;
+          return (
+            Array.isArray(cursors) &&
+            cursors.some((c) => c && (c.channelId === anchorCh || c.channel_id === anchorCh))
+          );
+        })
+      : null;
+    // 空 cursors bootstrap singleton 兜底（仅冷启动 race·非任取）：hello bootstrap 早于 scan reply
+    // 时 state.channels 未载 → cursors=[]（server 收空走全量 bootstrap·所有频道 increment 真回放）。
+    // 此时 coverage N/A（无 per-channel cursor 可比），取该端点空 cursors 的 singleton 作 ①。
+    // 守可证伪：cursors **非空但不含锚 ch** 时 emptyCursorsBootstrap 不命中（length>0）→ ① 仍红
+    // （该批显式请求了别的 channel 而非锚 ch·见单测 rep2 可证伪对偶）。
+    const emptyCursorsBootstrap = expectUrlEndsWith
+      ? urlMatched.find((h) => {
+          const c = h.payload?.body?.cursors;
+          return Array.isArray(c) && c.length === 0;
+        })
+      : null;
+    const hit = covered || emptyCursorsBootstrap;
     if (hit) {
       return {
         kind: 'http',
@@ -1247,7 +1281,12 @@ export function runFourFacet({ jsonl, expect, dom, ucId }) {
           // target 落空）。此时仍须让 actualOutbound 的 createOutbound/batch fallback（按
           // urlEndsWith / cursors 覆盖锚 ch）兜底取出站——故传空束而非短路 null。守可证伪：
           // createOutbound 无 URL 命中（出站未发）→ fallback 仍返 null → ① 红（非放水）。
-          actualOutbound(target ?? { hops: [], dims: {} }, { batchOutbound, anchorCh, createOutbound })
+          actualOutbound(target ?? { hops: [], dims: {} }, {
+            batchOutbound,
+            anchorCh,
+            createOutbound,
+            expectUrlEndsWith: expect.outbound?.urlEndsWith,
+          })
         );
 
   // 读族 Scan storage fallback（UC-2.1/UC-2.3 定位·expect.storage.op=scan）：窗口内 uc 同 + scan op

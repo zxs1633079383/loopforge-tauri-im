@@ -101,40 +101,52 @@ describe('UC-4.1 · hello 全量增量（四面契约·就绪根）', () => {
       { timeout: 15000, interval: 200, timeoutMsg: 'CL 区无 channel 行（断在 im:channel:increment→store.channels→DOM）' }
     );
 
-    // —— 锚频道选取：优先取批量 channels/load/increment 出站 cursors[0].channelId（保证 ①②④ 都覆盖该
-    //    频道·该批请求确实请求了它的增量），并要求它已在 DOM 渲染（③）。批请求覆盖 67 个有 cursor 行的
-    //    频道，全部有 ② increment + ④ upsert + DOM 渲染——锚到它使四面真收敛于一个真实频道。
-    //    无批请求 / 锚频道未渲染时回退 DOM 首行（诚实退化·非放水）。
+    // —— 锚频道选取（契约决议 2026-06-27·见 expect.outbound._note + expect.dom._note）——
+    //    UC-4.1 「就绪根」四面真收敛于**同一真实频道**：须同时满足
+    //      ② 该频道有 im:channel:increment 投影（hello bootstrap 回放的增量·驱动 ④ channel upsert）
+    //      ③ 该频道行已在 CL 区渲染（data-channel-id）
+    //      ③ S5 该频道行 data-last-message 非空（helix dialogList render-ready·last_post 直绑）
+    //    故锚 = 「② increment ∩ ③ rendered ∩ ③ lastMessage」交集首个。① 出站是窗口内唯一
+    //    bootstrap singleton（channels/load/increment·cursors 冷启动 race 下可能为空）→ reducer
+    //    按期望端点 URL 命中（不依赖锚 ch·见 actualOutbound batch fallback singleton 兜底）。
+    //    退化序（诚实·非放水）：交集空 → ②∩③ 首个 → DOM 首行。
     const jsonlEarly = readFileSync(RUN_JSONL, 'utf8');
-    let anchorFromBatch = null;
+    const incCh = new Set();      // ② im:channel:increment 频道集
+    const lmCh = new Set();       // ③ dialogList 携非空 lastMessage 的频道集
     for (const line of jsonlEarly.split('\n')) {
       if (!line.trim()) continue;
       let ev;
       try { ev = JSON.parse(line); } catch { continue; }
       if (ev.uc_id !== EXPECT.ucId) continue;
-      if (ev.facet !== 'outbound' || ev.hop !== 'http-req') continue;
-      const url = String(ev.payload?.url ?? '');
-      const cursors = ev.payload?.body?.cursors;
-      if (url.endsWith('channels/load/increment') && Array.isArray(cursors) && cursors[0]) {
-        anchorFromBatch = cursors[0].channelId ?? cursors[0].channel_id ?? null;
-        if (anchorFromBatch) break;
+      if (ev.facet !== 'projection' || ev.hop !== 'projection') continue;
+      const event = ev.payload?.event;
+      if (event === 'im:channel:increment') {
+        const c = ev.payload?.data?.channel_id ?? ev.payload?.data?.channelId;
+        if (c) incCh.add(c);
+      } else if (event === 'im:channels:projection') {
+        const dl = ev.payload?.data?.dialogList;
+        if (Array.isArray(dl)) {
+          for (const r of dl) {
+            if (r && typeof r === 'object' && typeof r.id === 'string' && r.id) {
+              const lm = r.lastMessage;
+              if (typeof lm === 'string' && lm.length > 0) lmCh.add(r.id);
+            }
+          }
+        }
       }
     }
-    const renderedFirst = await browser.execute(
-      () => document.querySelector('[data-channel-id]')?.getAttribute('data-channel-id') ?? null
+    // 渲染态批量探测（一次 execute 取所有 CL 行 id）。
+    const renderedIds = await browser.execute(
+      () => [...document.querySelectorAll('[data-channel-id]')].map((r) => r.getAttribute('data-channel-id'))
     );
-    // 锚频道必须已在 DOM 渲染（③ 真有行）；批锚未渲染则退 DOM 首行。
-    if (anchorFromBatch) {
-      const rendered = await browser.execute(
-        (id) => !!document.querySelector(`[data-channel-id="${id}"]`),
-        anchorFromBatch
-      );
-      CHANNEL_ID = rendered ? anchorFromBatch : renderedFirst;
-    } else {
-      CHANNEL_ID = renderedFirst;
-    }
+    const renderedSet = new Set(renderedIds);
+    const renderedFirst = renderedIds[0] ?? null;
+    // 交集首个：② increment ∩ ③ rendered ∩ ③ lastMessage。
+    const full = [...lmCh].find((c) => incCh.has(c) && renderedSet.has(c)) ?? null;
+    const incRendered = [...incCh].find((c) => renderedSet.has(c)) ?? null;
+    CHANNEL_ID = full ?? incRendered ?? renderedFirst;
     expect(CHANNEL_ID).toBeTruthy();
-    console.log(`[UC-4.1 DOM] 目标 channelId=${CHANNEL_ID}（批锚=${anchorFromBatch ?? 'n/a'}·DOM 首行=${renderedFirst}）`);
+    console.log(`[UC-4.1 DOM] 目标 channelId=${CHANNEL_ID}（②∩③∩lastMsg=${full ?? 'n/a'}·②∩③=${incRendered ?? 'n/a'}·DOM 首行=${renderedFirst}·inc=${incCh.size} lm=${lmCh.size}）`);
 
     const domFacet = await readChannelDom(CHANNEL_ID);
     // S5 render-ready CL 字段实测打印（诚实观测·决定是否纳入 reducer 断言）。
