@@ -59,18 +59,28 @@ const invokeBridge = (cmd, args) =>
     args
   );
 
-// 当前 DOM 已渲染的 channel id 集（取关闭目标·建群新行）。
+// 当前 CL 区已渲染的 channel id 集（取关闭目标·建群新行）。
+// 作用域限定 [data-testid="channel-list"]：data-channel-id 同时出现在 CL 频道行(line128)与
+// ML 消息行(line229·m.channelId)——本 UC 的 ③ 面意图是「CL 频道行」（spec 注释 + applyChannelClosed
+// filter _channels 删的是 CL 行），故必须 scope 到 channel-list 容器，否则会误命中消息行
+// （建群 join 系统 post 落 ML 区·携同 channelId·永不随关群消失 → 假红）。scope 不放水：
+// 若 applyChannelClosed 真没删 CL 行，scoped 选择器仍会在 channel-list 内命中 → 仍报红。
 const snapshotChannelIds = () =>
   browser.execute(() =>
-    Array.from(document.querySelectorAll('[data-channel-id]'))
+    Array.from(
+      document.querySelectorAll('[data-testid="channel-list"] [data-channel-id]'),
+    )
       .map((el) => el.getAttribute('data-channel-id'))
       .filter((id) => !!id)
   );
 
-// 读某 channel 行的 data-channel-id（③ 注入 reducer 的 DOM 面·行移除后应缺值 null）。
+// 读某 CL 频道行的 data-channel-id（③ 注入 reducer 的 DOM 面·CL 行移除后应缺值 null）。
+// 同上 scope 到 channel-list 容器（排除 ML 消息行的同 channelId 干扰·见 snapshotChannelIds 注释）。
 const readChannelDom = (channelId) =>
   browser.execute((id) => {
-    const row = document.querySelector(`[data-channel-id="${id}"]`);
+    const row = document.querySelector(
+      `[data-testid="channel-list"] [data-channel-id="${id}"]`,
+    );
     return { 'channel-id': row?.getAttribute('data-channel-id') ?? null };
   }, channelId);
 

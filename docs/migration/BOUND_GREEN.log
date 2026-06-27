@@ -49,3 +49,6 @@
 #  [BLOCKED·no-e2e-driver] applyPostDeleted(离线撤回 fat)：UC-1.5 撤回的离线分支(emit_post_deleted)·
 #    无专属四面 spec 驱动(3.2 已读/4.4 心跳gap 均不断言 im:post:deleted)·在线兄弟 applyBatchUpdated(1.5)已绿。
 #    需新建「离线 gap-replay 携撤回 post」spec 才可裁(超本轮范围)。
+2026-06-27T13:04:16Z	applyChannelUpdate	A2	UC-5.5 频道置顶四面 reducer green×3(--warm·channel/change/top 出站 + im:channel:update 投影 + channel batch_update(is_top) 落库 + DOM data-channel-top 回读)·根因=pinned helix update_channel handler 漏 emit_channel_update(helix fix b707349·loopforge re-pin)·非后端缺陷(后端单播 update_channel writeOne 字节有效已实证)
+2026-06-27T13:13:20Z	applyChannelClosed	A2	UC-5.3 关群四面 reducer green×3(--warm·channel/close 出站 + im:channel:closed 投影 + channel batch_update(delete_at+is_active=0) 落库 + CL 行移除)·根因=③ DOM probe 选择器过宽误命中 ML 消息行(同 channelId)·applyChannelClosed 删 CL 行本就正确·spec probe scope 到 [data-testid=channel-list]·非放水(真没删仍报红)·helix channel_close emit 两分支一致无缺
+2026-06-27T13:28:55Z	applyPostDeleted	A2	UC-1.5-offline 离线撤回 gap-replay 四面(②③)reducer green×2(驱动 scripts/run-uc-1.5-offline.sh·建群+发+撤回→回退 cursor→reload --uc→冷启动 increment 重放 PostUpsert(im:post:received 载行)+PostRevoke(im:post:deleted 标撤回)→applyPostDeleted markRevokedById→DOM data-revoke=1)·①④ N/A(离线重放无 per-post 出站·emit_post_deleted projection-only)·新建 uc-1.5-offline{,-setup}.e2e.mjs + expect + 驱动·helix sync_effects PostRevoke emit 已验

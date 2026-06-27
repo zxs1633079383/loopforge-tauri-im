@@ -1,0 +1,60 @@
+{
+  "$schema-note": "四面期望文件 (UC-1.5-offline · 撤回的离线 gap-replay 分支) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现或本仓渲染壳。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-1.5-offline",
+  "title": "撤回消息·离线分支：cursor 落后 → 冷启动 increment 重放 PostUpsert+PostRevoke → 投影 im:post:received(载行) + im:post:deleted(标撤回) → applyPostDeleted 标行 data-revoke=1",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "N/A — 离线分支由冷启动 channels/load/increment 批量增量驱动（与 UC-4.1 同批·无 per-post corr_key 锚·见 uc-4.1.expect ① AMBIGUITY）。本 UC 的契约面是 ②③（重放投影 + DOM）。",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1 to_effect::emit_post_deleted (离线 fat MessageItemData)；helix acl/sync_effects.rs EventKind::PostRevoke → emit_post_deleted + channel.rs:512 同源",
+    "dom": "docs/spec/send-message-vertical-slice.md § revoke 行表现（data-revoke=1）；壳 applyPostDeleted → markRevokedById 命中 server id 标行",
+    "storage": "N/A — 离线 PostRevoke 重放是 projection-only（emit_post_deleted 不带 storage effect）；message.revoke 列由更早的在线撤回写入·非本重放路径。本 UC 不裁 ④。"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：撤回目标的 server_id（sid）由 e2e setup 阶段发消息后捕获·运行时填实值覆写本字段。reducer 按 sid（msg_id 别名）+ ch 锁定 im:post:deleted 束。",
+    "ch": null,
+    "sid": null
+  },
+
+  "outbound": {
+    "method": "*",
+    "urlEndsWith": "*",
+    "_note": "① N/A：离线 gap-replay 无 per-post 出站命令（撤回命令在 setup 阶段已发·属在线分支）；重放靠冷启动批量 increment。method/url=* 声明本 UC ① N/A（reducer diffOutbound N/A 分支·守可证伪：本 UC 不靠 ① 裁绿）。"
+  },
+
+  "projection": {
+    "event": "im:post:deleted",
+    "dataKeys": [
+      "channel_id",
+      "event_seq",
+      "msg_id",
+      "temporaryId",
+      "channelId",
+      "userId",
+      "type",
+      "message",
+      "props",
+      "createAt",
+      "updateAt",
+      "readBits",
+      "viewers",
+      "sendStatus",
+      "reactions",
+      "templateReceived",
+      "systemNotice"
+    ],
+    "_note": "projection-schema §1：离线撤回 emit_post_deleted = fat MessageItemData（17 键·与 im:post:received 同 message_item_data 形态）。冷启动 increment 重放 PostRevoke 事件触发。键集严格对齐（多/缺即红）。"
+  },
+
+  "storage": {
+    "optional": true,
+    "_note": "④ N/A：离线 PostRevoke 重放 projection-only（emit_post_deleted 无 storage effect）。message 行 revoke 状态来自 setup 在线撤回的更早写入（DB 持久）·非本重放路径产物。reducer 不裁 ④（optional）。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "revoke": "1"
+    },
+    "_note": "③ 撤回后行渲染 data-revoke=1（壳 applyPostDeleted → markRevokedById 命中重放 im:post:received 载入的 server-id 行·标 revoke）。重放窗口含 PostUpsert(载行)+PostRevoke(标撤回) → 行先被 im:post:received 渲染再被 im:post:deleted 标记。dataAttrs 只放真 data-* 键值。"
+  }
+}
