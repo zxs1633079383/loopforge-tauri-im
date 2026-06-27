@@ -137,7 +137,41 @@ describe('UC-1.10 · 定时消息 create（四面契约）', () => {
     const settled = await readChannelRow(CHANNEL_ID);
     console.log(`[UC-1.10 DOM] channelId=${CHANNEL_ID} hasSchedulePost=${settled['has-schedule-post']}`);
 
-    // —— 关窗口（窗口外的后续帧不再归本 UC）——
+    // —— 关窗口前等真 ② echo 落进 run.jsonl（防过早关窗·C008 反 stale-state tautology）——
+    // 关键 flaky 修复（2026-06-27）：data-has-schedule-post 是 channel 级**粘性**标志（once true 永 true·
+    // 语义正确——频道有定时消息就一直有）。首跑设 true 后该 flag 留在壳 in-memory _channels（跨 warm 持久），
+    // 后续 run 的 ③ DOM waitUntil「has-schedule-post===true」被**残留 true 瞬间满足** → spec 过早
+    // set_uc('__quiescence__') 关窗 → 真 WS echo（post_schedule_created → ② im:channel:schedule-created +
+    // ④ channel.has_schedule_post batch_update）晚 ~几百 ms 到达时窗口已关 → 该两 hop 落 __quiescence__ →
+    // reducer 按 uc_id=UC-1.10 过滤抽空 → ②④ 假红（warm 连跑实测 run1 绿后 run2-5 全红·首跑 DOM 真 false
+    // 才真等 echo 故绿·后续被粘性 flag 掩盖）。修复：关窗前**显式等本锚频道 schedule-created 投影 hop 在
+    // UC-1.10 窗内落 run.jsonl**（真 echo 到达信号·④ 同帧必随）。faithful——echo 不来则超时红（非 tautology·
+    // 守 C008）；不依赖粘性 DOM 关窗时机。同 uc-6.1 stale-roster 修复同构。
+    await browser.waitUntil(
+      async () => {
+        const lines = readFileSync(RUN_JSONL, 'utf8').split('\n');
+        for (const ln of lines) {
+          if (!ln.trim()) continue;
+          let ev;
+          try { ev = JSON.parse(ln); } catch { continue; }
+          if (ev.uc_id !== 'UC-1.10') continue;
+          if (ev.facet !== 'projection' || ev.hop !== 'projection') continue;
+          const p = ev.payload ?? {};
+          if (p.event !== 'im:channel:schedule-created') continue;
+          const ch = p.data?.channelId ?? p.data?.channel_id;
+          if (ch === CHANNEL_ID) return true;
+        }
+        return false;
+      },
+      {
+        timeout: 20000,
+        interval: 200,
+        timeoutMsg:
+          '锚频道 schedule-created 投影未在 UC-1.10 窗内落 run.jsonl（断在 createSchedule→WS post_schedule_created→投影这跳·真 echo 未到）',
+      }
+    );
+
+    // —— 关窗口（真 echo 已在窗内落库·关窗安全）——
     await invokeBridge('set_uc', { uc: '__quiescence__' });
 
     // —— ②（+①④ pending）：读 run.jsonl → 四面 reducer ——
