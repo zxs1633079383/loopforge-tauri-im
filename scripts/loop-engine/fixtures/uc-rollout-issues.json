@@ -7,6 +7,7 @@
   { "n": 10, "phase": 2, "blockers": [8],  "uc": "1.9",  "state": "ready", "title": "加急+加急已读" },
   { "n": 11, "phase": 2, "blockers": [8],  "uc": "1.8",  "state": "ready", "title": "快捷回复 emoji" },
   { "n": 12, "phase": 2, "blockers": [8],  "uc": "1.10", "state": "ready", "title": "定时消息" },
+  { "n": 72, "phase": 2, "blockers": [8],  "uc": "1.10", "state": "ready", "title": "取消定时" },
 
   { "n": 14, "phase": 3, "blockers": [10], "uc": "3.2",  "state": "ready", "title": "单条已读" },
   { "n": 15, "phase": 3, "blockers": [10], "uc": "3.1",  "state": "ready", "title": "会话已读" },

@@ -52,7 +52,7 @@ test('dry-run: phase 顺序 = 0→7（依赖序）', () => {
   const plan = planDryRun(FIXTURE);
   assert.ok(plan.ok, '依赖图应合法');
   assert.deepEqual(plan.phases, [0, 1, 2, 3, 4, 5, 6, 7]);
-  assert.equal(plan.issueCount, 34);
+  assert.equal(plan.issueCount, 35); // +#72 取消定时(2026-06-28 缺口补)
 });
 
 test('dry-run: phase 1 拓扑前沿分两波（#8 解锁 #9）', () => {
@@ -62,10 +62,10 @@ test('dry-run: phase 1 拓扑前沿分两波（#8 解锁 #9）', () => {
   assert.ok(p1.barrier.passed);
 });
 
-test('dry-run: phase 2 三个独立项同波并行', () => {
+test('dry-run: phase 2 四个独立项同波并行', () => {
   const plan = planDryRun(FIXTURE);
   const p2 = plan.phasePlan.find((p) => p.phase === 2);
-  assert.deepEqual(p2.waves, [[10, 11, 12]], '同 blocker #8·无互相依赖 → 同波');
+  assert.deepEqual(p2.waves, [[10, 11, 12, 72]], '同 blocker #8·无互相依赖 → 同波(+#72 取消定时)');
 });
 
 test('dry-run: phase 7 #40 被 #39 阻塞排到第二波', () => {
@@ -111,15 +111,15 @@ test('dry-run: 依赖环 → ok=false 出账（C008）', () => {
 
 // ── ② 编排 happy path ────────────────────────────────────────────────────────
 
-test('runEngine: 全绿 stub → 34 绿·8 phase 全 tag·0 park', () => {
+test('runEngine: 全绿 stub → 35 绿·8 phase 全 tag·0 park', () => {
   const r = runEngine({ issues: FIXTURE, now: makeNow() });
   assert.ok(r.ok);
-  assert.equal(r.issuesProcessed, 34);
+  assert.equal(r.issuesProcessed, 35);
   assert.deepEqual(r.taggedPhases, [0, 1, 2, 3, 4, 5, 6, 7]);
   assert.deepEqual(r.parkedPhases, []);
-  assert.equal(r.state.issues.filter((i) => i.state === 'green').length, 34);
+  assert.equal(r.state.issues.filter((i) => i.state === 'green').length, 35);
   assert.deepEqual(r.resumeManifest.phasesRemaining, []);
-  assert.match(r.finalLine, /✅ 34 绿 \/ 0 park \/ 0 quarantine/);
+  assert.match(r.finalLine, /✅ 35 绿 \/ 0 park \/ 0 quarantine/);
 });
 
 // ── ③ 安全阀 ─────────────────────────────────────────────────────────────────

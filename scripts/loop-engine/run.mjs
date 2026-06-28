@@ -661,20 +661,22 @@ async function loadFromGh(fixture) {
     stdio: ['ignore', 'pipe', 'ignore'],
   });
   const arr = JSON.parse(out);
-  const fixByNum = new Map((fixture || []).map((i) => [i.n, i]));
+  const openByNum = new Map(arr.map((it) => [it.number, it]));
+  // 以 fixture 为全集重建真状态:gh-open→'ready' / 不在 open(已关闭)→'green'(已绿·满足下游 blocker)。
+  // 修 driven:0 空前沿 bug——闭合的绿 blocker 原先缺失被判「未绿」→ 全 issue 不入前沿;
+  // 现重建为 green 节点 → 拓扑前沿正确解锁(不动 scheduler·保 288 测试·闭=绿是真状态非掩盖)。
   const issues = [];
-  for (const it of arr) {
-    const n = it.number;
-    if (n < 7 || n > 41) continue; // 只取 #7-#41
-    const fx = fixByNum.get(n);
-    const blockers = parseBlockedBy(it.body);
+  for (const fx of (fixture || [])) {
+    const gh = openByNum.get(fx.n);
+    const isOpen = !!gh;
+    const parsed = gh ? parseBlockedBy(gh.body) : [];
     issues.push({
-      n,
-      phase: fx ? fx.phase : null,
-      blockers: blockers.length ? blockers : fx ? fx.blockers : [],
-      state: 'ready',
-      uc: fx ? fx.uc : undefined,
-      title: it.title,
+      n: fx.n,
+      phase: fx.phase,
+      blockers: parsed.length ? parsed : (fx.blockers || []),
+      state: isOpen ? 'ready' : 'green', // 闭=绿(done)
+      uc: fx.uc,
+      title: gh ? gh.title : fx.title,
     });
   }
   return issues.length ? issues : fixture;

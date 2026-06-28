@@ -83,7 +83,11 @@ for (const p of (plan.phases || [])) for (const w of (p.waves || [])) for (const
 
 // single 模式:只取第一个(或指定 uc 对应的)issue 做 L3 首证
 if (mode === 'single') {
-  if (targetUc) {
+  const pinIssue = args && args.issue
+  if (pinIssue) {
+    order = [{ n: pinIssue, phase: 0 }] // 精确 targeting:直接钉指定 issue 号(L3 首证选最干净 UC)
+    log(`single 模式·精确 targeting issue #${pinIssue}${targetUc ? `(${targetUc})` : ''}`)
+  } else if (targetUc) {
     log(`single 模式·目标 UC=${targetUc}`)
     order = order.slice(0, 1) // bootstrap agent 已按依赖序;真选 UC 由 drive agent 按 targetUc 找
   } else {
