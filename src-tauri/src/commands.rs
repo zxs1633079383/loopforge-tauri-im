@@ -1528,6 +1528,30 @@ pub async fn im_create_schedule(
         .map_err(|e| format!("im_create_schedule: 入泵失败（泵已退出？）：{e}"))
 }
 
+/// UC-1.10 取消定时（issue #72）：前端只传 `channelId`（当前活动频道）→ 本命令转 snake_case 入泵
+/// `im_cancel_schedule`（helix-im `outbound/posts_existing.rs` `CancelScheduleCommand` 兑现出站
+/// `POST posts/cancelSchedule {channelId}`·真源 `CancelSchedulePostReq{ChannelId}`·userId 取 session）。
+/// WS 回 `post_schedule_canceled` → 投影 `im:channel:schedule-canceled {channelId, hasSchedulePost:false}`
+/// → channel 表 has_schedule_post=false 落库 + DOM data-has-schedule-post 清空。
+///
+/// 薄壳纪律：只翻译入参 + 入泵，body{channelId} + endpoint 全在 helix-im，本壳不臆造 body。
+#[tauri::command]
+pub async fn im_cancel_schedule(
+    state: State<'_, AppState>,
+    channel_id: String,
+) -> Result<(), String> {
+    if channel_id.is_empty() {
+        return Err("im_cancel_schedule: channelId 为空".into());
+    }
+    let payload = serde_json::json!({ "channel_id": channel_id });
+    let tick = command("im_cancel_schedule", payload);
+    state
+        .tick_tx
+        .send(tick)
+        .await
+        .map_err(|e| format!("im_cancel_schedule: 入泵失败（泵已退出？）：{e}"))
+}
+
 /// UC-2.2 上拉加载更早历史（读族 request-response 编排）：前端滚到顶触发 → 传 `channelId` +
 /// `anchorPostId`（当前已加载最旧一条带 server id 的消息·作 pivot）+ `anchorCreateAt`（该锚
 /// createAt int64 毫秒·严格更早过滤基准）+ 可选 `limit`（目标条数·缺省 20·clamp 1..=100）→ 本命令

@@ -898,9 +898,13 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.store.createSchedule(channelId, message, schedulePostAt);
   }
 
-  /** UC-1.10 取消定时。占位 → 接 posts/cancelSchedule。 */
+  /** UC-1.10 取消定时：channelId=当前活动频道 → store.cancelSchedule（body{channelId} 由
+   *  Rust/helix 拼·壳不臆造）。hasSchedule 由 helix `im:channel:schedule-canceled` 投影驱动
+   *  data-has-schedule-post 清空·壳纯渲染·无乐观合成。无 activeChannel → 不发。 */
   onCancelSchedule(): void {
-    /* UC-1.10 接通 */
+    const channelId = this.store.activeChannel();
+    if (!channelId) return;
+    void this.store.cancelSchedule(channelId);
   }
 
   /** UC-3.1 会话已读：进/看当前会话 → store.readChannel（会话/区间模式标整会话已读·body 仅

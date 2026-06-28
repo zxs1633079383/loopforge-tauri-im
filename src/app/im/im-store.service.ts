@@ -17,6 +17,7 @@ import {
   CHANNELS_LOADED_CHANNEL,
   CHANNELS_PROJECTION_CHANNEL,
   CHANNEL_SCHEDULE_CREATED_CHANNEL,
+  CHANNEL_SCHEDULE_CANCELED_CHANNEL,
   CHANNEL_CLOSED_CHANNEL,
   CHANNEL_UPDATE_BY_POST_CHANNEL,
   ChannelCreatedData,
@@ -698,6 +699,28 @@ export class ImStoreService {
         message: msg,
         schedulePostAt,
         temporaryId,
+      });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（hasSchedule 靠投影驱动·无乐观合成）。
+    }
+  }
+
+  /**
+   * UC-1.10 取消定时：invoke('im_cancel_schedule', {channelId}）。
+   *
+   * **壳不臆造 body**：endpoint + body 全在 helix-im（commands.rs im_cancel_schedule →
+   * outbound/posts_existing.rs CancelScheduleCommand → POST posts/cancelSchedule
+   * {channelId}·真源 CancelSchedulePostReq{ChannelId}·userId 取 session）。壳只供 channelId
+   * （当前活动频道）。频道行 hasSchedule 由 helix `im:channel:schedule-canceled`
+   * （{channelId, hasSchedulePost:false}·WS post_schedule_canceled 透传）投影驱动 data-has-schedule-post
+   * 清空（频道级属性·壳纯渲染·无乐观合成）。非 Tauri / 命令缺失 → 静默。
+   */
+  async cancelSchedule(channelId: string): Promise<void> {
+    const ch = channelId.trim();
+    if (!ch) return;
+    try {
+      await this.bridge.invoke<void>("im_cancel_schedule", {
+        channelId: ch,
       });
     } catch {
       // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（hasSchedule 靠投影驱动·无乐观合成）。
@@ -1589,6 +1612,16 @@ export class ImStoreService {
     // 透传）→ 把该频道行 hasSchedule 标 true（data-has-schedule-post 频道级属性·壳纯渲染透传投影
     // hasSchedulePost·不在 JS 合成）。先于 message-row 分支（channel-row 信号·非 message_item_data fat 集）。
     if (channel === CHANNEL_SCHEDULE_CREATED_CHANNEL) {
+      this.applyScheduleCreated(
+        env.payload?.data as ChannelScheduleCreatedData | undefined,
+      );
+      return;
+    }
+    // UC-1.10 取消定时：im:channel:schedule-canceled（{channelId, hasSchedulePost:false}·WS
+    // post_schedule_canceled 透传）→ 把该频道行 hasSchedule 标透传值（恒 false）→ data-has-schedule-post
+    // 清空（频道级属性·壳纯渲染透传投影 hasSchedulePost·不在 JS 合成）。与 schedule-created 同
+    // applyScheduleCreated 路径（同 data 形态·透传值驱动·语义对称）。先于 message-row 分支。
+    if (channel === CHANNEL_SCHEDULE_CANCELED_CHANNEL) {
       this.applyScheduleCreated(
         env.payload?.data as ChannelScheduleCreatedData | undefined,
       );

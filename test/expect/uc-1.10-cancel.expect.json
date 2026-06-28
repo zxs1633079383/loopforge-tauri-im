@@ -1,0 +1,51 @@
+{
+  "$schema-note": "四面期望文件 (UC-1.10 取消子路径) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现或本仓渲染壳。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "UC-1.10-cancel",
+  "title": "取消定时 cancel — 点取消 → echo schedule-canceled + hasSchedulePost flag 清空",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "helix/crates/helix-im/src/outbound/posts_existing.rs §4 im_cancel_schedule（endpoint posts/cancelSchedule 行 106-122·body {channelId}·真源 CancelSchedulePostReq{ChannelId}）",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1 表行 81（to_effect_s1::emit_schedule_canceled）",
+    "dom": "docs/spec/send-message-vertical-slice.md §4 DOM 契约 + 本 UC data-has-schedule-post 清空",
+    "storage": "helix/crates/helix-im/docs/projection-schema.md §4 channel 表列 has_schedule_post（patch false）"
+  },
+
+  "corrAnchor": {
+    "note": "领域锚：schedule-canceled echo 帧的 channelId 由 e2e 在运行时填实值后覆写本字段（占位 null）；reducer 用它锁定目标束。",
+    "ch": null
+  },
+
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "posts/cancelSchedule",
+    "bodyFields": {
+      "channelId": "*"
+    },
+    "bodyForbidden": [],
+    "_note": "helix posts_existing.rs 行 115：body = {channelId}（扁平·非嵌套 post）。userId 取 session。响应 HTTP200。"
+  },
+
+  "projection": {
+    "event": "im:channel:schedule-canceled",
+    "dataKeys": [
+      "channelId",
+      "hasSchedulePost"
+    ],
+    "_note": "projection-schema.md 行 81：emit_schedule_canceled 工厂产出，触发路径 WS post_schedule_canceled action。数据键集冻结 2 字段（channelId, hasSchedulePost:false），缺/多即 fail。命名 camelCase 对齐现网 wire 透传。"
+  },
+
+  "storage": {
+    "op": "batch_update",
+    "table": "channel",
+    "minRows": 1,
+    "_note": "projection-schema.md §4 DB 列：channel 表的 has_schedule_post bool 列被 schedule-canceled WS 帧 patch 为 false 后落库。单行 channel patch == batch_update(len=1)（与 create 同 op·helix storage port 无 plain update）。"
+  },
+
+  "dom": {
+    "dataAttrs": {
+      "has-schedule-post": "!absent",
+      "channel-id": "*"
+    },
+    "_note": "spec §4 契约：schedule-canceled echo 后，对应 channel 行 DOM 节点 data-has-schedule-post 清空（hasSchedule=false → 模板 attr.data-has-schedule-post=null → 属性缺失）。选择器锚 [data-channel-id=ch]。!absent = 该属性必须不存在（清空发生·守可证伪：仍为 true 则 ③ 红）。"
+  }
+}

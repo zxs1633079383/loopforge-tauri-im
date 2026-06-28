@@ -145,7 +145,15 @@ export interface ChannelClosedData {
  */
 export const CHANNEL_SCHEDULE_CREATED_CHANNEL = "im:channel:schedule-created";
 
-/** im:channel:schedule-created data 形态（projection-schema 行 72·{channelId, hasSchedulePost}·全 camel）。 */
+/**
+ * UC-1.10 取消定时投影 channel（projection-schema 行 81 emit_schedule_canceled·WS
+ * `post_schedule_canceled` 透传·{channelId, hasSchedulePost:false}）。壳收到把该频道行
+ * hasSchedule 标透传值（恒 false）→ data-has-schedule-post 清空（频道级属性·壳纯渲染只透传投影
+ * hasSchedulePost·不在 JS 合成）。与 schedule-created 同 data 形态（复用 ChannelScheduleCreatedData）。
+ */
+export const CHANNEL_SCHEDULE_CANCELED_CHANNEL = "im:channel:schedule-canceled";
+
+/** im:channel:schedule-created / schedule-canceled data 形态（projection-schema 行 80/81·{channelId, hasSchedulePost}·全 camel）。 */
 export interface ChannelScheduleCreatedData {
   channelId: string;
   hasSchedulePost: boolean;
