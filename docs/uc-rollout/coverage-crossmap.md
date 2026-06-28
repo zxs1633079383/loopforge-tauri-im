@@ -9,6 +9,7 @@
 > - UC 集：`docs/uc-rollout/rollout-checklist.md`（依赖序 UC 触发 invoke→outbound）+ `docs/uc-coverage-ledger.md`（每 UC ① 出站 HTTP+WS 细节）
 >
 > 更新 2026-06-26（核对纠正：公告/onlineStatus/modules ⛔→✅·post_pin→UC-5.5b·status/ids/search/demo→✂️ 剔除·重算计数）。
+> **增补 2026-06-28**（cses-im-server `feat/im-ws-echo-fills` 实勘+补齐后）：① `users/status/ids` 实测已接线可用（api/user.go→app UserStatusByIds→presenceQuery().OnlineUserIds·WS presence ZSET 真源·非 statusCache 阻塞）→ **✂️→✅（UC-5.7 子项）**，✅ 70→71·✂️ 8→7；② `post_pin`/`add·remove manger` 后端补 WS 广播（post_pin 帧 + channel_member_role_updated）→ echo 面不再 ⛔backend-down。helix spec 真源：`helix/crates/helix-im/docs/uc-automation/{uc-command-set-spec,uc-test-contracts,backend-gap-fills}.md`。
 
 ## 图例（覆盖判定）
 
@@ -92,8 +93,8 @@
 | 16 | POST `/api/cses/channel/change/orient` | partial | UC-5.4 | ✅ |
 | 17 | POST `/api/cses/channel/change/purpose` | partial | UC-5.4 | ✅ |
 | 18 | POST `/api/cses/channel/change/top` | partial | UC-5.5 | ✅ |
-| 19 | POST `/api/cses/channel/add/manger` | partial | UC-6.2 | ✅ |
-| 20 | POST `/api/cses/channel/remove/manger` | partial | UC-6.2 | ✅ |
+| 19 | POST `/api/cses/channel/add/manger` | partial | UC-6.2 | ✅（2026-06-28 `feat/im-ws-echo-fills` 补 `channel_member_role_updated` 广播·role=ADMIN）|
+| 20 | POST `/api/cses/channel/remove/manger` | partial | UC-6.2 | ✅（同·补 role 广播·role=普通）|
 | 21 | POST `/api/cses/channel/add/postPinned` | partial | UC-5.5 | ✅ |
 | 22 | POST `/api/cses/channel/remove/postPinned` | partial | UC-5.5 | ✅ |
 | 23 | POST `/api/cses/channel/load/notice` | covered | UC-5.4（公告栏回读·改 notice 后读）| ✅ |
@@ -101,7 +102,7 @@
 | 25 | POST `/api/cses/channel/load/admin` | covered | UC-6.2（管理员列表读路径）| ✅ |
 | 26 | POST `/api/cses/channel/query` | covered | UC-5.8 | ✅（2026-06-24 新增 UC）|
 | 27 | POST `/api/cses/channel/close` | covered | UC-5.3 | ✅ |
-| 28 | POST `/api/cses/channel/onlineStatus` | partial | UC-5.7 | ✅（读族·①② 双面 e2e 真跑全绿·已迁移返 data·go-served·③④ N/A；users/status/ids 才是真阻塞项→见 ✂️ 剔除）|
+| 28 | POST `/api/cses/channel/onlineStatus` | partial | UC-5.7 | ✅（读族·①② 双面 e2e 真跑全绿·已迁移返 data·go-served·③④ N/A；users/status/ids 2026-06-28 实测已接线可用→见域C#2 转 ✅）|
 | 29 | POST `/api/cses/channel/member/change/role` | partial | UC-6.2 | ✅ |
 | 30 | POST `/api/cses/channel/member/change/notify` | partial | UC-5.4（成员免打扰·5.4 列 member/change/notify）| ✅ |
 | 31 | POST `/api/cses/channel/member/change/nickname` | partial | UC-6.3 | ✅ |
@@ -116,7 +117,7 @@
 | # | 接口 path | gap 状态 | 触发 UC | 覆盖判定 |
 |---|---|---|---|---|
 | 1 | POST `/api/cses/users/list` | covered | UC-6.4（拉成员用户·成员全量读路径）| ✅ |
-| 2 | POST `/api/cses/users/status/ids` | missing（真阻塞·statusCache）| — | ✂️ 剔除（2026-06-26 用户拍板·真阻塞 statusCache mattermost 深耦合·未注册·永久剔除·与 onlineStatus 读族解耦）|
+| 2 | POST `/api/cses/users/status/ids` | covered | UC-5.7 | ✅（2026-06-28 实勘纠正·非 statusCache 阻塞·已接线：api/user.go:27 userStatusByIds→app/cses_user.go:32 UserStatusByIds→presenceQuery().OnlineUserIds·WS presence ZSET `ws:presence:{userID}` 真源·`feat/im-ws-echo-fills` 补 API 层测试）|
 | 3 | POST `/api/cses/users` | missing（真阻塞·createUser）| — | ❓ 真漏网（开户深耦合原生·客户端无 invoke·非 ⛔/🚫/🌙 任一类·gap=真阻塞）|
 | 4 | POST `/api/cses/teams/upsert` | covered | UC-11.1 | ✅（2026-06-24 新增 UC）|
 | 5 | POST `/api/cses/teams/member/add` | covered | UC-6.1（team 域复用 channel ChannelMemberChange·与 channel#32 同 app 方法）| ✅ |
@@ -131,7 +132,7 @@
 | 14 | POST `/api/cses/search/do` | covered | — | ✂️ 剔除（同·聚合搜索·归属 java）|
 | 15 | GET `/api/cses/health` | covered | UC-12.1 | ✅（2026-06-24 新增 UC·连通性 1 面）|
 
-> 域 C 小计（2026-06-26 核对纠正）：✅ 6（users/list·teams/upsert→11.1·teams/member/add→6.1·teams/quit→11.2·health→12.1·modules→10.3）· ⛔ 0（原 6：status/ids+modules+search4 → modules 转 ✅·status/ids+search4 转 ✂️）· ✂️ 剔除 5（status/ids + search 4 件）· ❓ 4（users / groups / loadSend / loadTarget）。〔修正前：✅ 5 / ⛔ 6（doc 旧写 5 实为 6）〕
+> 域 C 小计（2026-06-28 增补纠正）：✅ **7**（users/list·teams/upsert→11.1·teams/member/add→6.1·teams/quit→11.2·health→12.1·modules→10.3·**status/ids→5.7 实测接线**）· ⛔ 0 · ✂️ 剔除 **4**（search 4 件·status/ids 已转 ✅）· ❓ 4（users / groups / loadSend / loadTarget）。〔2026-06-26：✅ 6 / ✂️ 5；本次 status/ids ✂️→✅〕
 
 ### 域 D — bot-agent / webhook / cross-repo demo（40 接口，文件 partials/4）
 
@@ -194,7 +195,7 @@
 | 2 | `posts_update` | UC-1.5（撤回批帧）| `emit_post_batch_updated` | ✅ |
 | 3 | `post_update` | UC-1.5（在线撤回）· UC-1.8（quickReply）· UC-1.9（加急）· UC-3.3（模板已收到）| `emit_post_updated`（fat）| ✅ |
 | 4 | `post_read` | UC-3.1（会话已读）· UC-3.2（单条已读）| `emit_post_read`（fat）| ✅ |
-| 5 | `post_pin` | UC-5.5b（消息置顶）| `emit_post_updated` | ✅（用户拍板挂 UC-5.5b·① 出站 `channel/add/postPinned` 经 go :8065 真绿·②③④ post_pin echo→im:post:updated/data-pinned/message patch ⛔backend-down 待 cses-java 恢复·C008 可证伪非掩盖）|
+| 5 | `post_pin` | UC-5.5b（消息置顶）| `emit_post_updated` | ✅（UC-5.5b·① 出站 `channel/add/postPinned` 真绿·②③④ **2026-06-28 cses-im-server `feat/im-ws-echo-fills` 补 post_pin 广播帧**(sendPinSystemPost 写库后 publish·operation add/remove)→ echo 面解除 backend-down）|
 | 6 | `post_schedule_created` | UC-1.10 | `emit_schedule_created` | ✅ |
 | 7 | `post_schedule_canceled` | UC-1.10 | `emit_schedule_canceled` | ✅ |
 | 8 | `increment_channel` | UC-4.1（hello）· UC-4.5（陌生 channel 自动注册）| `emit_channel_increment` | ✅ |
@@ -221,19 +222,19 @@
 
 | 判定 | 数量 | 分布 |
 |---|---|---|
-| ✅ 被 managed UC 触发 | **70** | 域 A 30 + 域 B 34 + 域 C 6 |
+| ✅ 被 managed UC 触发 | **71** | 域 A 30 + 域 B 34 + 域 C 7（2026-06-28 +status/ids→5.7）|
 | 🟡 部分面（L2/越界翻页）| **2** | 域 A #12 get / #13 getPostsAfterIndex（L2 真翻页·L1 走本地 Scan）|
 | 🌙 按需（文件上传）| **0** | UC-1.3 文件上传**不打 csesapi 端点**（上传接口在 java·posts/create 底层走域A#1 已 ✅）→ 本 124 内无独立 🌙 接口 |
 | ⛔ 阻塞 | **0** | 2026-06-26 核对纠正：公告 6/onlineStatus 1/modules 1 转 ✅·status/ids 1+search 4 转 ✂️ → ⛔ 清零 |
 | 🚫 bot移除 | **37** | 域 D #1-37 |
-| ✂️ 剔除规划 | **8** | status/ids 1（域C#2）+ search 4（域C#11-14）+ cross-repo demo 3（域D#38-40）|
+| ✂️ 剔除规划 | **7** | search 4（域C#11-14）+ cross-repo demo 3（域D#38-40）〔2026-06-28 status/ids 移出转 ✅〕|
 | ❓ 真漏网 | **7** | 见下逐个列出 |
 
 > **2026-06-26 核对纠正来源**：用户拍板 ① 公告 save/read 实有 WS post_update 广播（9--gap-posts §26-27·原「回声不可观测」描述错误，已更正）→ 公告 6 转 ✅（读 3·UC-5.6r / 写 3·UC-5.6w）；② onlineStatus 已迁移返 data → 转 ✅（UC-5.7 读族·与真阻塞的 users/status/ids 解耦）；③ modules/getAll 查库直返 → 转 ✅（UC-10.3 读族）；④ post_pin 用户拍板挂 UC-5.5b → WS 转 ✅；⑤ users/status/ids + search×4 + cross-repo demo×3 → ✂️ 永久剔除（不计 ⛔ 不计 ❓）。
-> **✅ 精确计数**：域A 30 + 域B 34 + 域C 6 = **70**。
+> **✅ 精确计数**：域A 30 + 域B 34 + 域C 7 = **71**（2026-06-28 +status/ids）。
 > **🚫**：域D #1-37 = **37**。
-> **✂️ 剔除**：域C 5（status/ids + search 4）+ 域D 3（demo）= **8**。
-> **❓ 真漏网**：124 − 70 − 2（🟡）− 37（🚫）− 8（✂️）= **7**。
+> **✂️ 剔除**：域C 4（search 4）+ 域D 3（demo）= **7**（status/ids 已转 ✅）。
+> **❓ 真漏网**：124 − 71 − 2（🟡）− 37（🚫）− 7（✂️）= **7**。
 
 #### ❓ 真漏网逐个清单（7 个）
 
@@ -258,7 +259,7 @@
 > | ❓ | 8（含 demo 3）| **7**（demo 3 移出归 ✂️·原「真业务漏网 5」实为 7·此处一并校正）|
 > | 合计 | 124 | 124 ✓ |
 
-**HTTP 最终计数（2026-06-26 核对纠正）**：✅ 70 · 🟡 2 · 🌙 0 · ⛔ 0 · 🚫 37 · ✂️ 8 · ❓ 7 = 124 ✓
+**HTTP 最终计数（2026-06-28 增补纠正）**：✅ **71** · 🟡 2 · 🌙 0 · ⛔ 0 · 🚫 37 · ✂️ **7** · ❓ 7 = 124 ✓〔2026-06-26 为 ✅70/✂️8；status/ids ✂️→✅〕
 
 ### WS（19 action）
 
@@ -279,8 +280,8 @@
 
 **不是「所有可达 HTTP+WS 都对得上某 UC」。** 但 2026-06-26 核对纠正后，可达业务面已**逐个对得上 UC**，剩余 ❓ 全部是「客户端无 invoke 的服务端/运维/废弃/被取代」链路：
 
-1. **HTTP ✂️ 剔除规划 8 个**（2026-06-26 用户拍板·永久剔除·不当漏网/阻塞挂账）：
-   - **真阻塞且客户端未注册**：`users/status/ids`（statusCache mattermost 深耦合·与已绿的 onlineStatus 读族解耦）。
+1. **HTTP ✂️ 剔除规划 7 个**（2026-06-28：原 8·status/ids 已转 ✅）：
+   - ~~`users/status/ids`~~ **2026-06-28 转 ✅（UC-5.7 子项）**：实勘非 statusCache 阻塞·已接线复用 WS presence ZSET 真源（`feat/im-ws-echo-fills` 补 API 层测试）。
    - **归属 java·不列入本仓规划**：`search/post|user|channel|do`（空桩·ES/store 未迁）。
    - **非业务 trace 合成 handler**：`channels/csesCrossRepoDemo` / `crossRepoCounterPoll` / `triggerMmToCsesCounterAck`（GitNexus cross-repo trace·非业务）。
 
@@ -289,10 +290,11 @@
    - **被新架构取代**：`posts/getUpdatedPosts`（旧时间游标增量·已被 channel_event v2 cursor sync = UC-4.2 取代）/ `posts/createMock`（压测旁路·已废弃）。
    - **客户端无 invoke 的服务端动作**：`post/approval/approval`（消息审批动作·审批开关入口 enableApproval 走 5.4·本审批动作无 UC）。
 
-3. **2026-06-26 转 ✅（原 ⛔）**：公告 6（`announcement/{save,read,acceptList,delete,list,detail}`→UC-5.6r 读 + UC-5.6w 写·读族 ①② 全绿/写族 ① 全绿·②④ echo ⛔backend-down 待 cses-java 恢复）/ `channel/onlineStatus`→UC-5.7（读族 ①② 全绿）/ `modules/getAll`→UC-10.3（读族 ①② 全绿）。WS `post_pin`→UC-5.5b（① 出站全绿·②③④ echo ⛔backend-down）。
+3. **2026-06-26 转 ✅（原 ⛔）**：公告 6（`announcement/{save,read,acceptList,delete,list,detail}`→UC-5.6r 读 + UC-5.6w 写）/ `channel/onlineStatus`→UC-5.7 / `modules/getAll`→UC-10.3。WS `post_pin`→UC-5.5b。
+   **2026-06-28 echo/广播面解除 backend-down**（cses-im-server `feat/im-ws-echo-fills` 实补）：`post_pin` 广播帧 + `add/remove manger` 的 `channel_member_role_updated` 广播；公告 save/read/delete 实勘早已链 `publishPostUpdate`（旧 ⛔backend-down 系 cses-java 宕的环境噪音·非契约缺口）。
 
 4. **WS 漏网**：无（`quit_company`→UC-11.2·`post_pin`→UC-5.5b）。
 
-**一句话**：loopforge 客户端 UC 集对**客户端可触发的业务面**逐个对得上（HTTP ✅ 70·域A 30/B 34/C 6；WS ✅ 17）；HTTP ⛔ 清零（可达面真跑全绿·部分 echo/广播面 ⛔backend-down 阻于 cses-java 宕·非覆盖缺失）；✂️ 剔除 8 + ❓ 真漏网 7 **全部是「客户端无 invoke 的服务端/运维/废弃/被取代/归属 java/非业务」链路**，不在「最小可测客户端宿主」职责范围内。
+**一句话**：loopforge 客户端 UC 集对**客户端可触发的业务面**逐个对得上（HTTP ✅ **71**·域A 30/B 34/C 7；WS ✅ 17）；HTTP ⛔ 清零；2026-06-28 后端补齐后 echo/广播面亦解除 backend-down；✂️ 剔除 **7** + ❓ 真漏网 7 **全部是「客户端无 invoke 的服务端/运维/废弃/被取代/归属 java/非业务」链路**，不在「最小可测客户端宿主」职责范围内。
 
 > **可验证性**：本表每行 gap 状态 verbatim 自 30-capability-gap-matrix，触发 UC verbatim 自 rollout-checklist / uc-coverage-ledger，端点 path verbatim 自 partials/1-5。任一行可回溯真源逐字核对。
