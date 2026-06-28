@@ -27,14 +27,16 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # 吃到的 helix 会跟着漂，测试不稳定。改 git branch ref + **Cargo.lock pin 具体 commit** →
 # loopforge 测的是冻结的稳定 helix 快照；要升级 helix 时显式 `cargo update -p helix-core helix-im
 # helix-driver-native helix-driver-host`（一次升一组），不被主 checkout 的分支切换扰动。
-# phase2 临时 repoint：指向 helix worktree branch fix/im-wire-body-build（5 命令 wire body 成形已
-# 下沉 helix-im·见 helix 仓 worktrees/im-body-build commit 3be1840）。验回归后改回 reclaim 主线。
-helix-core          = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "main" }
-helix-im            = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "main" }
-helix-driver-native = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "main" }
+# 临时 repoint：指向 helix branch fix/im-send-echo-reconcile（HEAD 36162c9·send echo 对账修复）：
+#   ① HTTP200 无 serverId 不清栈·留 WS echo 幂等补乐观行 id 列（57e8b72）
+#   ② self-echo 在 cursor gap 下兜底 emit im:post:received 结算乐观行 DOM（36162c9）
+# 验回归后改回主线。重 pin 命令：cargo update -p helix-core helix-im helix-driver-native helix-driver-host。
+helix-core          = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "verify/endgame-land" }
+helix-im            = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "verify/endgame-land" }
+helix-driver-native = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "verify/endgame-land" }
 # 泛型引擎壳（run_engine_loop<S,H,E,Tr,C> + EngineDeps + RecordingSink）——
 # 组装根直连此泛型入口，把全 port 包上装饰器（native EngineConfig 具体类型注不进装饰器）。
-helix-driver-host   = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "main" }
+helix-driver-host   = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "verify/endgame-land" }
 
 # 仪表层（本仓 · Recording<P> + InstrumentCtx + LogSink）
 helix-driver-instrument = { path = "../crates/helix-driver-instrument" }
