@@ -729,6 +729,25 @@ export class ImStoreService {
   }
 
   /**
+   * UC-1.5 撤回：serverId=已发送消息 server id → invoke('im_revoke', {postId})。
+   *
+   * 壳只翻译入参 + 入泵（im_revoke Tauri 命令收 `post_id`·Tauri 自动 camel→snake·
+   * 同 markRead 既有约定）；endpoint/body（POST posts/revoke {postId}）全在 helix-im
+   * outbound·壳不臆造（C013 纯渲染壳）。data-revoke=1 由 helix `im:post:batch-updated`
+   * （在线 posts_update echo）/ `im:post:deleted`（离线 fat）投影驱动 markRevokedById·
+   * 壳纯渲染·无乐观合成。无 server id（未对账乐观消息）→ 不发；非 Tauri / 命令缺失 → 静默。
+   */
+  async revoke(serverId: string): Promise<void> {
+    const sid = serverId.trim();
+    if (!sid) return;
+    try {
+      await this.bridge.invoke<void>("im_revoke", { postId: sid });
+    } catch {
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（data-revoke 靠投影驱动·无乐观合成）。
+    }
+  }
+
+  /**
    * UC-3.1 会话已读：invoke('im_read_channel', {channelId}）。
    *
    * 进/看会话触发——**会话级**标整会话已读（vs UC-3.2 markRead 的 posts 单条模式）。

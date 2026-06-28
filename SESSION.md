@@ -11,9 +11,8 @@
 ✅ DONE 阶段A' 3 阻塞绿(render-board 🟩15→18/19) @2026-06-27 | loopforge commit a56353f + helix fix/im-wire-body-build b707349 | UC-5.5置顶(helix漏emit_channel_update·re-pin) + UC-5.3关群(spec选择器误命中ML消息行·scope channel-list) + applyPostDeleted离线撤回(新建uc-1.5-offline spec+驱动·冷启动重放) | 后端cses-im-server实证正确·NEED_FIX后端假设证伪(0改) | 仅剩 applyChannelIncrement/UC-4.1 契约歧义交人审(C004·未碰)
 ✅ DONE 三阶段一条龙(A 铺绿5/9→A' 死磕3绿→B量化纯度审计→C per-UI全映射) @2026-06-27 | render-board 🟩18/19(唯一PENDING=UC-4.1契约歧义交人审) | loopforge 83fb98f(github推) + helix b707349(origin推·UC-5.5 emit修复) | docs:纯渲染壳-重构工作量与纯度验证.md + ui-指令映射全景.md | 后端0改(假设证伪) | 第二北极星100%守住
 ✅ DONE UC-4.1 就绪根四面绿(render-board 🟩18→19/19·全 BOUND) @2026-06-27 | loopforge only(reducer+spec+expect_note·helix/后端0改) | 契约歧义决议(用户授权):UC-4.1=hello bootstrap阶段(channels/load/increment singleton)·UC-4.2=sync/notify上报阶段·同一ready流不同阶段干净分工 | 根因:①锚 ch 束混入 per-channel sync/notify 抢答 + bootstrap cursors 冷启动 race 为空 → reducer 修 in-bundle URL 滤 + 空cursors singleton 兜底(可证伪对偶保) + spec 锚=②increment∩③rendered∩③lastMessage | --warm 2x + 独立 reboot 1x 连绿·reducer 自测 189/0·gate 全过
-```
+✅ DONE loop-Engine L3 首证 UC-1.5 撤回 UI 接线四面全绿(真点 UI 路径) @2026-06-28T11:07 | reducer 裁定 ✅四面全绿(C009·非自评) | 缺口=壳 UI 触发件接线(onRevoke 空占位→真接 store.revoke·im-store 加 async revoke) + e2e 改真点 UI 撤回件(UC-1.8 native-click 范式·绕 hover opacity:0 门) | 贯通①出站 posts/revoke{postId}②投影 im:post:batch-updated③DOM data-revoke=1④落库 batch_update | 后端 cses-im-server:8066 health OK·0改 | helix 0改(im_revoke command+markRevokedById 早就绪) | loopforge main(禁merge禁push) | issue #71
 
-## 1. 这次干了什么（一句话）
 
 从「怎么三端联调」起，经 grilling → PRD #49 → 8 竖切(#50-#57) 自驱通关，把 loopforge 从「壳内 31 处业务逻辑」迁成 **纯渲染壳·零业务逻辑（第二北极星 100%）**；再死磕 4 个尾巴 + 4 个红 UC 到全绿。三端 = loopforge(壳) + helix(引擎·render-ready 投影) + cses-im-server(:8066 后端)。
 

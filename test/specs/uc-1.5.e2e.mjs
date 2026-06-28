@@ -145,12 +145,31 @@ describe('UC-1.5 · 撤回消息 round-trip（四面契约）', () => {
     expect(MSG_ID).toBeTruthy();
     expect(MSG_ID).not.toBe(tmp); // 确认已覆写
 
-    // —— 第二步：撤回消息 ——
+    // —— 第二步：撤回消息（真点 UI 撤回件·证壳接线 onRevoke→store.revoke→im_revoke）——
     await invokeBridge('set_uc', { uc: 'UC-1.5' });
-    
-    // invoke im_revoke，参数为 server_id（postId）。
-    const revokeResult = await invokeBridge('im_revoke', { postId: MSG_ID });
-    expect(revokeResult.ok).toBe(true);
+
+    // 真点 UI 路径（issue #71 / G1.1）：按 server id 锚定**本次消息行**的撤回件 → 点击。
+    // 这条路径证壳接线（onRevoke 占位 → 真接 store.revoke），且同一 im_revoke 流贯通四面
+    // （outbound/projection/storage 经 run.jsonl 由 reducer 裁定·DOM 即下方 data-revoke）。
+    // onRevoke 未接线时此点击不触发任何出站 → 下方 waitUntil 超时红（TDD red 锚）。
+    const msgRow = await $(`[data-msg-id="${MSG_ID}"]`);
+    await msgRow.waitForExist({ timeout: 5000 });
+    // 消息行操作按钮组 .msg__ops 默认 opacity:0，仅 .msg:hover 时 opacity:1（app.component.ts CSS）。
+    // WKWebView 自动化下 moveTo 不可靠触发 CSS :hover 伪类 → WebdriverIO waitForClickable 永红
+    // （opacity:0 视作不可见）。但按钮始终在 DOM/布局内（opacity 非 display:none）。改为对**真按钮元素**
+    // 派发原生 DOM click——仍触发 Angular 模板真绑定 (click)="onRevoke(m)"（真 UI 按钮路径·C007·
+    // UC-1.8 同范式·非直 invoke 模拟），仅绕过 hover 可见性门（自动化环境限制·非业务逻辑）。
+    const clicked = await browser.execute((sid) => {
+      const row = document.querySelector(`[data-msg-id="${sid}"]`);
+      const btn = row?.querySelector('[data-testid="revoke-btn"]');
+      if (!btn) return false;
+      btn.click(); // 原生点击：触发 Angular (click) 监听器（onRevoke）
+      return true;
+    }, MSG_ID);
+    expect(clicked).toBe(true);
+
+    // 引擎旁证（保留 invokeBridge 直调能力）：UI 路径已驱动撤回·此处不重复触发，
+    // invokeBridge 仍用于 set_uc 窗口控制 + 必要时引擎旁路验证（spec §7）。
 
     // 断言③：等撤回后行的 DOM 表现
     // Phase2 UI 设计前，spec 记录意图：行应标 data-revoke=1 或被删除。

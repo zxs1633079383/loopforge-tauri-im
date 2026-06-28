@@ -1078,9 +1078,12 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // ═══ ML 消息行交互件（占位骨架）═══
 
-  /** UC-1.5 撤回（命令已通·UI 触发件待接）。占位 → 接 im_revoke。 */
-  onRevoke(_row: MessageRow): void {
-    /* UC-1.5 接通 */
+  /** UC-1.5 撤回：msgId=消息 server id → store.revoke（body `{postId}` 由 Rust/helix 拼·壳不臆造）。
+   *  无 server id（未对账乐观消息）→ 不发。data-revoke=1 由 helix `im:post:batch-updated`（在线
+   *  posts_update echo）/ `im:post:deleted`（离线 fat）投影驱动 markRevokedById·壳纯渲染·无乐观合成。 */
+  onRevoke(row: MessageRow): void {
+    if (!row.msgId) return; // 无 server id（未对账消息）→ 不发
+    void this.store.revoke(row.msgId);
   }
 
   /** UC-3.2 单条已读：postId=消息 server id + channelId=消息所在群 → store.markRead
