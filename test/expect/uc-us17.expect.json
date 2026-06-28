@@ -1,0 +1,63 @@
+{
+  "$schema-note": "四面期望文件 (US-17 他人发消息收推送·L2 双账号) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现 / 本仓渲染壳 / 机器件（reducer target 选择·装饰器抽键·seed）。契约真过时 → 出『契约变更提案 + 证据』交人审。",
+  "ucId": "US-17",
+  "title": "他人发消息收推送（L2 双账号·issue #42）：B=678 在共享频道发消息 → A=444 经 WS 收 post 推送 → 投影 im:post:received（fat）→ DOM 新消息行 data-msg-id + message 落库",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "L2 read-side：① 出站在 B=678 侧（posts/create·act-as-678·本 spec 直断 l2-act 返回 SUCCESS）。A=444 是被观测端·本身不发 posts/create 出站 → A run.jsonl 出站面 N/A（method/url 通配·空 body·isOutboundOptional）。",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1 to_effect::emit_post_received (fat·17 键)。A=444 收 B 推来的 post WS 帧 → helix emit_post_received。",
+    "dom": "docs/spec/send-message-vertical-slice.md §4 DOM 契约（received 复用 L1 消息行渲染·data-msg-id=server id·无 temporary-id 因非本端发）。",
+    "storage": "docs/spec/send-message-vertical-slice.md §5 / §2 facet④：received post echo 落 message 行（id=server_id, channel_id=锚频道）。"
+  },
+  "corrAnchor": {
+    "note": "领域锚：A=444 收到的 received post 无 tmp（非本端发）·锚 server msg_id（sid）。e2e 先在 A run.jsonl 找 message===<本轮唯一 TEXT> 且 userId==678 的 im:post:received 投影取其 msg_id（server id）填实 sid·reducer 用它锁定目标束（① 出站 N/A·②④ 经 sid 聚同束·③ DOM e2e 注入该行）。守可证伪：A 未收 678 的 received post → 无命中 → sid 落空 → ②④ 红（非 tautology）。",
+    "sid": null
+  },
+  "outbound": {
+    "method": "*",
+    "urlEndsWith": "*",
+    "bodyFields": {},
+    "bodyForbidden": [],
+    "_note": "L2 read-side ① N/A（isOutboundOptional）：he 人发消息的 ① 出站结构上在动作端 B=678（posts/create·act-as-678）·非被观测端 A=444。A run.jsonl 不产 posts/create 出站故 ① 在 A 侧不可裁定·显式标 optional（method/url 通配·空 body·空 forbidden）。① 真验在 spec 直断 l2-act send 返回 SUCCESS（B 真发出）。守可证伪：②④ 仍按 sid 锚严格裁定·B 没发出（l2-act 非 SUCCESS）→ spec 第一步即红。"
+  },
+  "projection": {
+    "event": "im:post:received",
+    "dataKeys": [
+      "channel_id",
+      "event_seq",
+      "msg_id",
+      "temporaryId",
+      "channelId",
+      "userId",
+      "type",
+      "message",
+      "props",
+      "createAt",
+      "updateAt",
+      "readBits",
+      "viewers",
+      "sendStatus",
+      "reactions",
+      "templateReceived",
+      "systemNotice"
+    ],
+    "dataValues": {
+      "userId": "678"
+    },
+    "_note": "projection-schema §1 emit_post_received fat 完整集（17 键·与 UC-send-1 同冻结集）。缺/多即 fail。dataValues userId==678 = L2 跨账号铁证：A=444 收到的这条 received post 的作者必是 B=678（非 A 自发回声·守可证伪——若锚到 A 自己的消息则 userId==444 → ② 红）。message 值的唯一性由 e2e 在 spec 内按本轮 TEXT 选束（锚 sid）·非本字段静态断言。"
+  },
+  "storage": {
+    "op": "batch_upsert",
+    "table": "message",
+    "minRows": 1,
+    "_note": "spec §2 facet④：A=444 收到的 received post echo 落 message 行（id=server_id=sid, channel_id=锚频道）≥1。装饰器 facet④ payload 暴露 {op,table,rows}（不含行内容）。经 sid（msg_id 别名）与 ② 投影聚同束。守可证伪：未落库 → ④ 红。"
+  },
+  "dom": {
+    "dataAttrs": {
+      "msg-id": "*",
+      "channel-id": "*",
+      "event-seq": "*"
+    },
+    "_note": "received 行复用 L1 消息行渲染（壳 applyPostReceived 把 im:post:received 投影渲成 ML 区行）。data-msg-id=server id（非 tmp·received 无 temporary-id 因非本端发）·data-channel-id=锚频道·data-event-seq 非空。e2e 按 sid（server msg_id）定位该行读 data-* 注入 reducer。守可证伪：B 的消息未渲成 A 的新行（无 [data-msg-id=sid]）→ ③ 红（跨账号推送未到达 DOM·L2 核心证据缺失）。"
+  }
+}

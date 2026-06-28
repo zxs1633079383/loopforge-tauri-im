@@ -90,7 +90,7 @@
 ## 阶段 L2 · 双账号广播（需第二真实连接·feasible·L1 稳后专批）
 | 勾 | UC | 触发 → 观测 | ② 投影工厂 | ③ DOM data-* | 说明 |
 |---|---|---|---|---|---|
-| [2] | US-17 他人发消息收推送 | 连接 B 发 → 连接 A 收 | `emit_post_received`(fat) | 新消息行 | 跨账号 post 推送 |
+| [x] | US-17 他人发消息收推送 ✅四面全绿(issue #42·L2 双账号首证) | B=678 发 → A=444 收推送 | `emit_post_received`(fat·userId=678) | 新消息行 data-msg-id | 跨账号 post 推送·A 新建频道拉 678→678 发→A 收·spec uc-us17-l2 |
 | [2] | 6.1b 拉人后对端实时更新 | B 被拉 → 留存成员 A 收 | `emit_channel_member_updated` | data-members | type=join/leave post |
 | [2] | 5.3b member-leave 广播 | 被增减目标第二连接收 | (member 广播) | channel/member 变更 | 退群/关群广播 |
 | [2] | 6.2b admin 广播到他人 | 第二连接收 role 变更 | `emit_channel_member_updated` | data-admin | member_role_updated 广播 |

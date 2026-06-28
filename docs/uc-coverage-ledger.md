@@ -88,6 +88,15 @@
 - **③ DOM**：`data-read-bits`。✅ **实跑绿**（壳纯渲染·send echo 投喂 readBits）。
 - **④ 落库**：`message.read_bits`。🟡 **L2-facet**（同 ②·待 L2 双账号·依赖 post_read echo 落 read_bits·L2 issue #47）。
 
+### US-17 他人发消息收推送 — `✅ four-facet-verified（L2 双账号首证·issue #42）`（2026-06-28 暖栈实跑全绿·认领 D）
+- **L2-facet 真验证范式**：跨账号 post 推送结构上只有第二真账号才造得出。A=444（暖栈 app 4445·驱动+观测）当场新建频道并把 B=678 拉为成员（`im_create_channel {memberIds:[678]}`·server users:[{444 CREATOR},{678 MEMBER}]·真机curl真源 §4）→ B=678 经 `scripts/l2-act.sh send`（posts/create·act-as-678·cookieId 桥）在该频道发消息 → go 按 `broadcast.channelId` fanout 到频道成员 444 的 WS 连接 → A 实时收 `post` 帧。**踩坑**：硬编码"共享频道"`15gcgoyf…`并非 444+678 共有（uc-3.2-l2 旧假设）→ server 不 fanout → A 收不到（raw-WS 实证 + sync no_change/nextSeq:0 双证）；改为当场新建带 678 的频道后 raw-WS 实证 A=444 收到 `post` 帧（broadcast.channelId 命中·全字段）→ 跨账号链路打通。
+- **① 出站**：N/A（L2 read-side·optional·isOutboundOptional）。结构上在动作端 B=678（posts/create·act-as-678）·非被观测端 A。spec 直断 l2-act send 返回 SUCCESS（B 真发出·守可证伪：B 没发出则第一步红）。
+- **② 投影**：`im:post:received`（fat·17 键·projection-schema §1 emit_post_received）·`data.userId==678`（跨账号铁证：作者是 B 非 A 自发回声）。
+- **③ DOM**：新消息行 `[data-msg-id=server_id]`（received 无 temporary-id·非本端发）·data-channel-id=新频道·data-event-seq 非空。**L2 核心证据：B 的消息渲成 A 的 UI 新行**。
+- **④ 落库**：`message` batch_upsert（id=server_id·经 sid=msg_id 别名与 ② 聚同束）。
+- **接通件（全机器件·零改冻结 oracle·C004/C009）**：`scripts/l2-act.sh`（act-as-678 cookieId 桥·已存在）+ `test/expect/uc-us17.expect.json`（① optional·② fat userId=678·④ message·③ data-msg-id）+ `test/specs/uc-us17-l2.e2e.mjs`（A 新建频道拉 678→set_uc US-17→l2-act send→waitUntil im:post:received[message==本轮TEXT && userId==678]取 server msg_id→DOM 新行→reducer 锚 sid 裁定四面）。reducer 主入口 `runFourFacet`（sid 锚·① optional 自动绿）。
+- **绿证**：corr_key=`ch=sproit7rbjrcm8apuuhsmyt5te;tmp=d2a702f56d417b4903103d07;sid=w6rj434i6tycjrmauqsdgsfrzr;seq=2`·四面全绿·gate.sh 绿（reducer 自测 189 pass）。
+
 ### UC-3.3 模板已收到 — `✅ four-facet-verified`（2026-06-25 实跑全绿·认领 S）
 
 > 实证：`run.sh -- --spec test/specs/uc-3.3.e2e.mjs` → `✅ UC-3.3 四面全绿`（corr_key `ch=15gcg…;tmp=…;sid=1ouh77refibz8j4ujz4aiy1m8a;seq=65`）。接线：壳 `im_template_received`（postId → camelCase `{postId}` 入泵·helix builder 读 camel·snake 会 Parse 失败）+ 前端 `store.templateReceived` + 消息行 `template-received-btn`（C007 配 `onTemplateReceived`）+ `data-template-received`（store `extractTemplateReceived` 抽 props.template.userIds 非空 → '1'·壳纯渲染）。
