@@ -178,3 +178,4 @@
   ↳ 修复（scripts/harness.sh + 新 scripts/seed-snapshot.sh）：`spec <uc> [--fresh|--warm|--keep]` + ISOLATE_UCS 自动判定。① 内核自驱 UC（4.1/4.2/4.4/10.1）隔离=reload-app+bootstrap-UC+不二次 truncate（boot hop 是 ①② 标的·4.x 另 seed-behind-cursor）；② 命令型 UC（1.4/5.3）隔离=reload（清 DOM/inflight/in-memory·保 live cursor 无风暴）。
   ↳ 两处实测踩坑（已写卡 §2.3/§5）：① 隔离首版二次 truncate 截断 app append 中 jsonl → 稀疏 null 空洞 → reducer parseErrors=26 假红 → 删二次 truncate。② full DB restore 还原 stale cursor → reload 后 hello 冷启自愈 catch-up 同步风暴（stuck_channels）抢道 → 5.3 关闭行移除超时假红 → restore 降级为 opt-in（LOOPFORGE_RESTORE_DB=1·默认关）；修正任务初始假设「每 spec 复位 DB 快照」=隔离核心其实是 reload 复位易失态 + 保 live cursor。
   ↳ 索引同步：CLAUDE.md §9 + AGENTS.md（镜像）+ README §1 + 本 log（一次 commit）。gate.sh ✅ cards=14 三处一致·镜像绿·reducer 189/0。
+✅ DONE loop-Engine 真run入口(workflow+slash)+merge回main @2026-06-28 | merge 2859478 | 288 test绿/gate绿/dry-run正常 | main | 下一步 /loop-engine 跑 L3 首证
