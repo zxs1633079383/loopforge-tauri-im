@@ -64,6 +64,39 @@ post_read 广播帧的 `data` **补 channelId 字段**（与 `post` 帧 data.cha
 spec/expect harness 就绪（test/specs/uc-3.2-l2.e2e.mjs + test/expect/uc-3.2-l2.expect.json）·按方案 A 改 helix 后
 `harness.sh spec 3.2-l2` 即可转绿（守可证伪：现红在 ② waitUntil im:post:read 超时）。
 
+## ✅ ROUND-3 实施（2026-06-28·方案 A 已落地 helix）
+按 round-2 方案 A 改 helix：`crates/helix-im/src/ws/handlers/post_read.rs` **绕开 channel gate** 走专用
+直路——`apply_read_op`（覆盖 read_bits）+ `emit_post_read`（fat·event_seq=0），缺 event_seq 不再 no-op。
+- helix 分支 `fix/im-post-read-bypass-gate` @ commit **2a6a0be**（base b707349·禁推/禁合 main·留人审）。
+- helix 测试：`cargo check -p helix-im` PASS·`cargo test -p helix-im` 175+ 全绿（+1 新回归
+  `post_read_without_event_seq_still_writes_and_emits_s1`）。
+- loopforge re-pin：src-tauri/Cargo.toml + helix-driver-instrument/Cargo.toml branch →
+  `fix/im-post-read-bypass-gate`·Cargo.lock → 2a6a0be。
+
+### 四面 reducer 实测（`harness.sh spec 3.2-l2`·A 发 k6kc…→678 read→A 收 echo）
+| 面 | 结果 | 证据 |
+|---|---|---|
+| ① 出站 | N/A·optional·**满足** | spec 直断 678 post/read → `{"status":"SUCCESS"}` |
+| ② 投影 | ✅ **绿** | A run.jsonl emit `im:post:read` fat 17 键·`readBits:"11"`·event_seq=0（**root gap 已修**：缺 event_seq 现也 emit） |
+| ③ DOM | ✅ **绿** | `[data-msg-id=k6kc…]` data-read-bits=11 已更新 |
+| ④ 落库 | ❌ **红·仅 op 标签** | 实得 `op=batch_update`（`UPDATE message SET read_bits WHERE id`·keys=1）·oracle 期 `batch_upsert` |
+
+### ④ 红 = 冻结 oracle 过时（C004·停下标人审·非实现缺陷）
+read 是对**既存** message 行 read_bits 列的覆盖写 → `apply_read_op` 用 `BatchUpdate`（O(1) UPDATE·
+helix channel.rs:453 注释明示「**不**用 ON CONFLICT(id)·message.id 无 UNIQUE 约束」）是**架构正确**形态。
+`batch_upsert` 在此**不可行**（post_read wire 只带 {postId,readMap}·无整行·无 UNIQUE 约束无法 ON CONFLICT）。
+- **证据 1**：expect.json storage._note 自述「**update** read_bits 列」——与自身 op 标签 `batch_upsert` 自相矛盾。
+- **证据 2**：run.jsonl 对同 msg_id 确有一条 `batch_upsert`(rows=1)——但那是 **send INSERT**（bundle
+  `UC-3.2-L2-send`·seq 4637）·非 read echo；read echo 是 `batch_update`（bundle `UC-3.2`·seq 4641）。
+  oracle 作者疑似把「消息行被 send upsert」误当「read echo 落库」。
+- **证据 3**：在线（post_read.rs）+ 离线（sync_effects.rs:115）read 双路径均 `apply_read_op`→batch_update。
+- **证据 4**：reducer 已归一 `rows = rows ?? keys`（minRows≥1 用 keys=1 满足）——唯 op 字符串严格相等卡红。
+
+**契约变更提案（交人审·禁 agent 自改冻结 oracle）**：
+`test/expect/uc-3.2-l2.expect.json` + `test/expect/uc-3.2.expect.json`（L1 母本）storage.op
+`batch_upsert` → **`batch_update`**（read 是 column overwrite·非 row upsert）。人审拍板后改 oracle →
+`harness.sh spec 3.2-l2` 即四面全绿 → 关 #14/#47。**本批不自改 oracle·不 fake-green·#14 留 OPEN。**
+
 ## 关联
 - issue #14（UC-3.2 单条已读·L2-pending）+ tracker #47（read-receipt）。**留 OPEN·park·不 fake-green**。
 - 同族 #15（UC-3.1 会话已读·channels/view read echo）大概率同根因（read 旁路回执无 event_seq + 同 gate mismatch）。
