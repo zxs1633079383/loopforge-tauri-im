@@ -92,8 +92,8 @@
 |---|---|---|---|---|---|
 | [x] | US-17 他人发消息收推送 ✅四面全绿(issue #42·L2 双账号首证) | B=678 发 → A=444 收推送 | `emit_post_received`(fat·userId=678) | 新消息行 data-msg-id | 跨账号 post 推送·A 新建频道拉 678→678 发→A 收·spec uc-us17-l2 |
 | [x] | 6.1b 拉人后对端实时更新 ✅①+②④源全绿(issue #28·L2 双账号) | B=678 被拉 → 678 收 channel_member_update | `emit_channel_member_updated` | data-members(B侧观测) | spec uc-6.1-l2·①A出站+②④源678 raw帧(bcast.userId=678) |
-| [~] | 5.3b member-leave 广播 ⏸park(NEEDS·退群广播为 leave NOTICE post 非 channel_member_update·issue #44) | 被增减目标第二连接收 | (member 广播·后端缺) | channel/member 变更 | 退群/关群广播·NEEDS_CSES_IM_SERVER_FIX_member_event_broadcast |
-| [~] | 6.2b admin 广播到他人 ⏸park(NEEDS·admin 变更为 addManager NOTICE post 非 member-update·issue #29/#45) | 第二连接收 role 变更 | `emit_channel_member_updated`(后端缺) | data-admin | member_role_updated 广播·NEEDS_CSES_IM_SERVER_FIX_member_event_broadcast |
+| [x] | 5.3b member-leave 广播 ✅①+②④源全绿(后端 round-2 补齐·issue #44) | A 移除 678 → 留存成员 999 收 channel_member_update{leave} | `emit_channel_member_updated` | channel/member 变更(B侧观测) | spec uc-5.3b-l2·①A出站leaveUsers+②④源999 raw帧memberChange.leave:[678] |
+| [x] | 6.2b admin 广播到他人 ✅①+②④源全绿(后端 round-2 changeManagerRole·issue #29/#45) | A 设 678 admin → 678 收 channel_member_role_updated | `emit_channel_member_updated` | data-admin(B侧观测) | spec uc-6.2-l2·①A出站channel/add/manger+②④源678 raw帧role=MANAGER |
 
 ---
 

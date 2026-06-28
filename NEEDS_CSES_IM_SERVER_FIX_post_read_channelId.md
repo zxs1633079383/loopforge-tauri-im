@@ -38,6 +38,32 @@ post_read 广播帧的 `data` **补 channelId 字段**（与 `post` 帧 data.cha
 - 验证：`bash scripts/harness.sh spec 3.2-l2` → 应四面全绿（reducer 锚 sid=A 的 postId）。
 - 守可证伪：spec 现红在 ②（waitUntil im:post:read 超时）= 真 gap·非掩盖（C008）。
 
+## ⚠️ ROUND-2 复验（2026-06-28·后端已补 channelId·commit 6e6dbc3 后实测）
+后端 round-2 确实修了 channelId（raw-WS 实证 post_read 帧 `data.channelId` 现非空）。**但 #14 仍红**——
+更深一层 gap：
+
+1. **post_read 帧仍缺 `event_seq`**（data 只有 channelId/postId/readMap/createAt/updateAt）。helix
+   `ws/handlers/gate.rs:51` `gate_ingest_content_event` 走 channel gate（严格 +1 cursor 排序），
+   `let Some(seq) = frame.event_seq() else { return no-op }`——`frame.event_seq()` 读 data.event_seq /
+   props.channel_event_seq / channel_event_seq 均无 → None → **gate no-op·不 emit·不落库**。
+2. **read 不产生 sequenced channel_event**（实测）：678 读 444 消息后，A sync 该频道仍 `nextSeq=2`
+   （仅 join eventSeq=1 + A 消息 eventSeq=2）·**无 type6 read 事件**。即 read 是「无序号的旁路回执」·
+   不参与频道事件序列 → 本就没有 event_seq 可带。
+
+### 架构层 mismatch（main/人审决议·二选一）
+- **A. helix 改（推荐·属引擎缺陷 C004·非冻结 oracle）**：post_read **不该走 cursor gate**。已读回执是
+  对既存 message 的 **read_bits 幂等覆盖写**（readMap 是全量权威位图·非增量·天然 order-independent），
+  无需 +1 序号排序。helix post_read handler 应**直接** apply_read_op（覆盖 read_bits）+ emit im:post:read·
+  绕开 gate_ingest_content_event 的 event_seq 强校验。**此改在 helix 仓·跨仓+re-pin·建议 main 协调或
+  专批授权**（本批 coordinator scope 限 loopforge+后端·未授 helix 引擎改）。
+- **B. 后端改**：post_read 也建 sequenced channel_event（带 eventSeq）并入 sync 流。**不推荐**——每次已读
+  =一条 channel_event 会让事件日志暴涨（hot-path 写放大·违 performance 铁律 normalized/O(1) 精神）。
+
+### 现状
+**#14/#47 留 OPEN·park**（连败 2 次：round-1 无 channelId·round-2 无 event_seq+gate mismatch·不 fake-green C011）。
+spec/expect harness 就绪（test/specs/uc-3.2-l2.e2e.mjs + test/expect/uc-3.2-l2.expect.json）·按方案 A 改 helix 后
+`harness.sh spec 3.2-l2` 即可转绿（守可证伪：现红在 ② waitUntil im:post:read 超时）。
+
 ## 关联
 - issue #14（UC-3.2 单条已读·L2-pending）+ tracker #47（read-receipt）。**留 OPEN·park·不 fake-green**。
-- 同族 #15（UC-3.1 会话已读·channels/view read echo）大概率同根因（read echo 帧缺 channelId）·后端一并修。
+- 同族 #15（UC-3.1 会话已读·channels/view read echo）大概率同根因（read 旁路回执无 event_seq + 同 gate mismatch）。

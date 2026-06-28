@@ -31,7 +31,12 @@ broadcast.userId=678）→ helix `emit_channel_member_updated` 成立。**拉人
 **B. 契约修订 + helix 派生**（改 projection-schema/契约 + helix post handler 识别 props.type=addManager/leave
 派生成员态变更）——属冻结契约变更·须出『契约变更提案 + 证据』交人审（C004·禁自改 oracle）。
 
-## 现状（诚实出账·不 fake-green）
-- #29/#45·#44·#40/#48 **留 OPEN·park**。membership setup（当场建带 678 频道）+ observe-678 harness 已就绪
-  （`scripts/l2-observe-678.mjs` + uc-6.1-l2 模板）·一旦后端补 member-update 事件即可快速 port spec 验证。
-- 对照绿 #28/#43（拉人 channel_member_update）证明 harness + observe 链路正确·缺口纯在后端 member-event 广播。
+## ✅ ROUND-2 已解决（2026-06-28·后端 round-2 重启生效）
+后端 round-2 补齐 member-update 事件广播·本会话实证 + spec 验证：
+- **#29/#45 admin ✅ 绿**：`changeManagerRole` 现广播 `channel_member_role_updated{channelId,userIds,role=MANAGER}`（add/remove manger 都经它·无绕过）→ B=678 raw-WS 实证收到 → spec uc-6.2-l2 两轮绿。
+- **#44 member-leave ✅ 绿**：`handleMemberLeave→broadcastMemberLeaveIncrement` 现对留存成员单播 `channel_member_update{memberChange.leave:[678]}` → B=999 raw-WS 实证收到 → spec uc-5.3b-l2 两轮绿。
+
+## 现状（仅剩 #40 退公司·诚实出账）
+- **#40/#48 退公司 留 OPEN·park**——**未 live 跑**（`teams/member/quit` 移除 444 team 归属·破坏暖栈 444 账号 + 后续测试）。同族大概率已随 round-2 补 `quit_company` 广播·但须**隔离环境**（独立账号·非暖栈 444）验证。
+  - 期望：A 退 team → 同 team 其余成员（B=999）raw-WS 收 `quit_company`（payload channels[]·partials/5 §2.18）。
+  - 验证路径就绪：observe-999 harness + 当场建带 999 频道·只差隔离环境跑（用独立 quit 账号·非 444）。

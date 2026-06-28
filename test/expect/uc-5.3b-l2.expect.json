@@ -1,0 +1,41 @@
+{
+  "$schema-note": "四面期望文件 (UC-5.3b member-leave 广播·L2 双账号) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)。L2 read-side：① 出站在动作端 A=444（channel/member/change leaveUsers）·②④源在留存成员 B=999 raw-WS（channel_member_update memberChange.leave）。",
+  "ucId": "UC-5.3b",
+  "title": "member-leave 广播（L2 双账号·issue #44）：A=444 移除 678 → server broadcastMemberLeaveIncrement 对留存成员单播 channel_member_update{memberChange.leave:[678]} → 留存成员 B=999 视图移除 678",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "真机curl真源 §5 channel/member/change·leave 用 leaveUsers:[{id,teamId,role}]（join 同结构 joinUsers·两者可同时非 nil）。",
+    "projection": "L2 源：留存成员 B=999 raw-WS 收 channel_member_update（memberChange.leave）= emit_channel_member_updated 输入帧。",
+    "dom": "data-members（B=999 视图移除 678）·A 驱动 spec N/A（B 侧观测·raw 帧即源）。",
+    "storage": "channel_member BatchDelete（离场行）·B=999 侧自驱·raw 帧即源。"
+  },
+  "corrAnchor": {
+    "note": "锚频道 ch=被移除作用的 channelId。① 出站 body.channelId·②④源在 B=999 raw 帧（含 channelId + memberChange.leave）。e2e 选锚频道（A 新建·含 678+999）填实 ch。",
+    "ch": null
+  },
+  "outbound": {
+    "method": "POST",
+    "urlEndsWith": "channel/member/change",
+    "bodyFields": {
+      "channelId": "*",
+      "leaveUsers": "*"
+    },
+    "bodyForbidden": ["channel_id", "leave_users", "join_users", "userId", "id"],
+    "_note": "真机curl真源 §5：leave body = {channelId, leaveUsers:[{id,teamId,role}]}（全 camelCase）。本 UC e2e 走移除主路径（leaveUsers 非空）。bodyForbidden 锚 snake 泄漏（channel_id/leave_users/join_users）+ 顶层 userId/id（成员 id 在 leaveUsers[].id 内）。① 出站经 createOutbound fallback（URL endsWith channel/member/change·窗口内唯一一条 member/change）归锚束。"
+  },
+  "projection": {
+    "event": "im:channel:member-updated",
+    "dataKeys": ["channel_id", "channel"],
+    "_note": "L2 源面：留存成员 B=999 raw-WS 收 channel_member_update（memberChange.leave）→ to_effect_s1::emit_channel_member_updated。A 驱动 spec 不在 A 侧裁定本投影（B 侧观测）·spec 直断 999 observe jsonl 出 channel_member_update + memberChange.leave 含 678（守可证伪）。本节冻结字段集供后端补 B 侧 e2e 时复用。"
+  },
+  "storage": {
+    "op": "batch_delete",
+    "table": "channel_member",
+    "minRows": 1,
+    "_note": "channel_member BatchDelete 离场行（复合 PK channel_id,user_id）·B=999 侧自驱·raw channel_member_update{memberChange.leave} 即源。A 驱动 spec 不在 A 侧裁定（B 侧落库）。"
+  },
+  "dom": {
+    "dataAttrs": { "members": "*" },
+    "_note": "data-members（B=999 视图移除 678 后在册串）·A 驱动 spec N/A（B 侧观测）。"
+  }
+}

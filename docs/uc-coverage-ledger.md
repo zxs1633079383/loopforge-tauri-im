@@ -349,7 +349,10 @@
 - **③ DOM**：`data-channel-id`（topic）。
 - **④ 落库**：`channel`（type=T）。
 
-### UC-5.3 关闭/退出群 — `✅ 关闭群四面全绿`（member-leave 广播子项 ⛔ broadcast-dep·子项不阻塞）
+### UC-5.3b member-leave 广播 — `✅ ①+②④源 L2 双账号验证绿（issue #44·后端 round-2 补齐·2026-06-28）`
+> **L2 绿证（#44·2026-06-28 暖栈 spec uc-5.3b-l2 两轮 channelId 各异 rd84i…/53rf3…）**：后端 round-2 `handleMemberLeave→broadcastMemberLeaveIncrement` 补对**留存成员**单播 `channel_member_update{memberChange.leave:[678]}`。被移除者 678 已离群收不到（结构性）→ 观测端=留存成员 B=999。A=444 建频道含 678+999 → 移除 678 → **B=999 raw-WS（observe·L2_USER=999）收 channel_member_update**（memberChange.leave 含 678·channelId 锚命中）= ②(emit_channel_member_updated)/④(channel_member BatchDelete) 留存成员侧结构源。① A 出站 `channel/member/change {channelId, leaveUsers:[{id:678}]}` reducer 绿。artifacts：`test/specs/uc-5.3b-l2.e2e.mjs` + `test/expect/uc-5.3b-l2.expect.json`。
+
+### UC-5.3 关闭/退出群 — `✅ 关闭群四面全绿`（member-leave 广播子项 → L2 #44 已验证绿·见上 UC-5.3b 节）
 
 - **e2e**：`test/specs/uc-5.3.e2e.mjs` 四面全绿（corr_key=ch=<channelId>·真 go·真 Tauri+WKWebView·建本人 CREATOR 群后关闭·run.jsonl 实证 ②deleteAt=server 真值）。
 - **① 出站 HTTP**：`POST /api/cses/channel/close`，body `{channelId}`（✅ 真跑覆盖·ChannelCloseCommand·`真机curl真源 §6`·crossmap HTTP #27 covered）·`bodyForbidden` id/channel_id 别名/top/displayName/notice/deleteAt 泄漏。退群子项走 `channel/member/leave`（crossmap #33 partial·broadcast-dep ⛔）。
@@ -440,7 +443,8 @@
 - **③ DOM**：`data-members` 回读。— L2（被拉成员侧观测·#43）
 - **④ 落库**：`channel_member`。— L2（被拉成员侧自驱·#43）
 
-### UC-6.2 设/撤管理员 — `🟡 ①③ four-facet-verified · ②④ L2-facet（add/remove manger 后端 WS 已注释·角色全量态须 channel_member_update 广播帧·须 L2 #45）`（2026-06-25 暖栈实跑①③全绿·复现≥2 轮·认领 C·issue #29）
+### UC-6.2 设/撤管理员 — `✅ ①③ L1 真绿 · ②④源 L2 双账号验证绿（issue #29/#45·后端 round-2 changeManagerRole 补齐·2026-06-28）`（认领 C）
+> **L2 绿证（#29/#45·2026-06-28 暖栈 spec uc-6.2-l2 两轮 channelId 各异 955km…/67n4o…）**：后端 round-2 `changeManagerRole` 补 `channel_member_role_updated{channelId,userIds,role}` 广播（add/remove manger 都经它·无 GrpcInvoke 绕过）。A=444 建频道含 678 → 设 678 admin → **B=678 raw-WS（observe-678）收 `channel_member_role_updated`**（role=MANAGER·userIds 含 678·channelId 锚命中）= ②(emit_channel_member_updated 角色态源)/④(channel_member role 落库源) 在 B 侧结构源。① A 出站 `channel/add/manger {channelId, users:[{id:678,role:ADMIN}]}` reducer 绿。③ data-admin 为 678 视图·A 驱动 spec N/A。〔旧判断「add/remove manger 后端 WS 已注释」已被 round-2 修正·channel_member_role_updated 现真广播。〕
 
 - **① 出站 HTTP**：`POST channel/add/manger`（set=true·撤=`channel/remove/manger`）·body `{channelId, users:[{id,name,role,teamId}]}`（全 camelCase·bodyForbidden channel_id snake / 顶层 userId/id/role 泄漏·成员四键嵌 users[]·真源 channel_change_dedicated.rs §19/§20 AddMangerCommand/RemoveMangerCommand + Go command.AddChannelMangerCommand/DeleteChannelMangerCommand）。✅ 实证 run.jsonl：`{channelId, users:[{id:445,name:'',role:ADMIN,teamId}]}`·uc_id=UC-6.2。
 - **③ DOM**：`data-admin`（=1·set ADMIN 态）+ `data-member-id`(=userId)。L1 无 ② 投影源 → 壳 setManger 出站成功后乐观刷成员行 admin 标（成员行缺则 upsert·结构性例外·权威态由 L2 #45 广播帧对账·壳 doc 声明）。✅ waitUntil 等 data-admin==1（debug 桥 debugSetManger 复用 store.setManger 生产路径·与 UI『管』按钮同链路）。
