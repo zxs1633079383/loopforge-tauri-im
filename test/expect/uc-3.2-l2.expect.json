@@ -1,0 +1,59 @@
+{
+  "$schema-note": "四面期望文件 (UC-3.2 单条已读·L2 双账号) — oracle 本体。只读契约 (contract-readonly-autofix.md §1)：自动修复 agent 禁改本文件让红变绿；红只能靠改 helix 引擎实现 / 本仓渲染壳 / 机器件。契约真过时 → 出『契约变更提案 + 证据』交人审。派生自 uc-3.2.expect.json（L1 oracle）·② 投影/④ 落库字段集冻结不变·仅 ① 改 L2-facet optional（read 出站在动作端 B=678）。",
+  "ucId": "UC-3.2",
+  "title": "单条已读（L2 双账号·issue #14/#47）：A=444 发消息 → B=678 POST post/read 标已读 → A=444 收 post_read echo(type6·推消息作者) → 投影 im:post:read(fat) → DOM data-read-bits + message.read_bits 落库",
+  "contractReadonly": true,
+  "contractSources": {
+    "outbound": "L2 read-side：① 出站在 B=678 侧（post/read·act-as-678·本 spec 直断 l2-act 返回 SUCCESS）。A=444 是被观测端（消息作者）·本身不发 post/read → A run.jsonl 出站面 N/A（isOutboundOptional）。",
+    "projection": "helix/crates/helix-im/docs/projection-schema.md §1 to_effect::emit_post_read (fat·17 键·同 emit_post_received)。A=444 收 post_read echo → helix emit_post_read（查既存 message 行吐 fat + 更新 readBits）。",
+    "dom": "UC-3.2 四面契约：data-read-bits 经 im:post:read echo 更新（壳纯渲染 readMap→readBits·C013）。",
+    "storage": "projection-schema.md §4 message.read_bits 单调覆盖（helix channel.rs apply_read_op·该行 post 既存·update read_bits 列）。"
+  },
+  "corrAnchor": {
+    "note": "领域锚：A=444 发的消息 server postId（sid）·B=678 标其已读后 A 收的 post_read echo 的 msg_id 同此 postId。e2e 先 A 发取 server MSG_ID 填实 sid·reducer 用它锁定束（① N/A·②④ 经 sid 聚同束·③ DOM e2e 注入）。守可证伪：A 未收 post_read echo（msg_id==MSG_ID）→ ②④ 红（非 tautology）。",
+    "postId": null
+  },
+  "outbound": {
+    "method": "*",
+    "urlEndsWith": "*",
+    "bodyFields": {},
+    "bodyForbidden": [],
+    "_note": "L2 read-side ① N/A（isOutboundOptional）：read-receipt 的 ① 出站结构上在动作端 B=678（post/read·act-as-678 cookieId 桥）·非被观测端 A=444（消息作者）。A run.jsonl 不产 post/read 出站故 ① 在 A 侧不可裁定·显式标 optional。① 真验在 spec 直断 l2-act read-post 返回 SUCCESS（B 真标读）。守可证伪：B read 失败 → 无 echo → ②④ 仍按 sid 锚红。"
+  },
+  "projection": {
+    "event": "im:post:read",
+    "dataKeys": [
+      "channel_id",
+      "event_seq",
+      "msg_id",
+      "temporaryId",
+      "channelId",
+      "userId",
+      "type",
+      "message",
+      "props",
+      "createAt",
+      "updateAt",
+      "readBits",
+      "viewers",
+      "sendStatus",
+      "reactions",
+      "templateReceived",
+      "systemNotice"
+    ],
+    "_note": "projection-schema §1 emit_post_read fat 完整集（17 键·同 emit_post_received·与 uc-3.2.expect.json 冻结集一致）。缺/多即 fail。post_read echo（type6·data{postId,readMap,createAt,updateAt}）推消息作者 A → helix 查既存 message 行装配 fat + 更新 readBits。"
+  },
+  "storage": {
+    "op": "batch_upsert",
+    "table": "message",
+    "minRows": 1,
+    "_note": "projection-schema §4：post_read echo 落 message 行（readBits 单调覆盖·该行 post 既存·update read_bits 列）≥1。装饰器 facet④ payload 暴露 {op,table,rows}。经 sid（msg_id 别名）与 ② 投影聚同束。守可证伪：未落库 → ④ 红。"
+  },
+  "dom": {
+    "dataAttrs": {
+      "read-bits": "*",
+      "msg-id": "*"
+    },
+    "_note": "UC-3.2 ③：按 data-msg-id 定位 A 发的消息行·im:post:read echo → 壳 applyPostRead 更新 data-read-bits（壳纯渲染 readMap→readBits·C013）。e2e 等 im:post:read 投影后读该行 data-* 注入 reducer。守可证伪：壳未更新 read-bits → ③ 红。"
+  }
+}

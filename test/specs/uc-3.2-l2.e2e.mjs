@@ -27,7 +27,7 @@ import { execFileSync } from 'node:child_process';
 import { runFourFacet } from '../reducer/four-facet-reducer.mjs';
 
 const EXPECT = JSON.parse(
-  readFileSync(new URL('../expect/uc-3.2.expect.json', import.meta.url), 'utf8')
+  readFileSync(new URL('../expect/uc-3.2-l2.expect.json', import.meta.url), 'utf8')
 );
 
 const RUN_JSONL =
@@ -35,8 +35,9 @@ const RUN_JSONL =
 
 const L2_ACT = new URL('../../scripts/l2-act.sh', import.meta.url).pathname;
 
-// 共享频道（A=444 + B=678 均为成员·本会话 raw-WS 实证 678 post/read → 444 收 post_read type6）。
-const SHARED_CHANNEL = '15gcgoyf1jfcur614qydhs69ha';
+// 共享频道由 A=444 当场新建并把 B=678 拉为成员（保证 server 侧真共享成员·post_read echo 才推到 A）。
+// 不用硬编码频道：实证（本会话 raw-WS）硬编码 15gcgoyf… 并非 444+678 共有 → 改当场建带 678 频道·
+// raw-WS 实证 678 post/read 后 A=444 收 post_read 帧（data{postId,readMap}·broadcast.userId=444=消息作者）。
 const READER = '678';
 
 // 生成 26 位 z-base-32 临时 id（与薄壳 genTempId 同字符集）。
@@ -62,6 +63,14 @@ const invokeBridge = (cmd, args) =>
     },
     cmd,
     args
+  );
+
+// 快照当前 CL 区频道 id 集（建群后比对取新建 ch）。
+const snapshotChannelIds = () =>
+  browser.execute(() =>
+    Array.from(document.querySelectorAll('[data-channel-id]'))
+      .map((el) => el.getAttribute('data-channel-id'))
+      .filter((id) => !!id)
   );
 
 const readMessageRow = (msgId) =>
@@ -103,10 +112,23 @@ describe('UC-3.2 L2 · 单条消息已读双账号（#14 / #47）', () => {
       },
       { timeout: 30000, interval: 200, timeoutMsg: 'A=444 就绪 probe 未通过' }
     );
-    CHANNEL_ID = SHARED_CHANNEL;
-    // 选中共享频道·让其消息渲染到 ML 区（A 发的消息须在本地 DB + DOM 才有 ③④ 落点）。
+    // —— A=444 新建频道并把 678 拉为成员（server 侧真共享成员·post_read echo 推消息作者 A 的前提）——
+    const beforeIds = new Set(await snapshotChannelIds());
+    const cr = await invokeBridge('im_create_channel', {
+      displayName: `lf-rr-${Math.random().toString(36).slice(2, 8)}`,
+      memberIds: [READER],
+    });
+    expect(cr.ok).toBe(true);
+    await browser.waitUntil(
+      async () => (await snapshotChannelIds()).some((id) => !beforeIds.has(id)),
+      { timeout: 20000, interval: 200, timeoutMsg: '建群无新行（断在 channel/create→WS→投影→DOM）' }
+    );
+    const afterIds = await snapshotChannelIds();
+    CHANNEL_ID = afterIds.find((id) => !beforeIds.has(id));
+    expect(CHANNEL_ID).toBeTruthy();
+    // 选中新频道·让其消息渲染到 ML 区（A 发的消息须在本地 DB + DOM 才有 ③④ 落点）。
     await invokeBridge('im_query_messages_by_channel', { channelId: CHANNEL_ID });
-    console.log(`[UC-3.2-L2 就绪] 共享频道 channelId=${CHANNEL_ID}（A=444 + B=678 成员）`);
+    console.log(`[UC-3.2-L2 就绪] A=444 新建共享频道 channelId=${CHANNEL_ID}（拉 678 为成员）`);
   });
 
   it('②④③：A 发消息 → B=678 标已读 → A 收 post_read echo → im:post:read 投影 + read_bits 落库 + DOM', async () => {
@@ -203,6 +225,8 @@ describe('UC-3.2 L2 · 单条消息已读双账号（#14 / #47）', () => {
 
     expect(report.parseErrors.length).toBe(0);
 
+    // ① 出站 N/A（optional·B 侧已断 SUCCESS）→ reducer 自动绿（isOutboundOptional）。
+    expect(report.facets.outbound.ok).toBe(true);
     // ② im:post:read 投影 fat 字段集（projection-schema emit_post_read·含 readBits）。**L2 双账号真绿**。
     expect(report.facets.projection.ok).toBe(true);
     // ④ message read_bits 落库（单调覆盖·helix channel.rs apply_read_op）。**L2 双账号真绿**。

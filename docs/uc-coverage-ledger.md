@@ -430,7 +430,8 @@
 
 > 认领 M。① 出站锚 `真机curl真源 §5`（member change）+ full-map partial 6。
 
-### UC-6.1 拉/踢人 — `🟡 partial`（① L1 真绿·②③④ 结构性 L2→#43·issue #28）
+### UC-6.1 拉/踢人 — `✅ ① L1 真绿 · ②④源 L2 双账号验证绿（issue #28/#43·2026-06-28）`（③ data-members 为 B 侧观测·A 驱动 spec N/A）
+> **L2 绿证（#28/#43·2026-06-28 暖栈 spec uc-6.1-l2 两轮·channelId 各异非 tautology）**：A=444 当场建频道（不含 678）→ 拉 678 → **B=678 raw-WS（observe-678.mjs）收 `channel_member_update` 广播帧**（全 channel 对象·broadcast.userId=678=被拉成员 key 路由位·raw 含锚频道）= ②(`emit_channel_member_updated` 输入帧)/④(`channel_member` BatchUpsert 输入帧) 在 B 侧的结构性源。① A 出站 `channel/member/change {channelId, joinUsers:[678]}` reducer 裁定绿。③ data-members 是被拉成员 678 视图的 DOM·A 驱动 spec 不渲染（B 侧观测·raw 帧即源）。**对照实证拉人有正确 member-update 事件**（区别于 #29 admin/#44 leave 的 NOTICE-post 缺口·见 NEEDS_CSES_IM_SERVER_FIX_member_event_broadcast.md）。
 
 - **① 出站 HTTP**：`POST /api/cses/channel/member/change`，body 锚 `真机curl真源 §5`——`{channelId, joinUsers:[{id,teamId,role}]}` 加人 / `{channelId, leaveUsers:[...]}` 踢人（两者可同时非 nil·**新 endpoint·不是 member/leave**）。**✅ L1 真绿**（e2e 暖跑·corr_key=ch=qsegsk5coifo3pqoxm391t6u1c·HTTP 200 `channelMemberChange success`·reducer outbound facet OK·body 实证 `{channelId, joinUsers:[{id:445,role:MEMBER,teamId:...}]}`·bodyForbidden snake/顶层 userId/id 无泄漏）。
 - **接通件**：Rust `im_channel_member_change`(commands.rs + lib.rs 双 feature 注册·teamId 取 identity·真源 §5 camelCase body) · 壳 store.changeMember + applyMemberUpdated（projection.types MEMBER_UPDATED_CHANNEL·从 channel 对象 memberChange.join+四源 upsert MB 行 + data-members 在册串） · UI MB 区 change-member-input + 拉/踢 btn + onChangeMember · expect/uc-6.1.expect.json + specs/uc-6.1.e2e.mjs（① 真跑绿·②③④ L2 阻塞红·见下）。
