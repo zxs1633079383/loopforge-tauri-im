@@ -5,20 +5,22 @@
 
 ## 终态行
 
-✅ 0 绿 / 0 park / 0 quarantine · pattern 趋势 （无 metrics）
+✅ 2 绿 / 0 park / 0 quarantine · pattern 趋势 （无 metrics）
 
 ## Resume manifest
 
-- logCursor: 1
+- logCursor: 4
 - phasesRemaining: []
 - gainEnvelope: N=3 K=3 (N∈[2, 5])
 - metrics: pass=0 regen_rate=— convergence_min=— pattern_count=—
 
 ## Issues
 
-_（无 issue 事件）_
+| issue | phase | state | blockers |
+|---|---|---|---|
+| #71 | — | green | — |
+| #72 | — | green | — |
 
 ## Gap ledger
 
 _（无 gap）_
-

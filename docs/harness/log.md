@@ -180,3 +180,4 @@
   ↳ 索引同步：CLAUDE.md §9 + AGENTS.md（镜像）+ README §1 + 本 log（一次 commit）。gate.sh ✅ cards=14 三处一致·镜像绿·reducer 189/0。
 ✅ DONE loop-Engine 真run入口(workflow+slash)+merge回main @2026-06-28 | merge 2859478 | 288 test绿/gate绿/dry-run正常 | main | 下一步 /loop-engine 跑 L3 首证
 ✅ DONE loop-Engine 收口 run @2026-06-28T10:56+0800 | dry-run 调度合法(phase 0→7 拓扑前沿波次+路由样例正常) | STATUS.md 由 renderStatus 从 events.jsonl 折叠重生成 | 本 run 0 绿/0 park/0 gap(数据面未驱 UC·纯收口·events.jsonl 追 type:run_done) | LE 内核 288 test 绿 | main(禁merge禁push)
+✅ DONE loop-Engine 收口 run(补登上轮遗漏) @2026-06-28T12+0800 | dry-run 调度合法(phase 0→7 拓扑前沿+路由样例正常) | STATUS.md renderStatus 折叠重生成→补记 #71/#72(上轮 issue_green 后未写 run_done/STATUS 漏登) | 本 run 0 新绿/0 park/0 gap(剩余 UC 皆 L2 ready-for-human·无单连接可驱) | 累计 2 绿(#71 UC-1.5 撤回·#72 UC-1.10 取消定时·均已 gh closed) | 288 test 绿 | main(禁merge禁push)
