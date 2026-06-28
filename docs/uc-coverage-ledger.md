@@ -68,7 +68,8 @@
 - **③ DOM**：`<div data-msg-id data-temporary-id data-channel-id data-event-seq data-send-status data-read-bits>`；乐观插入 `data-msg-id=temporaryId` + `data-send-status=sending` → echo 覆写 `data-msg-id=server_id` + `data-send-status=sent` + 补 `data-event-seq`。
 - **④ 落库**：`message` 表 1 行（PK=`temporary_id`，id=server_id，`read_bits` 预置）+ `channel_event_cursor` 推进（单调不回退）。
 
-### UC-3.1 会话已读 — `🟡 ①③ four-facet-verified · ②④ L2-facet（post_read 推发送者·须 L2 #47）`（2026-06-25 实跑·认领 S/M）
+### UC-3.1 会话已读 — `🟡 ①③ four-facet-verified · ②④ ⏸park 后端缺口（channels/view 不广播 post_read echo·issue #15 已closed·L2无法验·2026-06-28）`（认领 S/M）
+> **②④ park 实证（spec uc-3.1-l2 红 + raw-WS 探针）**：与 #14(post/read 单条已读·已绿)不同·`channels/view`(会话已读)**不广播 post_read echo** 给消息作者(raw-WS 实证 444 发消息→678 channels/view→444 零 post_read 帧·仅 join+自身 echo)。故 ②(im:post:read)④(read_bits) 在 channels/view 路径结构上不产出。#15 已 closed·留台账诚实记。需后端 channels/view 也广播 post_read(同 post/read)·见 NEEDS_CSES_IM_SERVER_FIX_channels_view_read_echo.md。artifacts: test/specs/uc-3.1-l2.e2e.mjs + test/expect/uc-3.1-l2.expect.json(ready·后端补后转绿)。
 
 > 实证：`run.sh -- --spec test/specs/uc-3.1.e2e.mjs` → `✅ 四面报告全绿`（spec pass·①③ 严格断言绿 + ②④ 确认 server-data-gap·带 run.jsonl 证据 + 可证伪护栏断缺席）。接线：壳 `im_read_channel`（channelId → 包 `channels:[{id}]` 入泵 `im_channels_view`·会话级·非 UC-3.2 的 posts 单条）+ 前端 `store.readChannel` + header `已读` 按钮（C007 配 `onReadChannel`）+ 消息行 `data-read-bits`（既有渲染路径·复用 fat 集）。装饰器 `extract_corr_key` 增 `body.channels[0].id→ch` 探针（channels/view 出站经 ch 与 ②④ 聚束·契约 URL+body-shape 不变·机器件归一）。
 
@@ -78,7 +79,8 @@
 - **③ DOM**：`data-read-bits`（self 位）。✅ **实跑绿**（壳纯渲染·send echo `im:post:received` fat 集已置 self read bit·无前端算·projection-schema §3）。
 - **④ 落库**：`message.read_bits` 单调覆盖。🟡 **L2-facet（同 ②·依赖 post_read echo 落 read_bits·须 L2 #47）**。
 
-### UC-3.2 单条已读 — `🟡 ①③ four-facet-verified · ②④ L2-facet（post_read 推发送者·须 L2 #47）`（2026-06-25 实跑·认领 S）
+### UC-3.2 单条已读 — `✅ 四面全绿（L2 双账号·issue #14/#47·2026-06-28·helix gate bypass + oracle batch_update 人审）`（认领 S）
+> **L2 绿证（#14/#47·spec uc-3.2-l2 两轮 channelId 各异 9hfd/z8aia）**：后端 round-2 post_read 帧补 channelId(commit 6e6dbc3) + helix fix/im-post-read-bypass-gate(post_read 无 event_seq 也 emit·loopforge re-pin 15615d1) + oracle storage.op batch_upsert→batch_update(人审 331e249)。A=444 建频道拉 678→A 发消息→B=678 post/read 标已读→A 收 post_read echo(data.channelId 现非空)→helix emit_post_read→②im:post:read(fat·readBits=11)③data-read-bits④message batch_update。①出站 N/A(B侧)。〔旧「post_read 推发送者结构性单账号造不出」+「帧缺 channelId/event_seq」gap 均已 round-2 解除。〕
 
 > 实证：`run.sh -- --spec test/specs/uc-3.2.e2e.mjs` → `✅ 四面报告全绿`（spec pass·①③ 严格断言绿 + ②④ 确认 server-data-gap·带 run.jsonl 证据）。接线：壳 `im_mark_read`（postId+channelId → posts 列表模式 `{channelId, posts:[postId]}` 入泵 `im_post_read`）+ 前端 `store.markRead` + 消息行 `data-read-bits`（既有渲染路径·复用 im:post:read fat 集）。装饰器 `extract_corr_key` 增 `payload.body` + `posts[0]` 探针（出站 post/read 经 sid 与投影聚束·契约不变）。
 
@@ -532,7 +534,8 @@
 - **④ 落库**：`message.props`（写族 server-WS-dep N/A·投票卡 props 由 server 回声落库）。
 - **残面（真 server-WS-dep·不阻塞关闭·标准 c）**：写族 ②③④（emit_post_updated/data-vote/message.props）须 server WS post_updated 回声驱动——单账号 L1 写族 fire-and-forget 本账号无自身可观测 echo（结构性·同 ledger UC-5.3 member-leave / UC-5.5 置顶子项）。① 出站（freezable wire 契约）+ 读族 ①② 已 e2e 真跑全绿·UC 关闭依据 = 五端点 ① 全覆盖真跑 + 读族双面绿。
 
-### UC-10.2 系统通知 — `⬜ pending`（认领 M）
+### UC-10.2 系统通知 — `✅ 四面全绿（issue #37·2026-06-28·改群名 channelUpdate 系统 NOTICE post）`（认领 M）
+> **绿证（#37·spec uc-10.2 两轮 channelId 各异 s9s8/j3usg·corr_key seq=2）**：A=444 建频道→`im_channel_change_display_name`(改群名·channel/change/displayName)→server 回 channelUpdate 系统 NOTICE post→helix emit_post_received(type=NOTICE·userId=SYS·props{type:channelUpdate,field:displayName,content:新名})→helix is_system_notice(NOTICE∈NOTICE_TYPES)置 systemNotice→②im:post:received(fat 17键)③data-system-notice=1④message batch_upsert。①出站 N/A(系统 post 帧触发·optional)。**spec 时序修复**：先 waitUntil channelUpdate 投影(props.content=新名)落 UC-10.2 窗口再关窗(rename echo 慢于建群 join post·join 也是 NOTICE→systemNotice 会提前满足 DOM 检查致 channelUpdate post 落 __quiescence__ 被 reducer uc 过滤漏掉·C008 waitUntil 真条件)。
 
 - **① 出站**：（WS 帧触发·无独立 HTTP）。
 - **① WS 推送**：系统消息帧（messageType=SYSTEM·**注意 SYSTEN 拼写陷阱保真透传**·projection-schema §6）。
@@ -549,7 +552,8 @@
 - **④ 落库**：`channel` batch_upsert ≥1 行（建群路径落 channel·表感知归一·channel 表 id 抽成 ch→与 ② 同束）。✅ 实证 run.jsonl rows≥1。
 - **Tauri 命令新缝**：commands.rs 新增 `im_team_upsert`（薄壳从 profile 拼 CreateChannelSpecifyOwner·身份单一真源·对 helix TeamUpsertCommand）+ lib.rs 双 invoke_handler 注册；Angular app.component `onTeamUpsert`（C007 配方法·team-upsert-btn 已绑）+ im-store `teamUpsert`。冻结 oracle 零改（C004）·绿由 reducer 裁定（C009）。
 
-### UC-11.2 退出公司 — `🟡 ① L1-verified · ②③④ L2-facet`（issue #40·① DELETE teams/member/quit 严格绿·②③④ 退出者本连接结构性不可观测·须 L2 #48）
+### UC-11.2 退出公司 — `✅ ① L1-verified · ②④源 L2 双账号绿（issue #40/#48·2026-06-28·后端 round-2 quit_company 广播）`
+> **L2 绿证（#40/#48·spec uc-11.2-l2 两轮 baseline=0→Δ≥1·非 tautology）**：后端 round-2 补 quit_company 多播。隔离设计(C014·不破暖栈 444)：退出者=777(独立账号·l2-act quit·teams/member/quit DELETE)·观测端=留存成员 888(observe raw-WS)·A=444 仅 setup 建频道含 777+888(纳入 team)·不退自己。777 quit→留存成员 B=888 收 quit_company 广播(②emit/④移除在留存成员侧结构源)。守可证伪:baseline-delta(quit 前 quit_company 帧数→quit 后新增≥1·暖栈 team 池历史噪声/connect 重放隔离)。③ DOM=B 视图移除·A 驱动 spec N/A。〔旧「退出者本连接结构性不可观测」仍成立·L2 改由留存成员观测·issue #40 第2用例边界断言保留。〕
 
 - **e2e 真跑（暖栈 ×2 复现·helix dep bumped 4cc33c2→bb00d4d 含 im_team_quit→DELETE 修复）**：bridge 直 invoke `im_team_quit {}`（身份由 Rust 从 profile 拼 userId=444/teamId=64118eeb...）→ 出站 `DELETE teams/member/quit {userId, teamId}` → server `LeaveAllChannelsForTeam` 退该 team 所有群（HTTP **200 空 body**·现网源 bug·实证 run.jsonl）。
 - **① 出站 HTTP（L1 严格可验绿）**：`DELETE teams/member/quit`·body `{userId, teamId}`（QuitTeamReq·全 camelCase·真源 quit_team.go:3-6 + partials/3 §6）。窗口内按 URL endsWith teams/member/quit 直接定位（唯一一条·窗口隔离·非 tautology）→ 严格断 `method=DELETE`（regress 回 POST→红·实证 POST→go 404）+ body 含 userId/teamId + bodyForbidden channelId/snake 别名/id/displayName。✅ 实证 run.jsonl `method=DELETE body={teamId,userId}`。

@@ -75,6 +75,16 @@ JSON
     _curl channel/member/change -d "{\"channelId\":\"$CH\",\"add\":[{\"id\":\"$UID\",\"role\":\"MEMBER\",\"teamId\":\"$L2_TEAM\"}],\"remove\":[]}"
     echo ""
     ;;
+  quit)
+    # 退出公司（teams/member/quit·DELETE·真源 partials/3）。L2 #40/#48：退出者退 team →
+    # 同 team 其余成员收 quit_company 广播。body {userId, teamId}（userId=退出者=L2_USER）。
+    curl -s -X DELETE "$L2_API/teams/member/quit" \
+      -H "cookieId: $L2_USER" -H "companyId: $L2_TEAM" \
+      -H 'appType: bct' -H 'device: IOS' -H 'language: zh' \
+      -H 'Content-Type: application/json' -m 12 \
+      -d "{\"userId\":\"$L2_USER\",\"teamId\":\"$L2_TEAM\"}"
+    echo ""
+    ;;
   whoami)
     # 鉴权连通自检：channels/view 空 channels probe（不副作用·只验 session 建得起）。
     echo "act-as L2_USER=$L2_USER api=$L2_API team=$L2_TEAM"

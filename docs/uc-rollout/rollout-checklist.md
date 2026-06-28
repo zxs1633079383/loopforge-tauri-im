@@ -35,8 +35,8 @@
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
 |---|---|---|---|---|---|---|---|
 | [x] | 1.5 撤回 | `im_revoke`→`posts/revoke` | `真机curl真源 §3`{postId}✅ | `emit_post_batch_updated`(在线)/`emit_post_deleted`(离线) | data-revoke=1/行移除 | `message` mark_revoked | S |
-| [~] | 3.2 单条已读 | `im_mark_read`→`post/read`{channelId,posts:[postId]}✅ | `partials/6 UC-3.2` | `emit_post_read`(fat)🟡L2 | data-read-bits✅ | `message.read_bits`🟡L2 | S |
-| [~] | 3.1 会话已读 | `im_read_channel`→`im_channels_view`→`channels/view`{channels:[{id}]}✅ | `partials/6 UC-3.1` | `emit_post_read`(fat)🟡L2 | data-read-bits✅ | `message.read_bits`🟡L2 | S/M |
+| [x] | 3.2 单条已读 ✅四面全绿(L2 双账号·issue #14/#47·helix gate bypass) | `im_mark_read`→`post/read`{channelId,posts:[postId]}✅ | `partials/6 UC-3.2` | `emit_post_read`(fat)✅L2 | data-read-bits✅ | `message.read_bits`✅batch_update | S |
+| [~] | 3.1 会话已读 ⏸park ②④(NEEDS·channels/view 不广播 post_read echo·issue #15 已closed·L2无法验) | `im_read_channel`→`channels/view`{channels:[{id}]}✅ | `partials/6 UC-3.1` | `emit_post_read`(fat)⏸后端缺 | data-read-bits✅ | `message.read_bits`⏸ | S/M |
 | [x] | 3.3 模板已收到 | `templateReceived`→`post/templateReceived` | `partials/6 UC-3.3`{postId}(单数 path) | `emit_post_updated`/read:result | data-template-received | `message` | S |
 | [x] | 1.4 重发失败 | `im_send`(temp_id 复用)→`posts/create` | `真机curl真源 §1` | `emit_post_sending`→`emit_post_received` | data-send-status:failed→sending→sent | `message` upsert 覆盖 | S |
 | [x] | 1.7 转发/合并 | `im_create_posts`→`posts/createPosts` | `真机curl真源 附录A`{posts,channelIds}✅ | 各目标 channel `emit_post_received` | 多 channel 消息行 | `message`×N | M |
@@ -77,14 +77,14 @@
 | [x] | 4.4 心跳 gap 补偿(3 面) | (Rust ping/pong piggyback 自驱) | `partials/8 §5.7`{cursors,allHash} | (补偿走 4.2 sync 投影) | **③ N/A（已移除该面）** | `channel_event_cursor` | ✅三面真绿(①②④·e2e #34) |
 | [x] | 8.x 投票 CRUD | `vote/{createVote,vote,readVote,closeVote,deleteVote}`(:3399) | `partials/6 集合八` | `emit_post_updated`(fat) | data-vote | `message.props` | M |
 | [x] | 8.x 平均分 CRUD | `average/{publish,attend,read,close,delete}`(:3399) | `partials/6 集合八` | `emit_post_updated`(fat) | data-average | `message.props` | M |
-| [ ] | 10.2 系统通知 | (WS 帧触发·无独立 HTTP) | — | `emit_post_received`/`updated`(系统消息) | data-system-notice | `message`(SYSTEM/SYSTEN 类型) | M |
+| [x] | 10.2 系统通知 ✅四面全绿(issue #37·改群名 channelUpdate NOTICE post) | (WS 帧触发·改群名派生·①N/A) | — | `emit_post_received`(type=NOTICE·systemNotice) | data-system-notice=1 | `message` batch_upsert | M |
 
 ## 阶段 7 · teams / 运维（2026-06-24 新增·原端点漏网→用户确认要测）
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
 |---|---|---|---|---|---|---|---|
 | [x] | 5.8 条件查频道 | `im_channel_query`→`channel/query` | `partials/2 channel/query`(条件分页) | `read_relay::emit_read_result`(读族透传·im:read:result) | data-channel-id 列表(③ N/A 读族) | N/A(读族只读) | S |
 | [x] | 11.1 维护公司大群 | `im_team_upsert`→`teams/upsert` | `partials/3 teams/upsert` | `emit_channel_created`/`emit_channel_update`(公司大群) | data-channel-id(team 大群) | `channel` | M |
-| [🟡] | 11.2 退出公司（① L1✅·②③④ L2 #48） | `im_team_quit`→`teams/member/quit`(DELETE) + WS `quit_company` | `partials/3 teams/member/quit`✅ | (member/channel 移除投影·L2) | channel/member 行移除·L2 | `channel_member` 删·L2 | M |
+| [x] | 11.2 退出公司 ✅①L1+②④源 L2绿(issue #40/#48·quit_company 广播留存成员) | `im_team_quit`→`teams/member/quit`(DELETE) + WS `quit_company` | `partials/3 teams/member/quit`✅ | quit_company 多播留存成员(B侧观测) | channel/member 行移除(B侧) | `channel_member` 删(B侧) | M |
 | [x] | 12.1 健康探针(1 面①) | `im_health`→`GET /health` | `partials/3 health` | (无投影) | data-health(可选) | (无落库) | ✅ ① 全绿·issue #41·corr_key=req_id |
 
 ## 阶段 L2 · 双账号广播（需第二真实连接·feasible·L1 稳后专批）
