@@ -1,0 +1,67 @@
+%% loop-Engine 当前执行全流程（基于落地代码 run.mjs · 2026-06-28）
+%% 实线=控制面(✅真实现) · ▼=数据面注入点(stub待接agent)
+flowchart TD
+    START([runEngine opts]) --> BOOT["① bootstrap<br/>events ?? seed issue_ready<br/>foldState 折叠快照"]
+    BOOT --> VG{"② validateGraph<br/>重复/缺/自阻塞/环?"}
+    VG -- "非法" --> STOPBAD["⛔ 拒绝推进<br/>wind-down 返回"]
+    VG -- "合法" --> PHASE{{"③ phase 串行循环<br/>phasesInOrder 0..7"}}
+
+    PHASE --> GUARD{"④ loopGuard<br/>预算<15%? / settled 连2pass无进展?"}
+    GUARD -- "跳闸" --> WIND
+    GUARD -- "继续" --> FRONT{"⑤ readySet phase<br/>拓扑前沿:blockers全绿才入"}
+    FRONT -- "前沿空" --> BAR
+    FRONT -- "有前沿" --> THRASH{"⑥ antiThrash<br/>同UC本pass碰过?"}
+    THRASH -- "碰过→skip" --> FRONT
+    THRASH -- "未碰" --> PI
+
+    subgraph PI_SUB["processIssue 单 issue 流水线"]
+        direction TB
+        S1["s1 ▼authorImplement<br/>grill+改码 → blastRadius/claim/votes"]
+        S1 --> VD["Verifier verifyDepth<br/>爆炸半径→light/medium/tournament"]
+        VD --> VC{"verifyClaim?<br/>provenance闸+skeptic panel<br/>C009禁自评"}
+        VC -- "!admitted" --> REJ["bumpFailure → rejected"]
+        VC -- "admitted/无claim" --> S2["s2 ▼runReduce<br/>run.sh+reducer 断在哪一跳"]
+        S2 --> FG{"rawVerdict red?<br/>flakyGate 重试1次"}
+        FG -- "重试" --> S2R["▼runReduce attempt1<br/>重跑绿=flaky"]
+        S2R --> S3
+        FG -- "green/直接" --> S3["s3 route<br/>诊断路由表→decision"]
+        S3 --> VERD{"decision.verdict"}
+        VERD -- "GREEN" --> GG["append issue_green<br/>resetFailure ▼checkpoint"]
+        VERD -- "FLAKY" --> FL["▼checkpoint<br/>不开gap·C008"]
+        VERD -- "PARK 不可逆" --> PK["append parked<br/>NEEDS_HUMAN_*.md ▼checkpoint"]
+        VERD -- "FIX 可逆自决" --> EMIT["emitGap<br/>classify+sig去易变量+dedup+gh issue"]
+        EMIT --> RQ["regenQuarantine<br/>同sig第3次复燃→quarantine"]
+        RQ --> AF["▼applyFix<br/>helix分支/壳绑定/重启/pencil<br/>append fix"]
+        AF --> FC["failureCap<br/>连败第3次→parked"]
+        FC --> CP["▼checkpoint"]
+    end
+
+    PI --> PI_SUB
+    GG --> META
+    FL --> REFOLD
+    PK --> REFOLD
+    CP --> META
+    REJ --> REFOLD
+
+    META["③ 元层 fireLearnerArchitect<br/>🧠Learner sig≥3→▼proposeHarnessCard<br/>🏛Architect gapKind跨≥2sig→▼proposeDesign"] --> REFOLD["state=foldState events<br/>(事件是真相·永不失配)"]
+    REFOLD --> RETRO{"每N issue?"}
+    RETRO -- "是" --> RO["④ runRetro<br/>computeMetrics→▼retro→clampEnvelope<br/>增益硬包络N∈[2,5]·防元层震荡<br/>append metrics"]
+    RETRO -- "否" --> FRONT
+    RO --> FRONT
+
+    BAR{"⑦ phaseBarrier<br/>本phase全绿?"}
+    BAR -- "全绿" --> TAG["append phase_tag<br/>▼tag → 下一phase"]
+    BAR -- "未全绿" --> PARKREST["park余下<br/>break(不跳级)"]
+    TAG --> PHASE
+    PARKREST --> WIND
+
+    WIND["⑧ wind-down<br/>renderStatus→STATUS.md<br/>buildResumeManifest(跨天续跑)<br/>finalStatusLine ▼writeStatus"]
+    WIND --> RET([return events/state/status/resume/finalLine])
+    STOPBAD --> RET
+
+    classDef ctrl fill:#dff0d8,stroke:#3c763d,color:#1b3a1b;
+    classDef data fill:#fcf3cf,stroke:#b7950b,color:#5b4708;
+    classDef stop fill:#f2dede,stroke:#a94442,color:#5b1a1a;
+    class BOOT,VG,VD,VC,S3,VERD,FG,RQ,FC,BAR,GUARD,FRONT,THRASH,META,REFOLD,RETRO,GG,FL,PK,EMIT,TAG,PARKREST ctrl;
+    class S1,S2,S2R,AF,CP,RO,WIND data;
+    class STOPBAD,REJ stop;

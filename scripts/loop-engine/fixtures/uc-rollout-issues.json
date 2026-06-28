@@ -1,0 +1,43 @@
+[
+  { "n": 7,  "phase": 0, "blockers": [],   "uc": "4.1",  "state": "ready", "title": "就绪根" },
+
+  { "n": 8,  "phase": 1, "blockers": [7],  "uc": "5.1",  "state": "ready", "title": "建频道" },
+  { "n": 9,  "phase": 1, "blockers": [8],  "uc": "5.2",  "state": "ready", "title": "进频道" },
+
+  { "n": 10, "phase": 2, "blockers": [8],  "uc": "1.9",  "state": "ready", "title": "加急+加急已读" },
+  { "n": 11, "phase": 2, "blockers": [8],  "uc": "1.8",  "state": "ready", "title": "快捷回复 emoji" },
+  { "n": 12, "phase": 2, "blockers": [8],  "uc": "1.10", "state": "ready", "title": "定时消息" },
+
+  { "n": 14, "phase": 3, "blockers": [10], "uc": "3.2",  "state": "ready", "title": "单条已读" },
+  { "n": 15, "phase": 3, "blockers": [10], "uc": "3.1",  "state": "ready", "title": "会话已读" },
+  { "n": 16, "phase": 3, "blockers": [10], "uc": "3.3",  "state": "ready", "title": "模板已收到" },
+  { "n": 17, "phase": 3, "blockers": [10], "uc": "1.4",  "state": "ready", "title": "撤回消息" },
+  { "n": 18, "phase": 3, "blockers": [10], "uc": "1.7",  "state": "ready", "title": "转发消息" },
+  { "n": 19, "phase": 3, "blockers": [10], "uc": "2.4",  "state": "ready", "title": "一级/二级回复" },
+
+  { "n": 20, "phase": 4, "blockers": [14], "uc": "2.1",  "state": "ready", "title": "首屏历史" },
+  { "n": 21, "phase": 4, "blockers": [14], "uc": "2.3",  "state": "ready", "title": "按 postId 定位" },
+  { "n": 22, "phase": 4, "blockers": [14], "uc": "2.2",  "state": "ready", "title": "上拉更早历史" },
+
+  { "n": 23, "phase": 5, "blockers": [8],  "uc": "5.4",  "state": "ready", "title": "频道改名" },
+  { "n": 24, "phase": 5, "blockers": [8],  "uc": "5.5",  "state": "ready", "title": "置顶" },
+  { "n": 25, "phase": 5, "blockers": [8],  "uc": "5.3",  "state": "ready", "title": "解散频道" },
+  { "n": 26, "phase": 5, "blockers": [8],  "uc": "6.3",  "state": "ready", "title": "改群昵称" },
+  { "n": 27, "phase": 5, "blockers": [8],  "uc": "6.4",  "state": "ready", "title": "成员快照/全量" },
+  { "n": 28, "phase": 5, "blockers": [8],  "uc": "6.1",  "state": "ready", "title": "拉/踢人" },
+  { "n": 29, "phase": 5, "blockers": [8],  "uc": "6.2",  "state": "ready", "title": "设/撤管理员" },
+
+  { "n": 30, "phase": 6, "blockers": [10], "uc": "9.x",  "state": "ready", "title": "书签" },
+  { "n": 31, "phase": 6, "blockers": [10], "uc": "10.1", "state": "ready", "title": "待办" },
+  { "n": 32, "phase": 6, "blockers": [10], "uc": "4.2",  "state": "ready", "title": "按需 sync notify" },
+  { "n": 33, "phase": 6, "blockers": [10], "uc": "4.5",  "state": "ready", "title": "首屏 sync" },
+  { "n": 34, "phase": 6, "blockers": [10], "uc": "4.4",  "state": "ready", "title": "心跳 gap 补偿" },
+  { "n": 35, "phase": 6, "blockers": [10], "uc": "8.x",  "state": "ready", "title": "互动卡片投票" },
+  { "n": 36, "phase": 6, "blockers": [10], "uc": "8.x",  "state": "ready", "title": "互动卡片平均" },
+  { "n": 37, "phase": 6, "blockers": [10], "uc": "10.2", "state": "ready", "title": "系统消息" },
+
+  { "n": 38, "phase": 7, "blockers": [8],  "uc": "5.8",  "state": "ready", "title": "归档频道" },
+  { "n": 39, "phase": 7, "blockers": [8],  "uc": "11.1", "state": "ready", "title": "加入公司" },
+  { "n": 40, "phase": 7, "blockers": [39], "uc": "11.2", "state": "ready", "title": "退出公司" },
+  { "n": 41, "phase": 7, "blockers": [],   "uc": "12.1", "state": "ready", "title": "健康探针" }
+]
