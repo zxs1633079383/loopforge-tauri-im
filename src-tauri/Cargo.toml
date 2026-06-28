@@ -31,12 +31,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 #   ① HTTP200 无 serverId 不清栈·留 WS echo 幂等补乐观行 id 列（57e8b72）
 #   ② self-echo 在 cursor gap 下兜底 emit im:post:received 结算乐观行 DOM（36162c9）
 # 验回归后改回主线。重 pin 命令：cargo update -p helix-core helix-im helix-driver-native helix-driver-host。
-helix-core          = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "fix/im-send-echo-reconcile" }
-helix-im            = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "fix/im-send-echo-reconcile" }
-helix-driver-native = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "fix/im-send-echo-reconcile" }
+helix-core          = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "verify/endgame-land" }
+helix-im            = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "verify/endgame-land" }
+helix-driver-native = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "verify/endgame-land" }
 # 泛型引擎壳（run_engine_loop<S,H,E,Tr,C> + EngineDeps + RecordingSink）——
 # 组装根直连此泛型入口，把全 port 包上装饰器（native EngineConfig 具体类型注不进装饰器）。
-helix-driver-host   = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "fix/im-send-echo-reconcile" }
+helix-driver-host   = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "verify/endgame-land" }
 
 # 仪表层（本仓 · Recording<P> + InstrumentCtx + LogSink）
 helix-driver-instrument = { path = "../crates/helix-driver-instrument" }

@@ -13,7 +13,7 @@ description = "Recording<P> port 装饰器：日志/金标帧录制/回放三合
 # 构建吃到漂移的 helix；git pin 给冻结快照，验证期不被扰动（CLAUDE.md §0 release 形态）。
 # 临时 repoint：与 src-tauri 同步指向 helix branch fix/im-send-echo-reconcile（HEAD 36162c9·必须
 # 同一 git 快照·否则两份 helix_core → E0277 multiple versions）。验回归后一起改回主线。
-helix-core  = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "fix/im-send-echo-reconcile" }
+helix-core  = { git = "file:///Users/mac28/workspace/rustWorkspace/helix", branch = "verify/endgame-land" }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
 bytes       = { workspace = true }
