@@ -36,7 +36,7 @@
 |---|---|---|---|---|---|---|---|
 | [x] | 1.5 撤回 | `im_revoke`→`posts/revoke` | `真机curl真源 §3`{postId}✅ | `emit_post_batch_updated`(在线)/`emit_post_deleted`(离线) | data-revoke=1/行移除 | `message` mark_revoked | S |
 | [x] | 3.2 单条已读 ✅四面全绿(L2 双账号·issue #14/#47·helix gate bypass) | `im_mark_read`→`post/read`{channelId,posts:[postId]}✅ | `partials/6 UC-3.2` | `emit_post_read`(fat)✅L2 | data-read-bits✅ | `message.read_bits`✅batch_update | S |
-| [~] | 3.1 会话已读 ⏸park ②④(NEEDS·channels/view 不广播 post_read echo·issue #15 已closed·L2无法验) | `im_read_channel`→`channels/view`{channels:[{id}]}✅ | `partials/6 UC-3.1` | `emit_post_read`(fat)⏸后端缺 | data-read-bits✅ | `message.read_bits`⏸ | S/M |
+| [x] | 3.1 会话已读 ✅四面全绿(L2·后端补 channels/view→post_read echo·#15/#47) | `im_read_channel`→`channels/view`{channels:[{id}]}✅ | `partials/6 UC-3.1` | `emit_post_read`(fat)✅ | data-read-bits✅ | `message.read_bits`✅ batch_update | S/M |
 | [x] | 3.3 模板已收到 | `templateReceived`→`post/templateReceived` | `partials/6 UC-3.3`{postId}(单数 path) | `emit_post_updated`/read:result | data-template-received | `message` | S |
 | [x] | 1.4 重发失败 | `im_send`(temp_id 复用)→`posts/create` | `真机curl真源 §1` | `emit_post_sending`→`emit_post_received` | data-send-status:failed→sending→sent | `message` upsert 覆盖 | S |
 | [x] | 1.7 转发/合并 | `im_create_posts`→`posts/createPosts` | `真机curl真源 附录A`{posts,channelIds}✅ | 各目标 channel `emit_post_received` | 多 channel 消息行 | `message`×N | M |

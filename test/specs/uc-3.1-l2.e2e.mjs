@@ -26,8 +26,12 @@ import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { runFourFacet } from '../reducer/four-facet-reducer.mjs';
 
+// UC-3.1 oracle（ucId=UC-3.1·与本 spec set_uc('UC-3.1') 的窗口一致）。
+// 注意：不能用 uc-3.2-l2.expect.json（ucId=UC-3.2）——其 ucId 与本 spec 的 UC 窗口不符，
+// reducer 会按 UC-3.2 过滤事件 → 取不到 UC-3.1 窗口内的 post_read 投影/落库 → ②④ 假红。
+// 两文件投影/落库字段集相同（均 post_read echo fat 集），仅 ucId 窗口键不同。
 const EXPECT = JSON.parse(
-  readFileSync(new URL('../expect/uc-3.2-l2.expect.json', import.meta.url), 'utf8')
+  readFileSync(new URL('../expect/uc-3.1-l2.expect.json', import.meta.url), 'utf8')
 );
 
 const RUN_JSONL =
