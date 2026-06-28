@@ -52,10 +52,10 @@
     "_note": "projection-schema §1 emit_post_read = im:post:read（fat·同 emit_post_received 完整 13 键集）。在线 WS post_read(type6) 触发。缺/多即 fail（FixB 反转：少一字段=漂移）。命名陷阱 createAt 非 createdAt 已由键集锁定。已读语义体现在 readBits（self 位置由后端权威置位·禁前端算）。【L1 观测性·2026-06-25 实跑】此投影由 read echo `event_type=6` 驱动·而 read echo 是**多设备 echo**（partials/6:140·只广播给该用户其他设备·不回灌发起读的本连接）→ L1 单账号单连接 e2e 此 ② 面结构性观测不到（非 bug·server 多设备语义）。spec 用可证伪护栏断 ② 缺席（gap 自愈即翻红）；真绿须 L2 双账号。键集定义不变（多设备到帧时仍按此 13 键校验）。"
   },
   "storage": {
-    "op": "batch_upsert",
+    "op": "batch_update",
     "table": "message",
     "minRows": 1,
-    "_note": "projection-schema §3/§4：readBits 落 message.read_bits 列（C2 单调覆盖·热路径 PK=temporary_id upsert·B5 禁 RMW）。op 取 batch_upsert（与 UC-1.1 echo 落库同 message upsert 路径·read_bits 列覆盖）。装饰器 facet④ payload 只暴露 {op,table,rows}（不含行内容）；read_bits 列具体值由 harness 直接查库验（four-facet-oracle §1 ④）。【L1 观测性·2026-06-25 实跑】此落库由 read echo 驱动（同 ② 投影）·read echo 多设备-only → L1 单连接结构性观测不到此 ④ 面（非 bug）。spec 可证伪护栏断 ④ 缺席（gap 自愈即翻红）；真绿须 L2 双账号。op/table/minRows 定义不变。"
+    "_note": "projection-schema §3/§4：readBits 落 message.read_bits 列（C2 单调覆盖·热路径 PK=temporary_id upsert·B5 禁 RMW）。op 取 batch_update（2026-06-28 人审纠正：read 是幂等全量覆盖既存行 read_bits 列=O(1) UPDATE WHERE id；原 batch_upsert 误并入 send INSERT 路径·wire 无整行+message.id 无 UNIQUE 无法 upsert）。装饰器 facet④ payload 只暴露 {op,table,rows}（不含行内容）；read_bits 列具体值由 harness 直接查库验（four-facet-oracle §1 ④）。【L1 观测性·2026-06-25 实跑】此落库由 read echo 驱动（同 ② 投影）·read echo 多设备-only → L1 单连接结构性观测不到此 ④ 面（非 bug）。spec 可证伪护栏断 ④ 缺席（gap 自愈即翻红）；真绿须 L2 双账号。op/table/minRows 定义不变。"
   },
   "dom": {
     "dataAttrs": {

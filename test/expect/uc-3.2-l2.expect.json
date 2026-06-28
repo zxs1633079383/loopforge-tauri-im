@@ -44,7 +44,7 @@
     "_note": "projection-schema §1 emit_post_read fat 完整集（17 键·同 emit_post_received·与 uc-3.2.expect.json 冻结集一致）。缺/多即 fail。post_read echo（type6·data{postId,readMap,createAt,updateAt}）推消息作者 A → helix 查既存 message 行装配 fat + 更新 readBits。"
   },
   "storage": {
-    "op": "batch_upsert",
+    "op": "batch_update",
     "table": "message",
     "minRows": 1,
     "_note": "projection-schema §4：post_read echo 落 message 行（readBits 单调覆盖·该行 post 既存·update read_bits 列）≥1。装饰器 facet④ payload 暴露 {op,table,rows}。经 sid（msg_id 别名）与 ② 投影聚同束。守可证伪：未落库 → ④ 红。"

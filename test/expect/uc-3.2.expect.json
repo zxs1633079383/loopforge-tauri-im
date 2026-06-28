@@ -51,7 +51,7 @@
     "_note": "projection-schema §1 emit_post_read fat 完整集（13 键，同 emit_post_received）。缺/多即 fail（FixB 反转：少一字段=漂移）。命名陷阱 createAt 非 createdAt 已由键集锁定。【②④ server-data-gap·2026-06-25 实证】post_read 是已读回执（告知对端发送者）·go publishRead 对自读（单账号·对端离线）不回推本客户端 → 单账号夹具无 im:post:read 产出（run.jsonl：post/read 返 200·增量 sync no_change·无 type6 read event 回灌）。本面 oracle 不变（字段集冻结），待 L2 双账号（A 发→B 读→A 收 echo）复跑转绿；spec 单账号验 ①③（出站契约+DOM），②④ 标 gap 不 fail（保留可证伪：有 echo 必校验）。"
   },
   "storage": {
-    "op": "batch_upsert",
+    "op": "batch_update",
     "table": "message",
     "minRows": 1,
     "_note": "helix ledger 实证 + projection-schema §4：post_read echo 落 message 行（readBits 单调覆盖，该行 post 已存在，update read_bits 列）。装饰器 facet④ payload 仅暴露 {op,table,rows}（不含行内容，避隐私/体积）；行内容由 harness 直接查库验证。"
