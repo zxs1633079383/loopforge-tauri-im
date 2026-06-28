@@ -179,3 +179,4 @@
   ↳ 两处实测踩坑（已写卡 §2.3/§5）：① 隔离首版二次 truncate 截断 app append 中 jsonl → 稀疏 null 空洞 → reducer parseErrors=26 假红 → 删二次 truncate。② full DB restore 还原 stale cursor → reload 后 hello 冷启自愈 catch-up 同步风暴（stuck_channels）抢道 → 5.3 关闭行移除超时假红 → restore 降级为 opt-in（LOOPFORGE_RESTORE_DB=1·默认关）；修正任务初始假设「每 spec 复位 DB 快照」=隔离核心其实是 reload 复位易失态 + 保 live cursor。
   ↳ 索引同步：CLAUDE.md §9 + AGENTS.md（镜像）+ README §1 + 本 log（一次 commit）。gate.sh ✅ cards=14 三处一致·镜像绿·reducer 189/0。
 ✅ DONE loop-Engine 真run入口(workflow+slash)+merge回main @2026-06-28 | merge 2859478 | 288 test绿/gate绿/dry-run正常 | main | 下一步 /loop-engine 跑 L3 首证
+✅ DONE loop-Engine 收口 run @2026-06-28T10:56+0800 | dry-run 调度合法(phase 0→7 拓扑前沿波次+路由样例正常) | STATUS.md 由 renderStatus 从 events.jsonl 折叠重生成 | 本 run 0 绿/0 park/0 gap(数据面未驱 UC·纯收口·events.jsonl 追 type:run_done) | LE 内核 288 test 绿 | main(禁merge禁push)
