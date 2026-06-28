@@ -85,6 +85,10 @@ cmd_up() {
   if webdriver_healthy; then info "webdriver 4445 已健康·复用"
   else
     assert_port_free "$WEBDRIVER_PORT" "webdriver"
+    # #1 测试隔离（C014）：suite 起点冷启前对齐 cursor 到本地高水位 → 消除累积 DB 的
+    # cursor=0 风暴（实测 196/219 cursor=0 → 200+ proactive resync 占满 WS → send echo 超窗红）。
+    info "对齐 cursor 到高水位（seed-align-cursor·#1 冷启零风暴·C014）"
+    bash "$REPO_ROOT/scripts/seed-align-cursor.sh" || warn "cursor 对齐失败（继续起 app·可能风暴）"
     _start_app_cargo ""
   fi
   echo "up @ $(date)" >"$STATE_FILE"
@@ -164,9 +168,13 @@ _spec_isolated() {
     bash "$REPO_ROOT/scripts/seed-snapshot.sh" restore || die "DB 快照还原失败（C014）"
   fi
   # —— 自驱 4.x：cursor 落后态（gap 回放触发·复用 C003/C004 决策 A）——
+  # —— 非-behind（命令型 / 自驱-plain 如 10.1）：cursor 前推对齐高水位 → 冷启零风暴（#1·C014）——
   if [ -n "$self_behind" ]; then
     info "seed-behind-cursor（自驱 ${uc}·cursor 落后触发 gap/补偿回放）"
     bash "$REPO_ROOT/scripts/seed-behind-cursor.sh" || die "cursor 落后重置失败（C014）"
+  else
+    info "对齐 cursor 到高水位（seed-align-cursor·命令型/自驱-plain·冷启零风暴·#1·C014）"
+    bash "$REPO_ROOT/scripts/seed-align-cursor.sh" || warn "cursor 对齐失败（继续·可能风暴）"
   fi
 
   # —— 起 app（bootstrap-UC 归属自驱 boot hop；起 app 即 truncate jsonl·boot hop 重流入）——
@@ -185,11 +193,12 @@ _spec_isolated() {
 }
 
 cmd_reload_app() {
-  local bootstrap_uc=""
+  local bootstrap_uc="" align_cursor="1"
   if [ "${1:-}" = "--uc4.1" ]; then
     info "UC-4.1：起 app 前重置 cursor 落后态（seed-behind-cursor·C003/C004）"
     bash "$REPO_ROOT/scripts/seed-behind-cursor.sh" || die "cursor 重置失败" 1
     bootstrap_uc="UC-4.1"
+    align_cursor=""   # 4.1 需要 seed-behind 制造的 gap·禁对齐（否则抹平回放触发条件）
   elif [ "${1:-}" = "--uc" ] && [ -n "${2:-}" ]; then
     # 通用 bootstrap UC：内核自驱 UC（hello 收尾自驱·无前端命令）须把 hello hop 归本 UC
     # （否则默认 __quiescence__·reducer 按 uc_id 过滤抽空·见 ctx.rs BOOTSTRAP_UC_ENV 注）。
@@ -202,6 +211,11 @@ cmd_reload_app() {
   pkill -f "target/debug/$APP_BIN_NAME" 2>/dev/null || true
   local pid; pid="$(lsof -ti:"$WEBDRIVER_PORT" 2>/dev/null || true)"; [ -n "$pid" ] && kill $pid 2>/dev/null || true
   sleep 1
+  # 冷启前对齐 cursor 到高水位 → 消除累积 DB 的 cursor=0 风暴（#1·C014）；4.1 除外（需 gap）。
+  if [ -n "$align_cursor" ]; then
+    info "对齐 cursor 到高水位（seed-align-cursor·冷启零风暴·#1·C014）"
+    bash "$REPO_ROOT/scripts/seed-align-cursor.sh" || warn "cursor 对齐失败（继续·可能风暴）"
+  fi
   _start_app_cargo "$bootstrap_uc"
   ok "app 重起就绪（4445）·ng（1420）未动"
 }
