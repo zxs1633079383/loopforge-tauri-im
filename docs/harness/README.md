@@ -21,8 +21,9 @@
 | C012 | 提交闸门机器强制——pre-push hook 跑 gate.sh + clippy 卫生（借鉴 helix install-hooks/clippy） | active |
 | C013 | 纯渲染壳·零业务逻辑（处理逻辑必须在 helix·本仓只绑定·第二北极星纯绑定覆盖率→100%·禁区 grep→0） | active |
 | C014 | 每-UC 状态隔离（暖栈 spec 跑序无关·reload 复位 DOM/inflight/in-memory·自驱保 boot hop·禁 stale-cursor restore） | active |
+| C015 | 可观测性逐跳覆盖（4 跳每跳必有 hop 探针·Tick::Inbound 等旁路绕过 Recording 致②盲点·缺一跳即诊断盲点·补 HOP2/HOP3） | active |
 
-> 稳态目标 10-20 条；当前 14（C001-C007 本会话踩坑·C008-C012 借鉴 helix·C013 纯渲染壳铁律·C014 暖栈 flaky-state 隔离）。超 30 → 跑 merged/deprecated 清理（见 §3）。
+> 稳态目标 10-20 条；当前 15（C001-C007 本会话踩坑·C008-C012 借鉴 helix·C013 纯渲染壳铁律·C014 暖栈 flaky-state 隔离·C015 逐跳可观测）。超 30 → 跑 merged/deprecated 清理（见 §3）。
 > 闸门：`bash scripts/gate.sh`（镜像/索引不变量/录放 feature 闸/reducer 自测/expect JSON/helix 单版本/行数）。
 
 ## §2 cards 与 UC rollout 的关系
