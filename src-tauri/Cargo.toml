@@ -41,6 +41,12 @@ helix-driver-host   = { git = "file:///Users/mac28/workspace/rustWorkspace/helix
 # 仪表层（本仓 · Recording<P> + InstrumentCtx + LogSink）
 helix-driver-instrument = { path = "../crates/helix-driver-instrument" }
 
+# 间接依赖版本钉死（非本仓直接使用，仅为约束 cargo 解析）：
+# tauri/wry 的 cookie 0.18.1 调 1 参 time::Parsable::parse，而 time 0.3.52 把该方法
+# 改成 2 参（多 defaults: Option<Parsed>）→ 无 Cargo.lock 时 cargo 贪新 0.3.52 编崩 cookie。
+# plist 1.9.0 要 time≥0.3.47，取夹缝下界精确钉 0.3.47（Cargo.lock 被 .gitignore·不靠 lock）。
+time = { version = "=0.3.47", default-features = false }
+
 # tauri-plugin-webdriver 经 `webdriver` feature 闸（默认开）：release 出货须 `--no-default-features`
 # 关掉，绝不带 W3C 自动化接口（CLAUDE.md §2.4）。
 # 注：cargo 的 `target.'cfg(debug_assertions)'` 不支持依赖选择（实测 warn），故改 feature 闸 +
