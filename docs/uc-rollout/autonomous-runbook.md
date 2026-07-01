@@ -18,7 +18,7 @@
 ```bash
 git rev-parse --abbrev-ref HEAD        # 须 feat/uc-rollout
 gh auth status                          # zxs1633079383
-(cd /Users/mac28/workspace/rustWorkspace/helix && git rev-parse --short HEAD)  # round6 pin·C001
+(cd /System/Volumes/Data/workspace/rust/helix && git rev-parse --short HEAD)  # round6 pin·C001
 sqlite3 "/tmp/loopforge-im.db?mode=rwc" "SELECT count(*) FROM channel;"        # >0·seeded·C003
 bash scripts/gate.sh                    # 应绿
 ```

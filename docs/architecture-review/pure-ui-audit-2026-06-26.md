@@ -76,7 +76,7 @@
 
 ## 4. helix 零改边界证据
 
-- helix 工作树（`/Users/mac28/workspace/rustWorkspace/helix`）`git status --short`：仅 `??` 未跟踪文件（.md / .workflow），**零 modified 跟踪源文件** → helix-core/helix-im/helix-driver-native 源零改成立。
+- helix 工作树（`/System/Volumes/Data/workspace/rust/helix`）`git status --short`：仅 `??` 未跟踪文件（.md / .workflow），**零 modified 跟踪源文件** → helix-core/helix-im/helix-driver-native 源零改成立。
 - loopforge `src-tauri/Cargo.toml`：5 个 helix crate 全部 `git = "file://.../helix", branch = "feat/cses-round6-uc-reclaim"`（git ref 非 path dep·C001 单源同 rev 合规），Cargo.lock pin 具体 commit 冻结快照。
 - 无 rollout commit 触碰 helix 源。
 

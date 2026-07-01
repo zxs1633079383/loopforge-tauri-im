@@ -31,7 +31,7 @@
 | 运行日志 | `/tmp/loopforge/*.log` | `RUN_LOG_DIR` |
 | 结构化 hop 日志（app 写 / reducer 读） | `/tmp/loopforge/run.jsonl` | `HELIX_RUN_JSONL` |
 | wdio 控制台抓存（含「断在哪一跳」） | `/tmp/loopforge/wdio-out.log` | `WDIO_OUT` |
-| helix checkout（dev-loop 改引擎处） | `/Users/mac28/workspace/rustWorkspace/helix` | `HELIX_ROOT` |
+| helix checkout（dev-loop 改引擎处） | `/System/Volumes/Data/workspace/rust/helix` | `HELIX_ROOT` |
 
 ---
 

@@ -22,7 +22,7 @@ CLAUDE.md §2 不变量②③：冻结契约（projection-schema / 真机curl真
 〔策略演进：早先「不改 helix 仓·只标记」是另一 workflow 在改 helix 时的临时约束（2026-06-24），**已解除**；现确认 helix 缺陷可直接修+验证，但**冻结 oracle 仍只读**。〕
 
 ## §4 Verification
-- `cd /Users/mac28/workspace/rustWorkspace/helix && git status --short` → loopforge 会话期间应无本会话改动。
+- `cd /System/Volumes/Data/workspace/rust/helix && git status --short` → loopforge 会话期间应无本会话改动。
 - 本仓 tools/gate 若有 contract-readonly-gate：跑过。
 - reducer 自测 `node test/reducer/four-facet-reducer.test.mjs` → 39/0（可证伪对偶在）。
 

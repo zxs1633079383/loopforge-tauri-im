@@ -11,7 +11,7 @@
 LF_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$LF_LIB_DIR/.." && pwd)"
 # HELIX_ROOT：上游 helix workspace（path dep / dev-loop 改引擎处）。可经 env 覆盖。
-HELIX_ROOT="${HELIX_ROOT:-/Users/mac28/workspace/rustWorkspace/helix}"
+HELIX_ROOT="${HELIX_ROOT:-/System/Volumes/Data/workspace/rust/helix}"
 
 # —— 端口常量（spec §7 / CLAUDE.md §6）——
 FRONTEND_PORT="${FRONTEND_PORT:-1420}"      # pnpm/ng serve 前端

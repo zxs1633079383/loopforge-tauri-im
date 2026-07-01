@@ -55,7 +55,7 @@ const DIMS = [
   { key: 'angular-frontend', label: 'Angular 前端只读渲染(src/app)',
     scope: 'src/app/**(尤其 im-store.service.ts / app.component.ts / message-row 模型 / 各 apply* 方法)。审：是否只把 im:__bus__ 投影字段直映 DOM data-*·有无前端业务计算(算 readBits/本地落库/客户端维护业务真值/再加工投影成业务态)。apply* 方法是否纯「投影→store→DOM」搬运。' },
   { key: 'helix-boundary', label: 'helix 零改边界 + 业务归属',
-    scope: 'src-tauri/Cargo.toml(helix 依赖是 git rev 还是 path? 有无改 helix)·helix workspace /Users/mac28/workspace/rustWorkspace/helix(git status 有无未提交改动·git log 近期有无本仓引发的 helix 改)·crates/helix-driver-instrument(是否只读仪表 Recording 装饰·不掺业务)。确认业务(落库/出站/对账)在 helix-im 不在本仓。' },
+    scope: 'src-tauri/Cargo.toml(helix 依赖是 git rev 还是 path? 有无改 helix)·helix workspace /System/Volumes/Data/workspace/rust/helix(git status 有无未提交改动·git log 近期有无本仓引发的 helix 改)·crates/helix-driver-instrument(是否只读仪表 Recording 装饰·不掺业务)。确认业务(落库/出站/对账)在 helix-im 不在本仓。' },
   { key: 'rollout-commits', label: 'Rollout commit 审计(防业务渗入)',
     scope: 'git log --stat v0.1-basic..HEAD(29+ UC commit)。逐个 feat(uc-*) commit 看 diff 触碰的 src-tauri/src + src/app 是否守薄壳·有没有哪个 UC 为了过四面把业务塞进壳/前端。重点 5.1建群/1.9加急/3.1已读/6.1拉人 这类有出站+落库的 UC。' },
 ]

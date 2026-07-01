@@ -10,7 +10,7 @@ export const meta = {
   ],
 }
 
-const HELIX_WT = '/Users/mac28/workspace/rustWorkspace/helix/worktrees/im-body-build'
+const HELIX_WT = '/System/Volumes/Data/workspace/rust/helix/worktrees/im-body-build'
 const LOOPFORGE = '/Users/mac28/workspace/rustWorkspace/loopforge-tauri-im'
 
 const STEP_RESULT = {

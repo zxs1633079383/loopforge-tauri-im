@@ -14,7 +14,7 @@
 
 本仓**独立于 helix 仓**，Rust 侧 dev 期用本地 path dep 指向 helix checkout：
 
-- helix workspace：`/Users/mac28/workspace/rustWorkspace/helix`（`helix-core` / `helix-im` / `helix-driver-native`）
+- helix workspace：`/System/Volumes/Data/workspace/rust/helix`（`helix-core` / `helix-im` / `helix-driver-native`）
 - 行为/契约真源在 helix 仓，**不在本仓复制**：
   - 投影契约：`helix/crates/helix-im/docs/projection-schema.md`（21 投影工厂字段集，冻结）
   - outbound 真源：`helix/crates/helix-im/docs/csesapi-migration/真机curl真源.md`（真抓包 body+头）

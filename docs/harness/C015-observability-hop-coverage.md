@@ -41,15 +41,15 @@
 # 1) 旁路覆盖：每个 Tick/直泵入站处理点必须有 HOP tracing（无则盲点）
 #    入站处理点 grep（helix-im）vs HOP2 探针数 —— 处理点不得多于探针
 grep -rn "Tick::Inbound\|dispatch_ws\|fn handle.*Inbound" \
-  /Users/mac28/workspace/rustWorkspace/helix/crates/helix-im/src/ | wc -l
+  /System/Volumes/Data/workspace/rust/helix/crates/helix-im/src/ | wc -l
 grep -rn "HOP2\|tracing::.*HOP2" \
-  /Users/mac28/workspace/rustWorkspace/helix/crates/helix-im/src/ws/ | wc -l   # ≥ 入站处理点
+  /System/Volumes/Data/workspace/rust/helix/crates/helix-im/src/ws/ | wc -l   # ≥ 入站处理点
 
 # 2) gate 决策可见：buffer-gap 分支必须有 HOP3（否则"收到但没吐"不可观测）
 grep -rn "buffer.*gap\|buffer_and_arm_gate" \
-  /Users/mac28/workspace/rustWorkspace/helix/crates/helix-im/src/ | head
+  /System/Volumes/Data/workspace/rust/helix/crates/helix-im/src/ | head
 grep -rn "HOP3\|apply-emit\|buffer-gap" \
-  /Users/mac28/workspace/rustWorkspace/helix/crates/helix-im/src/ | wc -l     # >0
+  /System/Volumes/Data/workspace/rust/helix/crates/helix-im/src/ | wc -l     # >0
 
 # 3) 四跳完整性：一次绿 send-1 的日志必须含全 4 跳（任一缺 = 盲点回归）
 bash scripts/run.sh -- --spec test/specs/uc-send-1.e2e.mjs
