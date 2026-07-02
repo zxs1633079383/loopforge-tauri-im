@@ -35,6 +35,15 @@ const AREA_SPECS = {
 };
 
 const EXCLUDED_FROM_L1 = new Set([
+  // UC-1.4 validates resend from a real failed row. Healthy live runs do not
+  // naturally produce failed rows, and fake/debug state injection is forbidden
+  // by the real-chain gate; keep it out of default L1 until a real
+  // fault-injection precondition exists.
+  "uc-1.4.e2e.mjs",
+  // Java-backed interaction cards are explicitly outside the current Go-only
+  // closure scope. Todo remains in L1.
+  "uc-8.x-average.e2e.mjs",
+  "uc-8.x-vote.e2e.mjs",
   "uc-1.5-offline-setup.e2e.mjs",
   "uc-1.5-offline.e2e.mjs",
   "uc-3.1-l2.e2e.mjs",
