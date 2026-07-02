@@ -1198,7 +1198,7 @@ def main() -> None:
     if suite_id:
         print(f"  ✅ 测试套件 id: {suite_id}")
         print(f"  运行套件命令（单行，--environment 接环境ID）：")
-        print(f"    apifox test-suite run {suite_id} --project {PROJECT_ID} --access-token $APIFOX_TOKEN --environment {env_id}")
+        print(f"    apifox test-suite run {suite_id} --project {PROJECT_ID} --access-token $APIFOX_TOKEN --environment {env_id} --carry-runtime-variables")
     print()
     print("\n完成！在 Apifox 桌面端刷新项目可看到新场景和套件。")
 

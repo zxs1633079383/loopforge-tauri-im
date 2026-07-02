@@ -101,7 +101,7 @@ python3 scripts/apifox-suite-create.py
 脚本完成后会输出：
 
 ```text
-apifox test-suite run <suite_id> --project 8449651 --access-token $APIFOX_TOKEN --environment <env_id>
+apifox test-suite run <suite_id> --project 8449651 --access-token $APIFOX_TOKEN --environment <env_id> --carry-runtime-variables
 ```
 
 以上输出的一行命令是基础运行命令；`scripts/multi-end-loop.sh --apifox` 会追加 `--reporters cli,json --out-dir ... --out-file ...`，并且只有解析到 JSON 报告全绿才写 `apifox-status.json`。
