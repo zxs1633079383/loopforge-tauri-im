@@ -68,9 +68,13 @@ if printf '%s\n' "${WDIO_ARGS[@]+"${WDIO_ARGS[@]}"}" | grep -q 'uc-4.1'; then
   BOOTSTRAP_UC="UC-4.1"
   info "UC-4.1：bootstrap UC 归属 = UC-4.1（hello 自驱帧归 UC-4.1·LOOPFORGE_BOOTSTRAP_UC）"
 elif printf '%s\n' "${WDIO_ARGS[@]+"${WDIO_ARGS[@]}"}" | grep -q 'uc-4.2'; then
+  info "UC-4.2：起 app 前重置 cursor 到落后态（seed-behind-cursor·gap sync 自驱前置）"
+  bash "$REPO_ROOT/scripts/seed-behind-cursor.sh" || die "UC-4.2 cursor 重置失败（seed-behind-cursor）" 1
   BOOTSTRAP_UC="UC-4.2"
   info "UC-4.2：bootstrap UC 归属 = UC-4.2（hello 自驱 sync-notify hop 归本 UC）"
 elif printf '%s\n' "${WDIO_ARGS[@]+"${WDIO_ARGS[@]}"}" | grep -q 'uc-4.4'; then
+  info "UC-4.4：起 app 前重置 cursor 到落后态（seed-behind-cursor·heartbeat gap 自驱前置）"
+  bash "$REPO_ROOT/scripts/seed-behind-cursor.sh" || die "UC-4.4 cursor 重置失败（seed-behind-cursor）" 1
   BOOTSTRAP_UC="UC-4.4"
   info "UC-4.4：bootstrap UC 归属 = UC-4.4（hello/heartbeat 自驱 hop 归本 UC）"
 elif printf '%s\n' "${WDIO_ARGS[@]+"${WDIO_ARGS[@]}"}" | grep -q 'uc-10.1'; then
