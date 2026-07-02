@@ -290,6 +290,7 @@ for ((i = 1; i <= LOOPS; i++)); do
       echo "APIFOX_TOKEN is required for --apifox" >&2
       exit 2
     fi
+    echo "APIFOX_PROFILE=${APIFOX_PROFILE:-full}"
 	    (cd "$ROOT" && python3 scripts/apifox-suite-create.py | tee "$ARCHIVE_DIR/apifox-create.log")
 	    APIFOX_CMD="$(sed -n 's/^[[:space:]]*\(apifox .*\)$/\1/p' "$ARCHIVE_DIR/apifox-create.log" | tail -1)"
 	    if [ -z "$APIFOX_CMD" ]; then

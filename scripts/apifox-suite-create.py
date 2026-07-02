@@ -36,6 +36,16 @@ COOKIE_ID = os.environ.get("COOKIE_ID", "444")
 COOKIE_ID_B = os.environ.get("MEMBER_B", "678")
 COMPANY_ID = os.environ.get("COMPANY_ID", "64118eebd2b665246b7880eb")
 TEAM_ID = os.environ.get("TEAM_ID", COMPANY_ID)
+APIFOX_PROFILE = os.environ.get("APIFOX_PROFILE", "full").strip().lower() or "full"
+VALID_APIFOX_PROFILES = {"full", "go-only"}
+if APIFOX_PROFILE not in VALID_APIFOX_PROFILES:
+    print(f"ERROR: APIFOX_PROFILE must be one of {sorted(VALID_APIFOX_PROFILES)}, got {APIFOX_PROFILE!r}")
+    sys.exit(2)
+
+GO_ONLY_EXCLUDED_SCENARIOS = {
+    "UC-8.x 投票 CRUD",
+    "UC-8.x 平均分 CRUD",
+}
 
 _token_cache: str = ""
 
@@ -1082,11 +1092,30 @@ UC_TABLE: list[tuple[str, str, int, list]] = [
 ]
 
 
+def selected_uc_table() -> list[tuple[str, str, int, list]]:
+    if APIFOX_PROFILE == "full":
+        return UC_TABLE
+    return [row for row in UC_TABLE if row[0] not in GO_ONLY_EXCLUDED_SCENARIOS]
+
+
+def skipped_scenario_names() -> list[str]:
+    if APIFOX_PROFILE == "full":
+        return []
+    return [row[0] for row in UC_TABLE if row[0] in GO_ONLY_EXCLUDED_SCENARIOS]
+
+
 def main() -> None:
     print("=" * 60)
     print("loopforge-tauri-im Apifox 套件建立脚本")
     print(f"Project: {PROJECT_ID}  base_url: {BASE_URL_IM}")
     print(f"TEAM_ID: {TEAM_ID}  cookieId: {COOKIE_ID}  cookieId_B: {COOKIE_ID_B}")
+    selected_rows = selected_uc_table()
+    skipped_rows = skipped_scenario_names()
+    print(f"APIFOX_PROFILE: {APIFOX_PROFILE}")
+    if skipped_rows:
+        print("Skipped scenarios:")
+        for skipped in skipped_rows:
+            print(f"  - {skipped}")
     print("=" * 60)
 
     # 1. 创建/更新环境
@@ -1115,10 +1144,16 @@ def main() -> None:
     print(f"  环境 id: {env_id}")
 
     # 2. 创建测试套件
-    print("\n[2/4] 创建测试套件 loopforge-im-full …")
+    suite_name = "loopforge-im-go-only" if APIFOX_PROFILE == "go-only" else "loopforge-im-full"
+    suite_desc = (
+        "loopforge-tauri-im Go-only HTTP regression suite; excludes vote and average-score Java legacy scenarios"
+        if APIFOX_PROFILE == "go-only"
+        else "loopforge-tauri-im 全 UC + 全 HTTP 端点回归套件"
+    )
+    print(f"\n[2/4] 创建测试套件 {suite_name} …")
     suite_r = af("test-suite", "create",
-                 "--name", "loopforge-im-full",
-                 "--description", "loopforge-tauri-im 全 UC + 全 HTTP 端点回归套件")
+                 "--name", suite_name,
+                 "--description", suite_desc)
     suite_id = suite_r.get("data", {}).get("id")
     if not suite_id:
         print("  ⚠️  测试套件创建失败，检查 token 和 project 权限")
@@ -1143,11 +1178,11 @@ def main() -> None:
         ("阶段8 收尾销毁频道", ["UC-5.3"]),
     ]
 
-    print(f"\n[3/4] 创建 {len(UC_TABLE)} 个 UC 场景 …")
+    print(f"\n[3/4] 创建 {len(selected_rows)} 个 UC 场景 …")
     # name → scenario_id 映射（用于套件装配）
     name_to_sid: dict[str, int] = {}
     scenario_ids: list[int] = []
-    for name, desc, priority, steps in UC_TABLE:
+    for name, desc, priority, steps in selected_rows:
         print(f"\n  → {name}")
         sid = create_scenario(name, desc, priority)
         if sid is None:
@@ -1194,7 +1229,7 @@ def main() -> None:
 
     # 4. 汇总
     print("\n[4/4] 汇总")
-    print(f"  ✅ 成功创建场景: {len(scenario_ids)}/{len(UC_TABLE)}")
+    print(f"  ✅ 成功创建场景: {len(scenario_ids)}/{len(selected_rows)}")
     if suite_id:
         print(f"  ✅ 测试套件 id: {suite_id}")
         print(f"  运行套件命令（单行，--environment 接环境ID）：")

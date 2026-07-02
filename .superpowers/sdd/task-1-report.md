@@ -1,18 +1,26 @@
-# Task 1 Implementer Report
+# Task 1 Report: Add Go-Only Apifox Profile
 
 Status: DONE
 
 Commits created:
-- `3cf89a7` — `docs: 建立全 UC 真实链路台账`
+- `71c6050` — `test: 增加 Apifox go-only 套件边界`
 
-One-line verification summary:
-- Markdown/text checks passed, stale UC wording was reworked to real-chain language, and `git diff --cached --name-only` contained only the 8 allowed Task 1 paths.
+What changed:
+- Added `APIFOX_PROFILE` support to `scripts/apifox-suite-create.py` with validation for `full` and `go-only`.
+- Added `go-only` scenario filtering that excludes only:
+  - `UC-8.x 投票 CRUD`
+  - `UC-8.x 平均分 CRUD`
+- Kept `UC-10.1 待办列表` in the selected set.
+- Updated suite naming, description, scenario counts, and banner output to reflect the active profile.
+- Echoed the active `APIFOX_PROFILE` in `scripts/multi-end-loop.sh` before the Apifox generator runs.
+
+Test summary:
+- `python3 -m py_compile scripts/apifox-suite-create.py` ✅
+- `APIFOX_PROFILE=bad python3 scripts/apifox-suite-create.py` ✅ failed early with the expected validation error before token lookup or network calls
 
 Concerns:
-- None reported.
+- None observed in the edited scope.
+- `APIFOX_PROFILE=go-only` still preserves the stage grouping structure, so empty stage groups are skipped naturally rather than removed.
 
-Controller note:
-- The implementer final notification referenced this report path, but the file was not materialized in the shared checkout. This file records the implementer final status so the task reviewer has a stable report artifact. The review authority remains the task brief and diff package.
-
-Reviewer fix note:
-- Downgraded every Task 1 unverified UC row in `docs/uc-rollout/all-uc-real-chain-status.md` to `not-run` unless the spec explicitly calls it `http-only` or `night-only`; preserved only the brief-supplied runtime evidence for `UC-6.1` and `UC-6.2`.
+Report file path:
+- `/System/Volumes/Data/workspace/rust/loopforge-tauri-im/.superpowers/sdd/task-1-report.md`
