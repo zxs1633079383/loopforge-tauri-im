@@ -67,6 +67,15 @@ if printf '%s\n' "${WDIO_ARGS[@]+"${WDIO_ARGS[@]}"}" | grep -q 'uc-4.1'; then
   # 设 bootstrap UC=UC-4.1 使 hello hop 真正归 UC-4.1（机器件归属·非改冻结 oracle）。
   BOOTSTRAP_UC="UC-4.1"
   info "UC-4.1：bootstrap UC 归属 = UC-4.1（hello 自驱帧归 UC-4.1·LOOPFORGE_BOOTSTRAP_UC）"
+elif printf '%s\n' "${WDIO_ARGS[@]+"${WDIO_ARGS[@]}"}" | grep -q 'uc-4.2'; then
+  BOOTSTRAP_UC="UC-4.2"
+  info "UC-4.2：bootstrap UC 归属 = UC-4.2（hello 自驱 sync-notify hop 归本 UC）"
+elif printf '%s\n' "${WDIO_ARGS[@]+"${WDIO_ARGS[@]}"}" | grep -q 'uc-4.4'; then
+  BOOTSTRAP_UC="UC-4.4"
+  info "UC-4.4：bootstrap UC 归属 = UC-4.4（hello/heartbeat 自驱 hop 归本 UC）"
+elif printf '%s\n' "${WDIO_ARGS[@]+"${WDIO_ARGS[@]}"}" | grep -q 'uc-10.1'; then
+  BOOTSTRAP_UC="UC-10.1"
+  info "UC-10.1：bootstrap UC 归属 = UC-10.1（hello 自驱 todo hop 归本 UC）"
 fi
 
 # —— 起 app：cargo run debug（边构建边起；首次构建慢，耐心等 webdriver 就绪）——
