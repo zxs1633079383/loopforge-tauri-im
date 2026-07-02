@@ -69,6 +69,42 @@ const getFirstMsgId = () =>
     document.querySelector('[data-msg-id]')?.getAttribute('data-msg-id')
   );
 
+/** 当前 DOM 里有 lastMessage 的真实频道候选（排除全新空群导致的 postId=null）。 */
+const getMessageChannelCandidates = () =>
+  browser.execute(() =>
+    Array.from(document.querySelectorAll('[data-channel-id][data-last-message]'))
+      .map((el) => el.getAttribute('data-channel-id'))
+      .filter((id) => !!id)
+  );
+
+async function activateChannel(channelId) {
+  await browser.execute((ch) => {
+    document.querySelector(`[data-channel-id="${ch}"]`)?.click();
+  }, channelId);
+  await browser.waitUntil(
+    async () => (await getActiveChannel()) === channelId,
+    { timeout: 10000, interval: 150, timeoutMsg: `active channel 未切到 ${channelId}` }
+  );
+}
+
+async function pickRenderedMessageAnchor() {
+  const candidates = await getMessageChannelCandidates();
+  for (const channelId of candidates) {
+    await activateChannel(channelId);
+    await invokeBridge('im_query_messages_by_channel', { channelId });
+    await browser.waitUntil(
+      async () => {
+        const msgId = await getFirstMsgId();
+        return !!msgId;
+      },
+      { timeout: 3000, interval: 150, timeoutMsg: `频道 ${channelId} 未渲染消息` }
+    ).catch(() => false);
+    const msgId = await getFirstMsgId();
+    if (msgId) return { channelId, msgId };
+  }
+  return { channelId: await getActiveChannel(), msgId: await getFirstMsgId() };
+}
+
 /** 等 run.jsonl 出现本次 reqId 的 im:read:result projection hop（读族回灌落点）。 */
 async function waitReadResult(reqId, endpoint) {
   await browser.waitUntil(
@@ -119,8 +155,9 @@ describe('UC-5.6r · 公告读族 acceptList/list/detail（读族 request-respon
       { timeout: 30000, interval: 200, timeoutMsg: '就绪 probe 未通过' }
     );
 
-    CHANNEL_ID = await getActiveChannel();
-    MSG_ID = await getFirstMsgId();
+    const picked = await pickRenderedMessageAnchor();
+    CHANNEL_ID = picked.channelId;
+    MSG_ID = picked.msgId;
     expect(CHANNEL_ID).toBeTruthy(); // seeded DB 须有 active channel（C003）
     expect(MSG_ID).toBeTruthy(); // seeded DB 须有真消息（acceptList/detail 的 postId 来源）
   });
