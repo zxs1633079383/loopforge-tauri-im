@@ -96,6 +96,14 @@ function classifyApifoxScenario(name = "", url = "") {
   return "go";
 }
 
+function buildApifoxEvidenceWarning(message, details = {}) {
+  const suffix = Object.entries(details)
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .map(([key, value]) => `${key}=${value}`)
+    .join(", ");
+  return suffix ? `${message} (${suffix})` : message;
+}
+
 function readApifoxReport(archiveDir) {
   const reportPath = join(archiveDir, "apifox-reports", "apifox-report.json");
   const logPath = join(archiveDir, "apifox-run.log");
@@ -108,30 +116,50 @@ function buildApifoxFailureEvidence(archiveDir) {
   const { report, logText } = readApifoxReport(archiveDir);
   const rawFailures = Array.isArray(report?.result?.failures) ? report.result.failures : [];
   const insideFailures = parseInsideFailures(logText);
-  const total = Math.min(rawFailures.length, insideFailures.length);
+  const total = Math.max(rawFailures.length, insideFailures.length);
   const unique = [];
   const seen = new Set();
+  const warnings = [];
+  let missingRawCount = 0;
+  let missingInsideCount = 0;
+  let incompleteRowCount = 0;
 
   for (let i = 0; i < total; i++) {
     const raw = rawFailures[i] ?? {};
     const inside = insideFailures[i] ?? {};
+    const hasRaw = i < rawFailures.length;
+    const hasInside = i < insideFailures.length;
+    if (!hasRaw) {
+      missingRawCount += 1;
+      warnings.push(buildApifoxEvidenceWarning("missing raw failure evidence", { index: i }));
+    }
+    if (!hasInside) {
+      missingInsideCount += 1;
+      warnings.push(buildApifoxEvidenceWarning("missing inside log evidence", { index: i }));
+    }
+
     const scenario = safeText(inside.scenario);
     const step = safeText(inside.step);
-    const key = `${scenario}\u0000${step}`;
+    const rawTest = safeText(raw?.error?.test);
+
+    const key = scenario && step ? `${scenario}\u0000${step}` : `__incomplete__\u0000${i}`;
     if (seen.has(key)) {
       continue;
     }
     seen.add(key);
 
     const message = safeText(raw?.error?.message) || safeText(raw?.error?.stack) || safeText(raw?.message);
-    const test = safeText(raw?.error?.test);
-    const className = classifyApifoxScenario(`${scenario} ${step} ${test}`, step);
+    const className = classifyApifoxScenario(`${scenario} ${step} ${rawTest}`, step);
+    if (!hasRaw || !hasInside) {
+      incompleteRowCount += 1;
+    }
 
     unique.push({
       class: className,
       scenario,
       step,
       message,
+      evidence: hasRaw && hasInside ? "matched" : hasRaw ? "missing-inside" : "missing-raw",
     });
   }
 
@@ -140,7 +168,21 @@ function buildApifoxFailureEvidence(archiveDir) {
   const stepsFailed = Number.isFinite(Number(stats.failed)) ? Number(stats.failed) : 0;
   const goFailures = unique.filter((failure) => failure.class === "go").length;
   const excludedJavaFailures = unique.filter((failure) => failure.class.startsWith("excluded-java-")).length;
-  const passed = Boolean(report) && goFailures === 0;
+  if (unique.length !== stepsFailed) {
+    warnings.push(
+      buildApifoxEvidenceWarning("unique failure rows do not match report failed-step count", {
+        unique: unique.length,
+        stepsFailed,
+      }),
+    );
+  }
+  const evidenceComplete =
+    Boolean(report) &&
+    warnings.length === 0 &&
+    missingRawCount === 0 &&
+    missingInsideCount === 0 &&
+    unique.length === stepsFailed;
+  const passed = Boolean(report) && evidenceComplete && goFailures === 0;
 
   return {
     profile: "go-only",
@@ -153,6 +195,17 @@ function buildApifoxFailureEvidence(archiveDir) {
     },
     failures: unique,
     excluded: ["UC-8.x 投票 CRUD", "UC-8.x 平均分 CRUD"],
+    mismatch: {
+      rawFailureCount: rawFailures.length,
+      insideFailureCount: insideFailures.length,
+      pairedFailureCount: total,
+      uniqueFailureCount: unique.length,
+      missingRawCount,
+      missingInsideCount,
+      incompleteRowCount,
+      evidenceComplete,
+    },
+    warnings,
   };
 }
 
@@ -266,15 +319,28 @@ function classifyApifoxResult(archiveDir) {
 
 function formatApifoxSummary(archiveDir) {
   const status = buildApifoxFailureEvidence(archiveDir);
-  const failureLines = status.failures
-    .slice(0, 12)
-    .map((failure) => `| ${failure.class} | ${failure.scenario} | ${failure.step} | ${failure.message} |`);
+  const failureLines = status.failures.map((failure) => `| ${failure.class} | ${failure.scenario} | ${failure.step} | ${failure.message} |`);
+  const mismatchLines = [];
+  if (status.mismatch) {
+    mismatchLines.push(
+      `Evidence: raw=${status.mismatch.rawFailureCount}, inside=${status.mismatch.insideFailureCount}, paired=${status.mismatch.pairedFailureCount}, unique=${status.mismatch.uniqueFailureCount}`,
+    );
+    mismatchLines.push(
+      `Gaps: missingRaw=${status.mismatch.missingRawCount}, missingInside=${status.mismatch.missingInsideCount}, incompleteRows=${status.mismatch.incompleteRowCount}, evidenceComplete=${status.mismatch.evidenceComplete}`,
+    );
+  }
+  const warningLines = Array.isArray(status.warnings) && status.warnings.length > 0
+    ? status.warnings.map((warning) => `- ${warning}`)
+    : [];
 
   return [
     "## Apifox Failures",
     "",
     `Profile: \`${status.profile}\``,
     "",
+    ...mismatchLines,
+    ...warningLines.length > 0 ? ["", "Warnings:", ...warningLines] : [],
+    ...(mismatchLines.length > 0 || warningLines.length > 0 ? [""] : []),
     "| Class | Scenario | Step | Message |",
     "|---|---|---|---|",
     ...failureLines,
