@@ -1205,7 +1205,7 @@ def main() -> None:
     if suite_id:
         print(f"  ✅ 测试套件 id: {suite_id}")
         print(f"  运行套件命令（单行，--environment 接环境ID）：")
-        print(f"    apifox test-suite run {suite_id} --project {PROJECT_ID} --access-token $APIFOX_TOKEN --environment {env_id} --report")
+        print(f"    apifox test-suite run {suite_id} --project {PROJECT_ID} --access-token $APIFOX_TOKEN --environment {env_id}")
     print()
     if TEAM_ID == "__REPLACE_TEAM_ID__":
         print("  ⚠️  TEAM_ID 未设置！请运行前设置：")

@@ -17,8 +17,8 @@ Useful entrypoints:
 - `bash scripts/multi-end-loop.sh --archive-dir /tmp/loopforge/runs/task3-smoke`
 
 Apifox is summarized as HTTP-only evidence, not as WS/DOM/client end-to-end green.
-`summary.md` reports `Apifox HTTP | pass` only when the archive contains `apifox-status.json` with `{"status":"pass","scope":"http-only"}` written by the harness after a successful Apifox command.
-If only `apifox-run.log` exists, or the sentinel is missing/malformed, the summary stays conservative as `not-pass-or-unknown`.
+`summary.md` reports `Apifox HTTP | pass` only when the archive contains `apifox-status.json` with `{"status":"pass","scope":"http-only","verified":true}` written by the harness after parsing a JSON report with explicit all-pass evidence.
+If only `apifox-run.log` exists, or the verified sentinel/report is missing or malformed, the summary stays conservative as `not-pass-or-unknown`.
 
 Committed report notes in this directory should stay small and include:
 

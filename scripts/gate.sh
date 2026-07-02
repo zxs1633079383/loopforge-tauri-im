@@ -74,8 +74,17 @@ if command -v node >/dev/null 2>&1; then
   fi
 else bad "无 node"; fi
 
-# 10. real-chain 禁区扫描（mock/fake/debug/旧 admin 直刷）
-step "10 real-chain 禁 mock/fake/debug 扫描"
+# 10. UC spec list 确定性与路径存在性
+step "10 UC spec list 确定性校验"
+if node scripts/uc-spec-list.mjs --check >/tmp/lf-gate-uc-spec-list.log 2>&1; then
+  ok "$(cat /tmp/lf-gate-uc-spec-list.log)"
+else
+  cat /tmp/lf-gate-uc-spec-list.log
+  bad "UC spec list 校验红（缺 spec / 重复 spec / 空列表）"
+fi
+
+# 11. real-chain 禁区扫描（mock/fake/debug/旧 admin 直刷）
+step "11 real-chain 禁 mock/fake/debug 扫描"
 if node scripts/scan-real-chain-violations.mjs >/tmp/lf-gate-real-chain.log 2>&1; then
   ok "$(cat /tmp/lf-gate-real-chain.log)"
 else
@@ -83,8 +92,8 @@ else
   bad "real-chain 扫描红（禁止 debug patch/mock/fake id/乐观 admin）"
 fi
 
-# 11. clippy 卫生（慢·默认跳；GATE_CLIPPY=1 启用·deny warnings）
-step "11 clippy 卫生（默认跳·GATE_CLIPPY=1 启用）"
+# 12. clippy 卫生（慢·默认跳；GATE_CLIPPY=1 启用·deny warnings）
+step "12 clippy 卫生（默认跳·GATE_CLIPPY=1 启用）"
 if [ "${GATE_CLIPPY:-0}" = "1" ]; then
   if cargo clippy --manifest-path src-tauri/Cargo.toml --quiet -- -D warnings >/tmp/lf-gate-clippy.log 2>&1; then ok "clippy 无 warning"; else bad "clippy 有 warning/error（见 /tmp/lf-gate-clippy.log）"; fi
 else printf "  ⏭ 跳过（GATE_CLIPPY=1 启用·workspace lints 已配 unwrap/panic/dbg/todo=warn）\n"; fi

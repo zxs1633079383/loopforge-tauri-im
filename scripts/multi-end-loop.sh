@@ -58,8 +58,41 @@ clear_stale_run_artifacts() {
     "$RUN_LOG_DIR/run-ng.log" \
     "$RUN_LOG_DIR/run-app.log" \
     "$RUN_LOG_DIR/run.jsonl" \
-    "$RUN_LOG_DIR/wdio-out.log" \
-    "$RUN_LOG_DIR/cses-health.json"
+    "$RUN_LOG_DIR/wdio-out.log"
+}
+
+safe_spec_slug() {
+  local spec="$1"
+  local base
+  base="$(basename "$spec")"
+  base="${base%.e2e.mjs}"
+  printf '%s' "$base" | tr -c 'A-Za-z0-9._-' '_'
+}
+
+archive_wdio_spec() {
+  local loop="$1"
+  local spec="$2"
+  local exit_code="$3"
+  local slug
+  slug="$(safe_spec_slug "$spec")"
+  local spec_dir="$ARCHIVE_DIR/specs/loop-${loop}-${slug}"
+  mkdir -p "$spec_dir"
+  cat >"$spec_dir/spec-status.txt" <<EOF
+spec=$spec
+exit_code=$exit_code
+EOF
+  cat >"$spec_dir/run-status.txt" <<EOF
+exit_code=$exit_code
+stage=wdio
+detail=$spec
+EOF
+  copy_if_exists "$RUN_LOG_DIR/run-ng.log" "$spec_dir/run-ng.log"
+  copy_if_exists "$RUN_LOG_DIR/run-app.log" "$spec_dir/run-app.log"
+  copy_if_exists "$RUN_LOG_DIR/run.jsonl" "$spec_dir/run.jsonl"
+  copy_if_exists "$RUN_LOG_DIR/wdio-out.log" "$spec_dir/wdio-out.log"
+  copy_if_exists "$RUN_LOG_DIR/cses-health.json" "$spec_dir/cses-health.json"
+  copy_if_exists "$CSES_LOG" "$spec_dir/cses-im-server.log"
+  (cd "$ROOT" && node scripts/summarize-run-report.mjs --archive "$spec_dir" --out "$spec_dir/summary.md") || true
 }
 
 clear_stale_apifox_archive_artifacts() {
@@ -67,6 +100,7 @@ clear_stale_apifox_archive_artifacts() {
     "$ARCHIVE_DIR/apifox-status.json" \
     "$ARCHIVE_DIR/apifox-run.log" \
     "$ARCHIVE_DIR/apifox-create.log"
+  rm -rf "$ARCHIVE_DIR/apifox-reports"
 }
 
 finalize_run() {
@@ -227,16 +261,25 @@ for ((i = 1; i <= LOOPS; i++)); do
 
   if [ "${#SPECS[@]}" -eq 0 ]; then
     echo "no --spec provided; skipped live WDIO run"
-  else
-    for spec in "${SPECS[@]}"; do
-      CURRENT_STAGE="wdio"
-      CURRENT_DETAIL="$spec"
-      need_file "$ROOT/$spec"
-      echo
-      echo "== loop ${i}/${LOOPS}: live WDIO ${spec} =="
-      (cd "$ROOT" && bash scripts/run.sh -- --spec "$spec")
-    done
-  fi
+	  else
+	    for spec in "${SPECS[@]}"; do
+	      CURRENT_STAGE="wdio"
+	      CURRENT_DETAIL="$spec"
+	      need_file "$ROOT/$spec"
+	      echo
+	      echo "== loop ${i}/${LOOPS}: live WDIO ${spec} =="
+	      clear_stale_run_artifacts
+	      if (cd "$ROOT" && bash scripts/run.sh -- --spec "$spec"); then
+	        spec_rc=0
+	      else
+	        spec_rc=$?
+	      fi
+	      archive_wdio_spec "$i" "$spec" "$spec_rc"
+	      if [ "$spec_rc" -ne 0 ]; then
+	        exit "$spec_rc"
+	      fi
+	    done
+	  fi
 
   if [ "$RUN_APIFOX" = 1 ]; then
     echo
@@ -247,15 +290,17 @@ for ((i = 1; i <= LOOPS; i++)); do
       echo "APIFOX_TOKEN is required for --apifox" >&2
       exit 2
     fi
-    (cd "$ROOT" && python3 scripts/apifox-suite-create.py | tee "$ARCHIVE_DIR/apifox-create.log")
-    APIFOX_CMD="$(grep -E '^apifox ' "$ARCHIVE_DIR/apifox-create.log" | tail -1)"
-    if [ -z "$APIFOX_CMD" ]; then
-      echo "scripts/apifox-suite-create.py did not print an apifox run command" >&2
-      exit 1
-    fi
-    (cd "$ROOT" && bash -lc "$APIFOX_CMD" | tee "$ARCHIVE_DIR/apifox-run.log")
-    printf '%s\n' '{"status":"pass","scope":"http-only"}' >"$ARCHIVE_DIR/apifox-status.json"
-  fi
+	    (cd "$ROOT" && python3 scripts/apifox-suite-create.py | tee "$ARCHIVE_DIR/apifox-create.log")
+	    APIFOX_CMD="$(sed -n 's/^[[:space:]]*\(apifox .*\)$/\1/p' "$ARCHIVE_DIR/apifox-create.log" | tail -1)"
+	    if [ -z "$APIFOX_CMD" ]; then
+	      echo "scripts/apifox-suite-create.py did not print an apifox run command" >&2
+	      exit 1
+	    fi
+	    mkdir -p "$ARCHIVE_DIR/apifox-reports"
+	    APIFOX_CMD="$APIFOX_CMD --reporters cli,json --out-dir '$ARCHIVE_DIR/apifox-reports' --out-file apifox-report"
+	    (cd "$ROOT" && bash -lc "$APIFOX_CMD" | tee "$ARCHIVE_DIR/apifox-run.log")
+	    (cd "$ROOT" && node scripts/summarize-run-report.mjs --archive "$ARCHIVE_DIR" --write-apifox-status "$ARCHIVE_DIR/apifox-status.json")
+	  fi
 
   if [ "$RUN_SCREENSHOT" = 1 ]; then
     echo

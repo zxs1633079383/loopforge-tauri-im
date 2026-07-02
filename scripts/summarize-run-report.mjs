@@ -1,15 +1,19 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 function parseArgs(argv) {
-  const args = { archive: "", out: "" };
+  const args = { archive: "", out: "", writeApifoxStatus: "" };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--archive") args.archive = argv[++i] ?? "";
     else if (argv[i] === "--out") args.out = argv[++i] ?? "";
+    else if (argv[i] === "--write-apifox-status") args.writeApifoxStatus = argv[++i] ?? "";
     else throw new Error(`unknown arg: ${argv[i]}`);
   }
-  if (!args.archive || !args.out) throw new Error("--archive and --out are required");
+  if (!args.archive) throw new Error("--archive is required");
+  if (!args.out && !args.writeApifoxStatus) {
+    throw new Error("--out or --write-apifox-status is required");
+  }
   return args;
 }
 
@@ -65,6 +69,96 @@ function parseJsonFile(path) {
   }
 }
 
+function collectFiles(dir, predicate) {
+  if (!existsSync(dir)) {
+    return [];
+  }
+  const out = [];
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry);
+    const stat = statSync(path);
+    if (stat.isDirectory()) {
+      out.push(...collectFiles(path, predicate));
+    } else if (predicate(path)) {
+      out.push(path);
+    }
+  }
+  return out;
+}
+
+function walk(value, visit) {
+  if (Array.isArray(value)) {
+    for (const item of value) walk(item, visit);
+    return;
+  }
+  if (value && typeof value === "object") {
+    visit(value);
+    for (const child of Object.values(value)) walk(child, visit);
+  }
+}
+
+function numberAt(object, names) {
+  for (const [key, value] of Object.entries(object)) {
+    const normalized = key.toLowerCase().replace(/[_\-\s]/g, "");
+    if (names.includes(normalized) && Number.isFinite(Number(value))) {
+      return Number(value);
+    }
+  }
+  return null;
+}
+
+function strictApifoxPassEvidence(archiveDir) {
+  const reportDir = join(archiveDir, "apifox-reports");
+  const jsonFiles = collectFiles(reportDir, (path) => path.endsWith(".json"));
+  const candidates = jsonFiles
+    .map((path) => ({ path, json: parseJsonFile(path) }))
+    .filter((candidate) => candidate.json !== null);
+
+  if (candidates.length === 0) {
+    return { ok: false, reason: "missing-json-report" };
+  }
+
+  let explicitPass = false;
+  const failures = [];
+  const failNames = ["failed", "fail", "failure", "failures", "error", "errors"];
+  const passNames = ["passed", "pass", "successes", "succeeded"];
+  const totalNames = ["total", "tests", "testcount", "requests", "requestcount", "scenarios", "scenariocount"];
+
+  for (const candidate of candidates) {
+    walk(candidate.json, (object) => {
+      if (object.success === false) failures.push(`${candidate.path}: success=false`);
+      if (typeof object.status === "string" && /fail|error/i.test(object.status)) {
+        failures.push(`${candidate.path}: status=${object.status}`);
+      }
+      if (object.error && Object.keys(object.error).length > 0) {
+        failures.push(`${candidate.path}: error present`);
+      }
+
+      const failed = numberAt(object, failNames);
+      if (failed !== null && failed > 0) {
+        failures.push(`${candidate.path}: failed=${failed}`);
+      }
+
+      const passed = numberAt(object, passNames);
+      const total = numberAt(object, totalNames);
+      if (passed !== null && passed > 0 && (total === null || passed === total)) {
+        explicitPass = true;
+      }
+      if (object.success === true && passed !== null && passed > 0) {
+        explicitPass = true;
+      }
+    });
+  }
+
+  if (failures.length > 0) {
+    return { ok: false, reason: failures[0] };
+  }
+  if (!explicitPass) {
+    return { ok: false, reason: "no-explicit-pass-count" };
+  }
+  return { ok: true, reason: `verified-json-report:${jsonFiles.length}` };
+}
+
 function classifyApifoxResult(archiveDir) {
   const logPath = join(archiveDir, "apifox-run.log");
   const statusPath = join(archiveDir, "apifox-status.json");
@@ -75,9 +169,11 @@ function classifyApifoxResult(archiveDir) {
   if (!hasLog && !hasStatusFile) {
     return "not-run";
   }
-  if (status?.status === "pass" && status?.scope === "http-only") {
+  if (status?.status === "pass" && status?.scope === "http-only" && status?.verified === true) {
     return "pass";
   }
+  const evidence = strictApifoxPassEvidence(archiveDir);
+  if (evidence.ok) return "pass";
   return "not-pass-or-unknown";
 }
 
@@ -116,6 +212,20 @@ function formatHarnessStatus(status) {
 }
 
 const args = parseArgs(process.argv.slice(2));
+
+if (args.writeApifoxStatus) {
+  const evidence = strictApifoxPassEvidence(args.archive);
+  if (!evidence.ok) {
+    console.error(`Apifox HTTP did not produce strict pass evidence: ${evidence.reason}`);
+    process.exit(1);
+  }
+  writeFileSync(
+    args.writeApifoxStatus,
+    `${JSON.stringify({ status: "pass", scope: "http-only", verified: true, evidence: evidence.reason }, null, 2)}\n`,
+  );
+  process.exit(0);
+}
+
 const wdioResult = parseWdioResult(readText(join(args.archive, "wdio-out.log")));
 const apifoxResult = classifyApifoxResult(args.archive);
 const runStatus = readRunStatus(args.archive);

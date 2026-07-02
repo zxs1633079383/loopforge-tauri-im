@@ -596,30 +596,23 @@
 
 ## 6. 覆盖率统计 + scripts 接口
 
-### 当前计数（2026-06-25·rollout 收尾对账·按每节标题图例为准 C011 诚实出账）
+### 当前计数（2026-07-02·all-UC 收口对账·C011 诚实出账）
 
-> 分母 = 42 invoke-driven UC 节（按本台账每节标题统计·UC-8.x vote+average 为一节双 issue #35/#36）；bot/agent 召唤是「整域 ⛔」不计入分母（单列）。
-> **section-level 计数（authoritative·以每节标题图例为准）**：✅ 30 · 🟡 5 · ⛔ 5 · 🌙/⬜ 2 = 42。
+> 本节早期的 2026-06-25 section-level 统计只保留为历史铺设背景，不再是 authoritative 当前状态。当前 go/no-go 只看
+> `docs/uc-rollout/all-uc-real-chain-status.md` 与 `docs/uc-rollout/reports/all-uc-real-chain-final.md`。
+> 原因：2026-07-02 全链路复跑发现 `UC-1.4` 缺真实 failed-row 前置、`UC-10.1` 归因落入 `__quiescence__`、L2 多 spec archive 留证不足，不能继续把这些旧节标题计入当前绿。
 
-| 域 | UC 节数 | `✅ four-facet-verified` | `🟡 partial/L2-facet` | `⬜/🌙 pending` | `⛔ unreachable` |
-|---|---|---|---|---|---|
-| A posts（收发/历史/已读）| 17 | 14（1.1/1.2/1.4/1.5/1.7/1.8/1.9/1.10/2.1/2.2/2.3/2.4/3.3）+ … | 2（3.1/3.2 L2-facet→#47）| 1（1.3 文件🌙）| 1（1.6 编辑）|
-| B channel/sync（同步/频道管理）| 13 | 9（4.1/4.2/4.4/4.5/5.1/5.2/5.3/5.4/5.5/5.8）| 0 | 0 | 3（4.3/5.6/5.7）|
-| C user-misc（成员/搜索/待办/书签）| 7 | 4（6.3/6.4/9.x/10.1）| 2（6.1→#43 / 6.2→#45）| 1（10.2）| 1（7.x 搜索）|
-| D teams/运维/互动卡片 | 5 | 3（8.x/11.1/12.1）| 1（11.2 ①绿·②③④ L2→#48）| 0 | 0 |
-| **合计（42 节分母）** | **42** | **30** | **5** | **2** | **5** |
-| bot/agent 召唤（整域，不计入 42）| 1 域 | — | — | — | 1 域（🚫/⛔）|
+| 当前状态 | 数量 | 说明 |
+|---|---:|---|
+| `green` | 13 | 当前台账里仍有可引用证据的绿行 |
+| `partial` | 5 | 主路径或部分面有证据，但不能恢复为完整四面/L2 绿 |
+| `l2-required` | 2 | 必须第二真实连接补证 |
+| `http-only` | 4 | HTTP/读族预检或非 DOM/WS 完整链路 |
+| `blocked` | 3 | 当前明确 blocker：含 `UC-1.4`、`UC-10.1` 等 |
+| `night-only` | 1 | 需夜间/按需真链路 |
+| `not-run` | 17 | 未在本轮全链路收口中恢复证据 |
 
-> 说明：A 域绿 14 节恰为 UC-1.1/1.2/1.4/1.5/1.7/1.8/1.9/1.10/2.1/2.2/2.3/2.4/3.3（每节标题 ✅）。B 域 5.3/5.5 节标题为 ✅（主路径全绿·子项 ⛔ 不阻塞）。reachable 分母 = 42 − 5⛔ = 37；reachable 内 ✅ 30 + 🟡 5（①③或①面 L1 绿·②④或②③④ 结构性 L2·已挂 #43/#45/#47/#48）+ ⬜/🌙 2（10.2 pending / 1.3 文件夜间）。**L1 单账号可达面全部跑绿；剩余 5 黄全部是 read-receipt/member-broadcast/admin-broadcast/quit-broadcast 这类「结构上须第二账号才观测」的 L2-facet（issue 留 open·label ready-for-human·链 L2 追踪 issue）**。
-
-> 精确分类（按本台账每节标题图例为准·1+7+24+7=39）：
-> - **✅ four-facet-verified = 16**：见 `docs/uc-rollout/all-uc-real-chain-status.md` 的绿行；本节保留的是历史实跑总览，像 `debugLocatePost` / `debugMarkFailed` 这类旧桥都已废弃，只能当历史说明，不能当成功路径。
-> - **🟡 partial**：UC-6.1 拉踢 / UC-6.2 管理员 / UC-8.x 投票平均分（注：UC-4.4 心跳 gap 补偿已转 ✅·三面 ①②④ e2e 真跑全绿·③ DOM N/A 已移除该面·anchorCh=181jj6htd7nn3xx51z78bhuhcr·ping∩update-by-post∩message 交集 94 频道·issue #34；UC-4.5 陌生 channel 已转 ✅·读族 ①② 全绿·is_read=true 校正③④ N/A·issue #33；UC-5.3 关群主路径已转 ✅·member-leave 广播子项 ⛔ broadcast-dep 不阻塞；UC-5.5 置顶频道路径已转 ✅·消息置顶子项 ⛔ data-dep·见各节标题图例）。
-> - **🟡 ①③-verified · ②④ L2-facet（read echo 推发送者·须 L2 #47）= 2**：UC-3.1 会话已读 / UC-3.2 单条已读（2026-06-25 实跑·①③ 严格断言绿 + ②④ `post_read`(type6) 推**消息的发送者**·当别人已读发送者消息时·L1 单账号单连接结构性造不出·带 run.jsonl 证据 + 可证伪护栏·须 L2 双账号 #47 转绿）。
-> - **⬜ pending = 8**：1.2 / 1.5 / 1.8 / 5.4 / 6.3 / 9.x / 10.1 / 10.2（注：UC-4.2 已转 ✅·暖栈实跑 ×2 内核自驱 gap 四面 ①②④③ 全绿·issue #32；UC-6.4 已转 ✅·暖栈实跑双 endpoint 四面绿·issue #27；UC-2.2 已转 ✅·原「① blocked on helix wire-bug」判断有误·round6@bbbf809 已含 acl is_query 放行 fix·实跑 ①②③ 全绿；UC-4.1 / UC-5.1 / UC-5.2 / UC-1.9 / UC-1.10 / UC-3.3 / UC-1.4 / UC-1.7 / UC-2.4 / UC-2.1 / UC-2.3 已转 ✅；UC-3.1 / UC-3.2 转 🟡 read-echo gap）。
-> - **⛔ unreachable = 7**（39 分母内）：UC-1.3 文件 / UC-1.6 编辑 / UC-4.3 too_long / UC-5.6 公告 / UC-5.7 在线 / UC-7.x 搜索·另 bot/agent 整域 ⛔（不计入 39 分母）。
-
-> ⚠️ **诚实声明（2026-06-25 收尾对账更新）**：全 42 UC 节中 **30 节经真 Tauri+WKWebView 四面 oracle 跑绿**（每节标题 ✅ + 引用块附 corr_key/run.jsonl 证据·`bash scripts/run.sh`/暖栈 `harness.sh spec` 实跑·reducer 裁定无断点）。`🟡` 5 节（3.1/3.2/6.1/6.2/11.2）= L1 可达面（①③ 或 ① 面）严格断言绿 + ②④/②③④ 是「结构上须第二账号才观测」的 L2-facet（read echo 推发送者 / member-leave 广播他人 / admin role 广播 / quit_company 广播他人）·**非 yellow 糊弄**：issue 留 open·label ready-for-human·链对应 L2 追踪 issue（#43/#45/#47/#48）·带 run.jsonl 缺席证据 + 可证伪护栏。`⛔` 5 节（1.6 编辑无端点 / 4.3 too_long harness-gap / 5.6 公告 data-dep / 5.7 在线后端阻塞 / 7.x 搜索后端阻塞）物理够不到·诚实剔出绿分母。`🌙/⬜` 2 节（1.3 文件夜间 / 10.2 系统通知 pending）。**reachable 内 L1 可达面 100% 跑绿·无任何「①③绿就 close 把②④延后」的橡皮章账（C011）**。
+> 历史实跑文字仍可帮助追溯 issue 与旧 corr_key，但凡与当前状态冲突，一律以下游 all-UC 状态表和 final report 为准。
 
 ### scripts 接口（仿 helix `fullmap-coverage.sh` 思路·留接口注释·不真写脚本）
 

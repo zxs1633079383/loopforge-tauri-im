@@ -101,10 +101,10 @@ python3 scripts/apifox-suite-create.py
 脚本完成后会输出：
 
 ```text
-apifox test-suite run <suite_id> --project 8449651 --access-token $APIFOX_TOKEN --environment <env_id> --report
+apifox test-suite run <suite_id> --project 8449651 --access-token $APIFOX_TOKEN --environment <env_id>
 ```
 
-以上输出的一行命令就是当前可跑命令。
+以上输出的一行命令是基础运行命令；`scripts/multi-end-loop.sh --apifox` 会追加 `--reporters cli,json --out-dir ... --out-file ...`，并且只有解析到 JSON 报告全绿才写 `apifox-status.json`。
 
 ---
 
@@ -117,7 +117,9 @@ apifox test-suite run <suite_id> \
   --project 8449651 \
   --access-token "$APIFOX_TOKEN" \
   --environment <env_id> \
-  --report
+  --reporters cli,json \
+  --out-dir /tmp/loopforge/runs/<run-id>/apifox-reports \
+  --out-file apifox-report
 ```
 
 这一步只产出 HTTP preflight 证据，不代表 WS、DOM、reducer 或 L1/L2 green。
@@ -125,6 +127,7 @@ apifox test-suite run <suite_id> \
 注意：
 
 - `--environment` 接环境 ID，不是环境名。
+- 当前 CLI 报告参数是 `--reporters cli,json`；不要再用旧的 `--report`。
 - 多行命令的反斜杠后不能有空格；否则 zsh 会把下一行当新命令。
 - 若用 `apifox run` 新语法，先用 `apifox run --help` 对齐当前 CLI 版本，不要凭旧文档猜参数。
 

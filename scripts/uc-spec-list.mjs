@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const SPEC_DIR = "test/specs";
@@ -64,11 +64,37 @@ function l2Specs() {
   });
 }
 
+function validateSpecs(label, specs) {
+  if (!Array.isArray(specs) || specs.length === 0) {
+    throw new Error(`${label} resolved to zero specs`);
+  }
+  const seen = new Set();
+  for (const spec of specs) {
+    if (seen.has(spec)) {
+      throw new Error(`${label} has duplicate spec: ${spec}`);
+    }
+    seen.add(spec);
+    if (!existsSync(spec)) {
+      throw new Error(`${label} references missing spec: ${spec}`);
+    }
+  }
+}
+
+function runCheck() {
+  validateSpecs("all", allSpecs());
+  validateSpecs("l1", l1Specs());
+  validateSpecs("l2", l2Specs());
+  for (const [area, specs] of Object.entries(AREA_SPECS)) {
+    validateSpecs(`area ${area}`, specs);
+  }
+}
+
 function parseArgs(argv) {
-  const out = { list: "all", area: "" };
+  const out = { list: "all", area: "", check: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--list") out.list = argv[++i] ?? "all";
     else if (argv[i] === "--area") out.area = argv[++i] ?? "";
+    else if (argv[i] === "--check") out.check = true;
     else if (argv[i] === "--help" || argv[i] === "-h") out.help = true;
     else throw new Error(`unknown arg: ${argv[i]}`);
   }
@@ -82,6 +108,7 @@ function usage() {
     "  node scripts/uc-spec-list.mjs --list l1",
     "  node scripts/uc-spec-list.mjs --list l2",
     "  node scripts/uc-spec-list.mjs --area MB",
+    "  node scripts/uc-spec-list.mjs --check",
   ].join("\n");
 }
 
@@ -89,6 +116,11 @@ try {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
     console.log(usage());
+    process.exit(0);
+  }
+  if (args.check) {
+    runCheck();
+    console.log("uc spec lists validated");
     process.exit(0);
   }
   let specs;

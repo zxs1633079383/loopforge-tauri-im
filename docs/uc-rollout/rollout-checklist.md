@@ -39,7 +39,7 @@
 | [2] | 3.2 单条已读 历史绿证保留·当前收口 partial/L2-required（见 `all-uc-real-chain-status.md` / final report；issue #14/#47·helix gate bypass） | `im_mark_read`→`post/read`{channelId,posts:[postId]}✅ | `partials/6 UC-3.2` | `emit_post_read`(fat)✅L2 | data-read-bits✅ | `message.read_bits`✅batch_update | S |
 | [2] | 3.1 会话已读 历史绿证保留·当前收口 partial/L2-required（见 `all-uc-real-chain-status.md` / final report；L2·后端补 channels/view→post_read echo·#15/#47） | `im_read_channel`→`channels/view`{channels:[{id}]}✅ | `partials/6 UC-3.1` | `emit_post_read`(fat)✅ | data-read-bits✅ | `message.read_bits`✅ batch_update | S/M |
 | [x] | 3.3 模板已收到 | `templateReceived`→`post/templateReceived` | `partials/6 UC-3.3`{postId}(单数 path) | `emit_post_updated`/read:result | data-template-received | `message` | S |
-| [x] | 1.4 重发失败 | `im_send`(temp_id 复用)→`posts/create` | `真机curl真源 §1` | `emit_post_sending`→`emit_post_received` | data-send-status:failed→sending→sent | `message` upsert 覆盖 | S |
+| [~] | 1.4 重发失败（历史绿证保留·当前收口 blocked；真实健康链路不会自然产生 failed 行，见 `all-uc-real-chain-status.md` / final report） | `im_send`(temp_id 复用)→`posts/create` | `真机curl真源 §1` | `emit_post_sending`→`emit_post_received` | data-send-status:failed→sending→sent | `message` upsert 覆盖 | S |
 | [x] | 1.7 转发/合并 | `im_create_posts`→`posts/createPosts` | `真机curl真源 附录A`{posts,channelIds}✅ | 各目标 channel `emit_post_received` | 多 channel 消息行 | `message`×N | M |
 | [x] | 2.4 一级/二级回复 | `posts/getReplies`/`getReplyBranch` | `partials/6 UC-2.4` | `query::emit_read_result`(读族透传) | data-reply-id | `Scan message`(回复链) | M |
 
@@ -71,7 +71,7 @@
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
 |---|---|---|---|---|---|---|---|
 | [x] | 9.x 书签 | `post/bookmark/{create,delete,load}` | `partials/6 集合九` | `query::emit_read_result`(读族透传) | data-bookmark | `message`(书签) | M |
-| [x] | 10.1 待办列表 | (hello 收尾自驱)`posts/queryTodoList`{postIds} | `partials/8 http.rs:67` | `todo::emit_todo_updated`{items} | data-todo-id 列表 | N/A(projection-only·无 todo 表) | M |
+| [~] | 10.1 待办列表（历史绿证保留·当前收口 blocked；`posts/queryTodoList`/`im:todo:updated` 归入 `__quiescence__`，见 `all-uc-real-chain-status.md` / final report） | (hello 收尾自驱)`posts/queryTodoList`{postIds} | `partials/8 http.rs:67` | `todo::emit_todo_updated`{items} | data-todo-id 列表 | N/A(projection-only·无 todo 表) | M |
 | [x] | 10.3 全模块读 ✅①②全绿(读族·go-served·③④N/A) | `im_modules_get_all`→`modules/getAll`(空 body) | `partials/3 §8`+`partials/11 §8`(已迁移·空 body·data=[]*Modules) | `read_relay::emit_read_result`(读族透传·im:read:result) | N/A(读族·前端从 body 抽模块渲染) | N/A(读族只读) | S |
 | [x] | 4.2 按需 sync notify ✅四面全绿(#32·anchorCh=14jeie5y…·×2) | `im_sync_channels`→`channel/sync/notify`(gap 自驱) | `partials/8 §2.1`{cursors:[{channelId,fromSeq}]} | `emit_channel_update_by_post`(thin {channel_id,event_seq,msg_id})+`emit_post_received`(fat) | 增量行+badge(unread) | `message`+cursor 跳空洞 | M |
 | [x] | 4.5 陌生 channel 兜底 | `im_ensure_channel_loaded`→`channel/load/incrementByChannelId` | `channel_read.rs`{channelId}·is_read=true | `im:read:result`{req_id,body}（读族·C004 校正） | N/A（读路径） | N/A（不落新行·cursor 不推进） | M✅ |
