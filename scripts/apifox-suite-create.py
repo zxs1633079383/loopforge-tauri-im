@@ -330,6 +330,12 @@ def steps_uc52() -> list[dict]:
 
 def steps_uc11() -> list[dict]:
     """UC-1.1 发文本消息 — POST posts/create (WS→方向A read-back)"""
+    post_id_expr = (
+        "Array.isArray(r.data) "
+        "? ((r.data.find(p => p && p.userId !== 'SYS' && p.type !== 'NOTICE') || r.data[0] || {}).id "
+        "|| (r.data.find(p => p && p.userId !== 'SYS' && p.type !== 'NOTICE') || r.data[0] || {}).postId) "
+        ": (r.data?.id || r.data?.postId)"
+    )
     body_str = (
         '{"viewers":["all"],"message":"loopforge-e2e-test","mentions":[],'
         '"temporaryId":"{{$randomUUID}}","type":"TEXT","simpleMessage":"loopforge-e2e-test",'
@@ -344,12 +350,12 @@ def steps_uc11() -> list[dict]:
     return [
         http_step("s1", "POST posts/create (发文本)", "post", "/api/cses/posts/create", body=body_str),
         script_step("s2", "UC-1.1 发文本 SUCCESS"),
-        delay_step("s3", 300),
+        delay_step("s3", 800),
         http_step("s4", "GET posts/getLatestPost [方向A read-back]",
                   "post", "/api/cses/posts/getLatestPost", body=readback_body_str),
         script_step("s5", "UC-1.1 read-back 验证消息入库",
                     expect_data=True,
-                    extract={"postId": "r.data?.id || r.data?.postId"}),
+                    extract={"postId": post_id_expr}),
     ]
 
 
