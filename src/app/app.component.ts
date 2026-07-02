@@ -262,6 +262,7 @@ import { ImStatusBarComponent } from "./im/ui/im-status-bar.component";
         display: flex; gap: 8px; padding: 10px 14px; flex-wrap: wrap;
         align-items: center; background: var(--surface); border: 1px solid var(--divider);
         border-radius: 14px; box-shadow: 0 10px 30px rgba(31, 36, 48, 0.10);
+        z-index: 20; max-height: 38vh; overflow-y: auto;
       }
       .im__compose-to { color: var(--txt-3); border-right: 1px solid var(--divider); padding-right: 12px; }
       .im__compose-to strong { color: var(--accent); font-weight: 700; }
@@ -330,7 +331,7 @@ import { ImStatusBarComponent } from "./im/ui/im-status-bar.component";
       @media (max-width: 920px) {
         .im__channels { width: 250px; }
         .im__members { width: 170px; }
-        .im__compose { left: 330px; right: 184px; }
+        .im__compose { left: 84px; right: 12px; bottom: 12px; }
       }
     `,
   ],
