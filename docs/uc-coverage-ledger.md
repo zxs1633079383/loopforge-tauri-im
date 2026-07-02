@@ -3,9 +3,9 @@
 > **这是 LoopForge rollout 的验证真源 + 进度台账。** 逐 UC 记**全流程四面契约当断言**
 > （① 出站 HTTP+WS · ② 投影 · ③ DOM · ④ 落库）。每铺一个 UC 验绿 → 翻 `✅ four-facet-verified`。
 >
-> **当前真相（诚实）**：竖切 **UC-1.1（发文本消息）四面已全绿**（实证，见 `docs/spec/send-message-vertical-slice.md`）。
-> 其余 UC 契约已逐条列出，状态为 `⬜ pending`（待 rollout 实现/验证）或 `⛔ unreachable`（物理够不到，诚实标注）。
-> **不虚标绿**——只有真跑过四面 oracle 的 UC 才标 ✅。
+> **当前真相（2026-07-02 收口口径）**：本台账保留的是各 UC 的历史四面证明与契约细节，不等于“当前整套 all-UC real-chain 已全绿收官”。
+> 最终收口状态以 `docs/uc-rollout/all-uc-real-chain-status.md` 和 `docs/uc-rollout/reports/all-uc-real-chain-final.md` 为准；目前仍存在 `UC-1.4`、`UC-10.1`、部分 L2 证据留存、Apifox 令牌、截图正向验证等 blocker。
+> **不虚标绿**——只有真跑过四面 oracle 的 UC 才标 ✅，且历史绿证不能自动替代当前闭环证据。
 
 ---
 
@@ -30,7 +30,7 @@
 | 测什么 | helix-im outbound 命令体 + Go WS 回声 wire 是否正确 | 整条客户端栈：DOM 操作 → invoke → 出站 → Go → WS → parser → gate → 投影 → DOM 渲染 → DB 落行 |
 | 共享真源 | `真机curl真源.md`（出站体）· `projection-schema.md`（投影字段集）· full-map partials（端点/事件/UI 契约）| **同一份**（本台账契约**引用** helix 真源，不自编 wire 字段）|
 | ③ DOM 面 | 无（host-cli 无渲染层）| **有**（这是 LoopForge 独有的接缝：投影 → DOM data-* 直映）|
-| 当前绿数 | 33 UC `✅ e2e-verified`（服务端 wire 视角）| **3 UC**（UC-1.1 + UC-1.5 + UC-1.2，客户端四面视角）|
+| 当前状态 | 多 UC 拥有历史 `✅ e2e-verified`（服务端 wire 视角）| 客户端四面历史绿证与当前收口状态需分开看；最终 closure 请看 `all-uc-real-chain-status.md` |
 
 > **关键**：helix ledger 的 `✅ e2e-verified` ≠ 本台账的 `✅ four-facet-verified`。
 > helix 那条只证「出站 + WS 回声 wire 对”——本台账还要再证「投影字段齐 + DOM 真渲染 + DB 真落行”这后三面，
@@ -450,10 +450,10 @@
 > **L2 绿证（#29/#45·2026-06-28 暖栈 spec uc-6.2-l2 两轮 channelId 各异 955km…/67n4o…）**：后端 round-2 `changeManagerRole` 补 `channel_member_role_updated{channelId,userIds,role}` 广播（add/remove manger 都经它·无 GrpcInvoke 绕过）。A=444 建频道含 678 → 设 678 admin → **B=678 raw-WS（observe-678）收 `channel_member_role_updated`**（role=MANAGER·userIds 含 678·channelId 锚命中）= ②(emit_channel_member_updated 角色态源)/④(channel_member role 落库源) 在 B 侧结构源。① A 出站 `channel/add/manger {channelId, users:[{id:678,role:ADMIN}]}` reducer 绿。③ data-admin 为 678 视图·A 驱动 spec N/A。〔旧判断「add/remove manger 后端 WS 已注释」已被 round-2 修正·channel_member_role_updated 现真广播。〕
 
 - **① 出站 HTTP**：`POST channel/add/manger`（set=true·撤=`channel/remove/manger`）·body `{channelId, users:[{id,name,role,teamId}]}`（全 camelCase·bodyForbidden channel_id snake / 顶层 userId/id/role 泄漏·成员四键嵌 users[]·真源 channel_change_dedicated.rs §19/§20 AddMangerCommand/RemoveMangerCommand + Go command.AddChannelMangerCommand/DeleteChannelMangerCommand）。✅ 实证 run.jsonl：`{channelId, users:[{id:445,name:'',role:ADMIN,teamId}]}`·uc_id=UC-6.2。
-- **③ DOM**：`data-admin`（=1·set ADMIN 态）+ `data-member-id`(=userId)。L1 无 ② 投影源 → 壳 setManger 的旧乐观刷写法已废弃，当前仅保留“真实出站 + L2 广播回灌”口径。✅ waitUntil 等 data-admin==1（历史 debug 桥 debugSetManger 已废弃）。
+- **③ DOM**：`data-admin`（=1·set ADMIN 态）+ `data-member-id`(=userId)。L1 无 ② 投影源 → 旧的 UI optimistic admin flip 已废弃，当前仅保留“真实出站 + L2 广播回灌”口径。✅ waitUntil 等 data-admin==1（历史 test-only bridge 已废弃）。
 - **② 投影**：`emit_channel_member_updated` / `emit_channel_update`。🟡 **L2-facet（结构性·非 data-dep）**：add/remove manger 后端 WS 已注释（仅 GrpcInvoke·真源 §19/§20 注），操作者实际收 `channel_member_role_updated`（helix `ws/handlers/channel_member_role_updated.rs` **graceful no-op**·真源 cses-client router.rs 落 vec![]·无业务 Effect）；emit_channel_member_updated 须 `channel_member_update` 全量广播帧（角色态由其覆盖·结构性须第二账号触发）。L1 单账号造不出 → **L2 #45 接盘**。run.jsonl 证据：add/manger 返出站·但窗内无 channel_member_update echo / 无 im:channel:member-updated 投影。
 - **④ 落库**：`channel_member`。🟡 **L2-facet（同 ②·须 channel_member_update 广播帧的 BatchUpsert·结构性须第二账号触发·L2 #45）**。
-- **接通件**：Rust `im_channel_set_manger`(commands.rs + lib.rs 双 feature 注册·set bool 切 add/remove·users 单成员 {id,name:'',role:ADMIN|MEMBER,teamId}·teamId 取 identity) · 壳 store.setManger（真实出站；`data-admin` 仅由 L2 广播回灌，不再乐观刷）+ onChangeManger（UI『管』按钮 toggle !mem.admin）·历史 debug 桥 debugSetManger 已废弃 · reducer runFourFacetCommandDom（①③ 断面·②④ N/A 不裁定·structural L2）· expect/uc-6.2.expect.json（facetMode=command-dom）+ specs/uc-6.2.e2e.mjs。
+- **接通件**：Rust `im_channel_set_manger`(commands.rs + lib.rs 双 feature 注册·set bool 切 add/remove·users 单成员 {id,name:'',role:ADMIN|MEMBER,teamId}·teamId 取 identity) · 壳 store.setManger（真实出站；`data-admin` 仅由 L2 广播回灌，不再做本地 optimistic flip）+ onChangeManger（UI『管』按钮 toggle !mem.admin）·历史 test-only bridge 已废弃 · reducer runFourFacetCommandDom（①③ 断面·②④ N/A 不裁定·structural L2）· expect/uc-6.2.expect.json（facetMode=command-dom）+ specs/uc-6.2.e2e.mjs。
 
 ### UC-6.3 改群昵称 — `✅ 四面全绿`（e2e 真跑·corr_key=ch=<channelId>·issue #26）
 

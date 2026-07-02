@@ -3,6 +3,7 @@
 > 契约细节 = `docs/uc-coverage-ledger.md`；四面真源 = helix `真机curl真源.md`(①) / `projection-schema.md`(②) / `partials/8`(④)。
 > 本文件 = 执行计划 + 进度（e2e 四面全绿 → 自动打钩）。更新 2026-06-24。
 > **范围**：只列可铺 UC（含 🌙 按需）。⛔ 阻塞/gap（1.6 无编辑端点 / 5.6 公告无 echo / 5.7 在线状态后端阻塞 / 7.x 搜索空桩 / 4.3 too_long harness-gap / bot-agent 已移除）**不在本清单管理**。
+> **2026-07-02 收口口径**：本清单保留 rollout 历史铺设进度，不等于当前“全 UC 已收官”。最终 go/no-go 以 `docs/uc-rollout/all-uc-real-chain-status.md` 与 `docs/uc-rollout/reports/all-uc-real-chain-final.md` 为准；当前仍有 `UC-1.4`、`UC-10.1`、部分 L2 证据留存、Apifox 令牌、截图正向验证等 blocker。
 
 ## 图例
 `[x]`✅四面全绿 · `[ ]`⬜L1待铺(单账号自发回流) · `[~]`🟡主路径绿+子项需双连接 · `[2]`🔗需第二真实连接 · `[n]`🌙按需(真go夜间) · 难度 S/M/D
