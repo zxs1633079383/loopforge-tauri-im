@@ -480,12 +480,14 @@
 - **④ 落库**：N/A（书签落库 post/书签表由 helix 按响应内部兑现·装饰器 facet④ 不暴露读路径 self-heal write·reducer 不裁定）。
 - **验证**：2026-06-25 暖栈实跑三 endpoint 各四面（①②）全绿·先 bridge invoke im_send 取真实 server_id(postId)→ create/load/delete 链·corrAnchor req_id 锚（create=req-qs01jxld4d / load=req-ainti547r9 / delete=req-7f6qpecolw·每轮新 reqId）·暖 spec 6.1s·3 passing。
 
-### UC-10.1 待办列表 — `✅ done`（issue #31·暖栈实跑 ①②③ 三面全绿·④ projection-only N/A）
+### UC-10.1 待办列表 — `⚠️ blocked / partial（__quiescence__ attribution·当前不应视为 done）`
 
-> **实跑全绿**（2026-06-25·corr=window endpoint+event·reducer `runFourFacetSelfDriven`）：hello 收尾自驱
-> queryTodoList → im:todo:updated{15 items} → DOM 首行 todo-id=`x8j9135nc3rg3ktptz6qgd3ddh_mention`
-> （type=mention·canDel=1·id 装配 `{postId}_{messageType}` 实证）。bootstrap UC=UC-10.1（hello hop 归本 UC·
-> 见 harness `reload-app --uc UC-10.1`·同 UC-4.1 自驱根机制）。
+> **2026-07-02 收口口径**：`/tmp/loopforge/runs/20260702-210107` 虽然出现了真实 todo DOM 行、`posts/queryTodoList` 出站和 `im:todo:updated`，
+> 但这些证据当前被归因到 `uc_id="__quiescence__"`，而不是 `UC-10.1`。在 reducer / status ledger 修正前，本节只能记为 blocked/partial，
+> 不能再写成 done。请以 `docs/uc-rollout/all-uc-real-chain-status.md` 和
+> `docs/uc-rollout/reports/all-uc-real-chain-final.md` 的终态口径为准。
+>
+> bootstrap UC=UC-10.1（hello hop 归本 UC·见 harness `reload-app --uc UC-10.1`·同 UC-4.1 自驱根机制）。
 >
 > **④ 落库 = N/A（projection-only·结构性·非橡皮章）**：todo 链 helix `port_reply.rs:196-209` TodoQuery 分支
 > **只 emit_todo_updated 不落库**（无 storage Effect·无 todo 表·helix migrations 无 todo schema）；

@@ -89,12 +89,14 @@
 | [x] | 12.1 健康探针(1 面①) | `im_health`→`GET /health` | `partials/3 health` | (无投影) | data-health(可选) | (无落库) | ✅ ① 全绿·issue #41·corr_key=req_id |
 
 ## 阶段 L2 · 双账号广播（需第二真实连接·feasible·L1 稳后专批）
+> 以下仅保留历史绿证与双账号依赖；**当前收口不代表全 L2 已收官**。最终状态以 `docs/uc-rollout/all-uc-real-chain-status.md`
+> 与 `docs/uc-rollout/reports/all-uc-real-chain-final.md` 为准。若想知道当前是否全绿，请不要只看 `[x]`，看说明栏的“历史绿证保留 / 需复跑”。
 | 勾 | UC | 触发 → 观测 | ② 投影工厂 | ③ DOM data-* | 说明 |
 |---|---|---|---|---|---|
-| [x] | US-17 他人发消息收推送 ✅四面全绿(issue #42·L2 双账号首证) | B=678 发 → A=444 收推送 | `emit_post_received`(fat·userId=678) | 新消息行 data-msg-id | 跨账号 post 推送·A 新建频道拉 678→678 发→A 收·spec uc-us17-l2 |
-| [x] | 6.1b 拉人后对端实时更新 ✅①+②④源全绿(issue #28·L2 双账号) | B=678 被拉 → 678 收 channel_member_update | `emit_channel_member_updated` | data-members(B侧观测) | spec uc-6.1-l2·①A出站+②④源678 raw帧(bcast.userId=678) |
-| [x] | 5.3b member-leave 广播 ✅①+②④源全绿(后端 round-2 补齐·issue #44) | A 移除 678 → 留存成员 999 收 channel_member_update{leave} | `emit_channel_member_updated` | channel/member 变更(B侧观测) | spec uc-5.3b-l2·①A出站leaveUsers+②④源999 raw帧memberChange.leave:[678] |
-| [x] | 6.2b admin 广播到他人 ✅①+②④源全绿(后端 round-2 changeManagerRole·issue #29/#45) | A 设 678 admin → 678 收 channel_member_role_updated | `emit_channel_member_updated` | data-admin(B侧观测) | spec uc-6.2-l2·①A出站channel/add/manger+②④源678 raw帧role=MANAGER |
+| [2] | US-17 他人发消息收推送（历史绿证保留·当前收口 partial） | B=678 发 → A=444 收推送 | `emit_post_received`(fat·userId=678) | 新消息行 data-msg-id | 跨账号 post 推送·A 新建频道拉 678→678 发→A 收·spec uc-us17-l2 |
+| [2] | 6.1b 拉人后对端实时更新（历史绿证保留·仍需 per-spec 复跑） | B=678 被拉 → 678 收 channel_member_update | `emit_channel_member_updated` | data-members(B侧观测) | spec uc-6.1-l2·①A出站+②④源678 raw帧(bcast.userId=678) |
+| [2] | 5.3b member-leave 广播（历史绿证保留·仍需 per-spec 复跑） | A 移除 678 → 留存成员 999 收 channel_member_update{leave} | `emit_channel_member_updated` | channel/member 变更(B侧观测) | spec uc-5.3b-l2·①A出站leaveUsers+②④源999 raw帧memberChange.leave:[678] |
+| [2] | 6.2b admin 广播到他人（历史绿证保留·仍需 per-spec 复跑） | A 设 678 admin → 678 收 channel_member_role_updated | `emit_channel_member_updated` | data-admin(B侧观测) | spec uc-6.2-l2·①A出站channel/add/manger+②④源678 raw帧role=MANAGER |
 
 ---
 
