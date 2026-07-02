@@ -35,7 +35,7 @@
       ]
     },
     "projection": {
-      "event": "im:post:updated",
+      "event": "im:post:received",
       "dataKeys": [
         "channel_id",
         "event_seq",
@@ -46,6 +46,7 @@
         "type",
         "message",
         "props",
+        "pinned",
         "createAt",
         "updateAt",
         "readBits",
@@ -58,7 +59,7 @@
       "_note": "⛔backend-down：公告保存 server echo = WS post_update（按 channelId 广播 post.ToMap·gap §26 L1794-1795 + §69 announcement*→post_update ✅）→ emit_post_updated im:post:updated（fat 13 键·缺/多即 fail·同 emit_post_received）。当前阻于 cses-java（广播链断）·后端恢复后裁定。键集严格对齐冻结 13 键·禁伪造绿。"
     },
     "storage": {
-      "op": "batch_update",
+      "op": "batch_upsert",
       "table": "message",
       "minRows": 1,
       "_note": "⛔backend-down：post_update echo → gate EventKind::PostEdit → edit_content_op（UPDATE WHERE id·保留本地 read_bits）patch message 行（client 无 announcement 表·公告表写在 server 侧·客户端 facet④ 仅见 message patch·同 UC-3.3/UC-1.10 PostEdit gate）。装饰器 facet④ {op:batch_update,table:message,rows≥1}。当前阻于 cses-java（无 echo→无落库帧）。"
@@ -94,6 +95,7 @@
         "type",
         "message",
         "props",
+        "pinned",
         "createAt",
         "updateAt",
         "readBits",
@@ -141,6 +143,7 @@
         "type",
         "message",
         "props",
+        "pinned",
         "createAt",
         "updateAt",
         "readBits",
