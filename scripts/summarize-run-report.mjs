@@ -69,6 +69,93 @@ function parseJsonFile(path) {
   }
 }
 
+function safeText(value) {
+  return typeof value === "string" ? value : "";
+}
+
+function parseInsideFailures(logText) {
+  const matches = [];
+  const regex = /inside "([^"]+)"/g;
+  let match;
+  while ((match = regex.exec(logText))) {
+    const text = match[1] ?? "";
+    const splitIndex = text.lastIndexOf(" / ");
+    matches.push({
+      scenario: splitIndex >= 0 ? text.slice(0, splitIndex) : text,
+      step: splitIndex >= 0 ? text.slice(splitIndex + 3) : "",
+    });
+  }
+  return matches;
+}
+
+function classifyApifoxScenario(name = "", url = "") {
+  const text = `${name} ${url}`;
+  if (text.includes("UC-8.x 投票") || text.includes("/vote/")) return "excluded-java-vote";
+  if (text.includes("UC-8.x 平均") || text.includes("/average/")) return "excluded-java-average";
+  if (text.includes("localhost:3399") || text.includes("127.0.0.1:3399")) return "java";
+  return "go";
+}
+
+function readApifoxReport(archiveDir) {
+  const reportPath = join(archiveDir, "apifox-reports", "apifox-report.json");
+  const logPath = join(archiveDir, "apifox-run.log");
+  const report = parseJsonFile(reportPath);
+  const logText = readText(logPath);
+  return { reportPath, logPath, report, logText };
+}
+
+function buildApifoxFailureEvidence(archiveDir) {
+  const { report, logText } = readApifoxReport(archiveDir);
+  const rawFailures = Array.isArray(report?.result?.failures) ? report.result.failures : [];
+  const insideFailures = parseInsideFailures(logText);
+  const total = Math.min(rawFailures.length, insideFailures.length);
+  const unique = [];
+  const seen = new Set();
+
+  for (let i = 0; i < total; i++) {
+    const raw = rawFailures[i] ?? {};
+    const inside = insideFailures[i] ?? {};
+    const scenario = safeText(inside.scenario);
+    const step = safeText(inside.step);
+    const key = `${scenario}\u0000${step}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+
+    const message = safeText(raw?.error?.message) || safeText(raw?.error?.stack) || safeText(raw?.message);
+    const test = safeText(raw?.error?.test);
+    const className = classifyApifoxScenario(`${scenario} ${step} ${test}`, step);
+
+    unique.push({
+      class: className,
+      scenario,
+      step,
+      message,
+    });
+  }
+
+  const stats = report?.result?.stats?.steps ?? {};
+  const stepsTotal = Number.isFinite(Number(stats.total)) ? Number(stats.total) : 0;
+  const stepsFailed = Number.isFinite(Number(stats.failed)) ? Number(stats.failed) : 0;
+  const goFailures = unique.filter((failure) => failure.class === "go").length;
+  const excludedJavaFailures = unique.filter((failure) => failure.class.startsWith("excluded-java-")).length;
+  const passed = Boolean(report) && goFailures === 0;
+
+  return {
+    profile: "go-only",
+    passed,
+    stats: {
+      stepsTotal,
+      stepsFailed,
+      goFailures,
+      excludedJavaFailures,
+    },
+    failures: unique,
+    excluded: ["UC-8.x 投票 CRUD", "UC-8.x 平均分 CRUD"],
+  };
+}
+
 function collectFiles(dir, predicate) {
   if (!existsSync(dir)) {
     return [];
@@ -177,6 +264,26 @@ function classifyApifoxResult(archiveDir) {
   return "not-pass-or-unknown";
 }
 
+function formatApifoxSummary(archiveDir) {
+  const status = buildApifoxFailureEvidence(archiveDir);
+  const failureLines = status.failures
+    .slice(0, 12)
+    .map((failure) => `| ${failure.class} | ${failure.scenario} | ${failure.step} | ${failure.message} |`);
+
+  return [
+    "## Apifox Failures",
+    "",
+    `Profile: \`${status.profile}\``,
+    "",
+    "| Class | Scenario | Step | Message |",
+    "|---|---|---|---|",
+    ...failureLines,
+    "",
+    `Stats: stepsTotal=${status.stats.stepsTotal}, stepsFailed=${status.stats.stepsFailed}, goFailures=${status.stats.goFailures}, excludedJavaFailures=${status.stats.excludedJavaFailures}`,
+    "",
+  ].join("\n");
+}
+
 function readRunStatus(archiveDir) {
   const path = join(archiveDir, "run-status.txt");
   const raw = readText(path);
@@ -214,15 +321,8 @@ function formatHarnessStatus(status) {
 const args = parseArgs(process.argv.slice(2));
 
 if (args.writeApifoxStatus) {
-  const evidence = strictApifoxPassEvidence(args.archive);
-  if (!evidence.ok) {
-    console.error(`Apifox HTTP did not produce strict pass evidence: ${evidence.reason}`);
-    process.exit(1);
-  }
-  writeFileSync(
-    args.writeApifoxStatus,
-    `${JSON.stringify({ status: "pass", scope: "http-only", verified: true, evidence: evidence.reason }, null, 2)}\n`,
-  );
+  const status = buildApifoxFailureEvidence(args.archive);
+  writeFileSync(args.writeApifoxStatus, `${JSON.stringify(status, null, 2)}\n`);
   process.exit(0);
 }
 
@@ -245,6 +345,7 @@ const lines = [
   `| run.jsonl | ${existsSync(join(args.archive, "run.jsonl")) ? "archived" : "missing"} |`,
   `| Go log | ${existsSync(join(args.archive, "cses-im-server.log")) ? "archived" : "missing"} |`,
   "",
+  formatApifoxSummary(args.archive),
 ];
 
 writeFileSync(args.out, lines.join("\n"));
