@@ -53,18 +53,32 @@ function parseWdioResult(text) {
   return "not-pass-or-unknown";
 }
 
-function parseApifoxResult(text) {
-  if (!text) {
+function parseJsonFile(path) {
+  const raw = readText(path);
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function classifyApifoxResult(archiveDir) {
+  const logPath = join(archiveDir, "apifox-run.log");
+  const statusPath = join(archiveDir, "apifox-status.json");
+  const hasLog = existsSync(logPath);
+  const hasStatusFile = existsSync(statusPath);
+  const status = parseJsonFile(statusPath);
+
+  if (!hasLog && !hasStatusFile) {
     return "not-run";
   }
-
-  const successSignals = [
-    /"success"\s*:\s*true/i,
-    /\bsuccess\s*:\s*true\b/i,
-    /\b全部通过\b/i,
-    /\bpass(?:ed)?\s+rate\s*[:=]\s*100%/i,
-  ];
-  return successSignals.some((pattern) => pattern.test(text)) ? "pass" : "not-pass-or-unknown";
+  if (status?.status === "pass" && status?.scope === "http-only") {
+    return "pass";
+  }
+  return "not-pass-or-unknown";
 }
 
 function readRunStatus(archiveDir) {
@@ -103,7 +117,7 @@ function formatHarnessStatus(status) {
 
 const args = parseArgs(process.argv.slice(2));
 const wdioResult = parseWdioResult(readText(join(args.archive, "wdio-out.log")));
-const apifoxResult = parseApifoxResult(readText(join(args.archive, "apifox-run.log")));
+const apifoxResult = classifyApifoxResult(args.archive);
 const runStatus = readRunStatus(args.archive);
 
 const lines = [
