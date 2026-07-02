@@ -24,8 +24,56 @@ import { spawn, execFileSync } from 'node:child_process';
 const L2_ACT = new URL('../../scripts/l2-act.sh', import.meta.url).pathname;
 const QUITTER_ID = '777'; // 退出者（独立账号·非暖栈 444）
 const OBSERVER_ID = '888'; // 留存成员·观测端
-const OBSERVE_SCRIPT = new URL('../../scripts/l2-observe-678.mjs', import.meta.url).pathname;
 const OBSERVE_OUT = '/tmp/loopforge/l2-888-uc11.2.jsonl';
+const WS_OBSERVER_JS = String.raw`
+const fs = require('fs');
+const path = require('path');
+const { createRequire } = require('module');
+function loadWebSocket() {
+  const repoRoot = process.env.L2_REPO_ROOT || process.cwd();
+  try {
+    return createRequire(path.join(repoRoot, 'package.json'))('ws');
+  } catch {}
+  const pnpmDir = path.join(repoRoot, 'node_modules', '.pnpm');
+  const candidates = fs.existsSync(pnpmDir)
+    ? fs.readdirSync(pnpmDir)
+        .filter((name) => name.startsWith('ws@'))
+        .map((name) => path.join(pnpmDir, name, 'node_modules', 'ws'))
+        .filter((dir) => fs.existsSync(dir))
+        .sort()
+    : [];
+  if (!candidates.length) throw new Error('Unable to resolve ws from repo node_modules');
+  return require(candidates[candidates.length - 1]);
+}
+const WebSocket = loadWebSocket();
+const user = process.env.L2_USER ?? '678';
+const wsUrl = process.env.L2_WS ?? 'ws://localhost:8066/api/v4/websocket';
+const team = process.env.L2_TEAM ?? '64118eebd2b665246b7880eb';
+const out = process.env.L2_OBSERVE_OUT ?? '/tmp/loopforge/l2-observe.jsonl';
+fs.mkdirSync(require('path').dirname(out), { recursive: true });
+const sink = fs.createWriteStream(out, { flags: 'w' });
+const ws = new WebSocket(wsUrl, { headers: { cookieId: user, companyId: team, appType: 'bct', device: 'IOS', language: 'zh' } });
+let frameCount = 0;
+ws.on('message', (data) => {
+  const raw = String(data);
+  let action = '?';
+  let broadcast = null;
+  let dataKeys = [];
+  try {
+    const obj = JSON.parse(raw);
+    action = obj.action ?? '?';
+    broadcast = obj.broadcast ?? null;
+    dataKeys = obj.data && typeof obj.data === 'object' ? Object.keys(obj.data) : [];
+  } catch {}
+  frameCount += 1;
+  sink.write(JSON.stringify({ ts: Date.now(), user, action, broadcast, data_keys: dataKeys, raw: raw.slice(0, 2048) }) + '\n');
+});
+const shutdown = () => { try { ws.close(); } catch {} setTimeout(() => process.exit(0), 100); };
+ws.on('close', () => { sink.end(); process.exit(0); });
+ws.on('error', (err) => { console.error(err?.message ?? err); process.exit(1); });
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+`;
 
 const invokeBridge = (cmd, args) =>
   browser.executeAsync(
@@ -68,8 +116,14 @@ describe('UC-11.2b · L2 退公司离群移除广播（双账号·issue #40 / #4
     try { if (existsSync(OBSERVE_OUT)) rmSync(OBSERVE_OUT); } catch { /* ignore */ }
 
     // —— spawn B=888 留存成员 observe（raw WS·forever）——
-    observeProc = spawn(process.execPath, [OBSERVE_SCRIPT], {
-      env: { ...process.env, L2_USER: OBSERVER_ID, L2_OBSERVE_OUT: OBSERVE_OUT, L2_OBSERVE_MS: '0' },
+    observeProc = spawn(process.execPath, ['-e', WS_OBSERVER_JS], {
+      env: {
+        ...process.env,
+        L2_REPO_ROOT: process.cwd(),
+        L2_USER: OBSERVER_ID,
+        L2_OBSERVE_OUT: OBSERVE_OUT,
+        L2_OBSERVE_MS: '0',
+      },
       stdio: 'ignore', detached: false,
     });
     await browser.waitUntil(

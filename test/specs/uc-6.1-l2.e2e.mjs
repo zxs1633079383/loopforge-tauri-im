@@ -37,8 +37,56 @@ const RUN_JSONL =
 
 // 第二真账号（副账号·同 team·有真连接）——L2 的全部意义：拉 678（有连接）而非 445（无连接）。
 const JOIN_MEMBER_ID = '678';
-const OBSERVE_SCRIPT = new URL('../../scripts/l2-observe-678.mjs', import.meta.url).pathname;
 const OBSERVE_OUT = '/tmp/loopforge/l2-678-uc6.1.jsonl';
+const WS_OBSERVER_JS = String.raw`
+const fs = require('fs');
+const path = require('path');
+const { createRequire } = require('module');
+function loadWebSocket() {
+  const repoRoot = process.env.L2_REPO_ROOT || process.cwd();
+  try {
+    return createRequire(path.join(repoRoot, 'package.json'))('ws');
+  } catch {}
+  const pnpmDir = path.join(repoRoot, 'node_modules', '.pnpm');
+  const candidates = fs.existsSync(pnpmDir)
+    ? fs.readdirSync(pnpmDir)
+        .filter((name) => name.startsWith('ws@'))
+        .map((name) => path.join(pnpmDir, name, 'node_modules', 'ws'))
+        .filter((dir) => fs.existsSync(dir))
+        .sort()
+    : [];
+  if (!candidates.length) throw new Error('Unable to resolve ws from repo node_modules');
+  return require(candidates[candidates.length - 1]);
+}
+const WebSocket = loadWebSocket();
+const user = process.env.L2_USER ?? '678';
+const wsUrl = process.env.L2_WS ?? 'ws://localhost:8066/api/v4/websocket';
+const team = process.env.L2_TEAM ?? '64118eebd2b665246b7880eb';
+const out = process.env.L2_OBSERVE_OUT ?? '/tmp/loopforge/l2-observe.jsonl';
+fs.mkdirSync(require('path').dirname(out), { recursive: true });
+const sink = fs.createWriteStream(out, { flags: 'w' });
+const ws = new WebSocket(wsUrl, { headers: { cookieId: user, companyId: team, appType: 'bct', device: 'IOS', language: 'zh' } });
+let frameCount = 0;
+ws.on('message', (data) => {
+  const raw = String(data);
+  let action = '?';
+  let broadcast = null;
+  let dataKeys = [];
+  try {
+    const obj = JSON.parse(raw);
+    action = obj.action ?? '?';
+    broadcast = obj.broadcast ?? null;
+    dataKeys = obj.data && typeof obj.data === 'object' ? Object.keys(obj.data) : [];
+  } catch {}
+  frameCount += 1;
+  sink.write(JSON.stringify({ ts: Date.now(), user, action, broadcast, data_keys: dataKeys, raw: raw.slice(0, 2048) }) + '\n');
+});
+const shutdown = () => { try { ws.close(); } catch {} setTimeout(() => process.exit(0), 100); };
+ws.on('close', () => { sink.end(); process.exit(0); });
+ws.on('error', (err) => { console.error(err?.message ?? err); process.exit(1); });
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+`;
 
 const invokeBridge = (cmd, args) =>
   browser.executeAsync(
@@ -93,8 +141,14 @@ describe('UC-6.1b · L2 拉人广播（双账号·issue #28 / #43）', () => {
     }
 
     // —— spawn B=678 observe（raw WS·forever·SIGTERM 收）——
-    observeProc = spawn(process.execPath, [OBSERVE_SCRIPT], {
-      env: { ...process.env, L2_USER: '678', L2_OBSERVE_OUT: OBSERVE_OUT, L2_OBSERVE_MS: '0' },
+    observeProc = spawn(process.execPath, ['-e', WS_OBSERVER_JS], {
+      env: {
+        ...process.env,
+        L2_REPO_ROOT: process.cwd(),
+        L2_USER: '678',
+        L2_OBSERVE_OUT: OBSERVE_OUT,
+        L2_OBSERVE_MS: '0',
+      },
       stdio: 'ignore',
       detached: false,
     });
