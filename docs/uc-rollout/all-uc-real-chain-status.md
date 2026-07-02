@@ -3,6 +3,7 @@
 > This file is the execution ledger for all LoopForge UC closure work.
 > Status values are: `green`, `partial`, `l2-required`, `http-only`, `night-only`, `blocked`, `excluded`, `not-run`.
 > Apifox results are recorded as HTTP preflight only and never replace WDIO/reducer evidence.
+> Apifox can never be used as L1/L2 green proof.
 
 ## Summary
 
@@ -11,7 +12,7 @@
 | L0 static/unit | not-run | Run `bash scripts/gate.sh` and static commands |
 | L1 WDIO | partial | Task 6 area rerun: `CL` `/tmp/loopforge/runs/20260702-205658`, `ML` `/tmp/loopforge/runs/20260702-205744`, `CP` `/tmp/loopforge/runs/20260702-210012`, `MB` `/tmp/loopforge/runs/20260702-210208` green; `AX` blocked at `/tmp/loopforge/runs/20260702-210107` (`uc-10.1`). Task 7 full reruns stopped at `uc-1.4.e2e.mjs` in `/tmp/loopforge/runs/20260702-211324` and `/tmp/loopforge/runs/20260702-211638`; the focused repro in `/tmp/loopforge/runs/20260702-211505` confirmed the same missing real failed-row precondition. |
 | L2 WDIO | partial | Task 8 first red in `/tmp/loopforge/runs/20260702-212217` was an L2 observer bootstrap gap (`WebSocket is not defined` under Node 20) inside the allowed L2 spec layer. The dynamic `ws` resolution fix was then re-verified by `bash scripts/multi-end-loop.sh --spec test/specs/uc-11.2-l2.e2e.mjs` in `/tmp/loopforge/runs/20260702-213832`. The earlier full rerun `/tmp/loopforge/runs/20260702-212547` passed, but Task 3 harness only preserved the last spec archive (`uc-us17-l2`), so it cannot support suite-wide or per-spec L2 green claims for the overwritten specs. |
-| Apifox HTTP | not-run | Run `bash scripts/multi-end-loop.sh --apifox` |
+| Apifox HTTP | blocked | `APIFOX_TOKEN` missing in controller environment; `bash scripts/multi-end-loop.sh --apifox` was not run |
 | UI style | not-run | Run `bash scripts/multi-end-loop.sh --screenshot` |
 
 ## UC Rows
