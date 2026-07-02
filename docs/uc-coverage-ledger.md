@@ -121,10 +121,11 @@
 - **③ DOM**：同 UC-1.1 + `data-type=DOCUMENT`。
 - **④ 落库**：`message`（type=DOCUMENT）。
 
-### UC-1.4 重发失败消息 — `✅ four-facet-verified`（2026-06-25 实跑全绿，认领 S）
+### UC-1.4 重发失败消息 — `⚠️ historical-green / current-suite-blocked`
 
 > 四面全绿实证：`run.sh -- --spec test/specs/uc-1.4.e2e.mjs`（seeded db·live 真 go）→
 > `✅ UC-1.4 四面全绿（corr_key=ch=15gcgoyf;tmp=pfuneqqp…;sid=c58zkjqn…;seq=68）`。
+> 但当前 Task 7（2026-07-02）在全量 L1 `/tmp/loopforge/runs/20260702-211324` 与 focused rerun `/tmp/loopforge/runs/20260702-211505` 都卡在 spec 第 112 行：live 健康环境中不存在真实 `[data-send-status="failed"]` 行，重发链路前置不可复现，因此本 UC 目前不能作为全套件可稳定过绿的条目出账。
 > 接线：壳 `onResend` → `store.resend(tmp,ch,text)` 复用原 temporaryId 重走 `im_send`（upsert 语义·不生成新 id）。
 > 失败前置（架构现实：`im_send` 入泵即返 Ok 不 await HTTP → 健康 live run 不自然产生 failed 行）：
 > 旧 debug 桥 `__lf.debugMarkFailed` 已废弃；当前只能走真实故障前置或后端失败投影，不允许把前端乐观行当作 accepted success path。
