@@ -19,6 +19,7 @@
 // 驱动（最简 + 确定性·同 UC-9.x 书签）：e2e 经 window.__lf.invoke 直 invoke 各 vote 命令注入真实参数 →
 //   waitUntil 等 run.jsonl 出现本窗口该 endpoint 的 outbound http-req（写族）/ + im:read:result（读族）→
 //   跑 runFourFacetRead 裁定。每命令独立 set_uc 窗口（窗口隔离保证 endpoint 唯一·非 tautology）。
+//   do/read/close/delete 必须使用真实投票卡 id：优先 UC8_VOTE_ID，其次 DOM data-vote；没有真实 id 就红。
 //
 // 时序纪律（HX-C011）：waitUntil 等 hop 落进 run.jsonl，无固定 pause。少 invoke → ① 红（可证伪对偶）。
 //
@@ -112,13 +113,22 @@ async function waitReadResult(ucId, reqId, endpoint) {
   );
 }
 
+const getFirstVoteId = () =>
+  browser.execute(() =>
+    document.querySelector('[data-vote]')?.getAttribute('data-vote') ?? ''
+  );
+
 const UC = 'UC-8.x';
 
 describe('UC-8.x · 投票 CRUD（vote/score 第二网关·写族 4 ① + 读族 1 ①②）', () => {
   let CHANNEL_ID;
-  // 投票卡 id：vote 写族无真 server 回声给真 id·用确定性合成 id 作 wire 字段（① 出站只检 wire body
-  // 字段集/形态·不依赖 server 真 vote 存在·读族 ② envelope 面亦与真 id 解耦——envelope 恒回灌）。
-  const VOTE_ID = `vote-${Math.random().toString(36).slice(2, 10)}`;
+  let VOTE_ID = process.env.UC8_VOTE_ID ?? '';
+
+  async function requireVoteId() {
+    VOTE_ID = VOTE_ID || (await getFirstVoteId());
+    expect(VOTE_ID).toBeTruthy();
+    return VOTE_ID;
+  }
 
   before(async () => {
     // 就绪 probe：等 data-ready 标志。
@@ -132,7 +142,8 @@ describe('UC-8.x · 投票 CRUD（vote/score 第二网关·写族 4 ① + 读族
 
     CHANNEL_ID = await getActiveChannel();
     expect(CHANNEL_ID).toBeTruthy();
-    console.log(`[UC-8.x setup] activeChannel=${CHANNEL_ID} voteId=${VOTE_ID}`);
+    VOTE_ID = VOTE_ID || (await getFirstVoteId());
+    console.log(`[UC-8.x setup] activeChannel=${CHANNEL_ID} voteId=${VOTE_ID || '<missing-real-vote-id>'}`);
   });
 
   it('① 写族：vote/createVote 发起投票（整 args 透传·camelCase wire·② N/A optional）', async () => {
@@ -165,9 +176,10 @@ describe('UC-8.x · 投票 CRUD（vote/score 第二网关·写族 4 ① + 读族
 
   it('① 写族：vote/vote 提交投票（{id, indexes:[], postId?}·② N/A optional）', async () => {
     await invokeBridge('set_uc', { uc: UC });
+    const voteId = await requireVoteId();
 
     const r = await invokeBridge('im_vote_do', {
-      id: VOTE_ID,
+      id: voteId,
       indexes: ['0', '2'],
     });
     expect(r.ok).toBe(true);
@@ -187,9 +199,10 @@ describe('UC-8.x · 投票 CRUD（vote/score 第二网关·写族 4 ① + 读族
 
   it('①② 读族：vote/readVote 读详情（{id}·im:read:result {req_id, body} 回灌）', async () => {
     await invokeBridge('set_uc', { uc: UC });
+    const voteId = await requireVoteId();
 
     const reqId = `req-${Math.random().toString(36).slice(2, 12)}`;
-    const r = await invokeBridge('im_vote_read', { id: VOTE_ID, reqId });
+    const r = await invokeBridge('im_vote_read', { id: voteId, reqId });
     expect(r.ok).toBe(true);
 
     await waitReadResult(UC, reqId, 'voteRead');
@@ -207,8 +220,9 @@ describe('UC-8.x · 投票 CRUD（vote/score 第二网关·写族 4 ① + 读族
 
   it('① 写族：vote/closeVote 截止投票（{id}·② N/A optional）', async () => {
     await invokeBridge('set_uc', { uc: UC });
+    const voteId = await requireVoteId();
 
-    const r = await invokeBridge('im_vote_close', { id: VOTE_ID });
+    const r = await invokeBridge('im_vote_close', { id: voteId });
     expect(r.ok).toBe(true);
 
     await waitOutbound(UC, 'vote/closeVote');
@@ -226,8 +240,9 @@ describe('UC-8.x · 投票 CRUD（vote/score 第二网关·写族 4 ① + 读族
 
   it('① 写族：vote/deleteVote 删除投票（{id}·② N/A optional）', async () => {
     await invokeBridge('set_uc', { uc: UC });
+    const voteId = await requireVoteId();
 
-    const r = await invokeBridge('im_vote_delete', { id: VOTE_ID });
+    const r = await invokeBridge('im_vote_delete', { id: voteId });
     expect(r.ok).toBe(true);
 
     await waitOutbound(UC, 'vote/deleteVote');

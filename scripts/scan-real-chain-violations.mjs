@@ -2,34 +2,35 @@
 import { execFileSync } from "node:child_process";
 
 const DENY_MARKERS =
-  /已废弃|已移除|已废除|废弃|废除|禁用|禁止|不允许|不得|不再|不在|must not|do not|forbidden|deprecated/i;
+  /已废弃|已移除|已废除|废弃|废除|禁用|禁止|不允许|不得|不能|无效|旧路径|不再|不在|只能来自|must not|do not|forbidden|deprecated|invalid/i;
 
 const rules = [
   {
     pattern: "debugMarkFailed|debugLocatePost|debugSetManger",
-    paths: ["src/app", "test/specs"],
+    paths: ["src/app", "test/specs", "test/reducer", "test/expect"],
     reason: "debug hooks must not patch UI state",
     ignoreCommentOnly: true,
   },
   {
     pattern: "fake(Server|Vote|Average|Channel|Post)?Id|mock(Server|Vote|Average|Channel|Post)?Id",
-    paths: ["src/app", "test/specs", "src-tauri"],
+    paths: ["src/app", "test/specs", "test/reducer", "test/expect", "src-tauri"],
     reason: "fake/mock ids cannot drive UC closure",
     ignoreCommentOnly: true,
   },
   {
     pattern: "data-admin.*乐观|乐观.*data-admin",
-    paths: ["src/app", "test/specs"],
+    paths: ["src/app", "test/specs", "test/reducer"],
     reason: "admin DOM must come from backend/helix projection",
     ignoreCommentOnly: true,
   },
   {
     pattern: "data-admin.*乐观|乐观.*data-admin",
     paths: [
+      "docs/ui-指令映射全景.md",
       "docs/uc-rollout",
       "docs/uc-coverage-ledger.md",
-      "docs/ui-指令映射全景.md",
       "docs/architecture-review",
+      "test/expect",
     ],
     reason: "admin DOM must come from backend/helix projection",
     allowDeniedWording: true,

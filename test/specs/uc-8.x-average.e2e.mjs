@@ -19,6 +19,7 @@
 // 驱动（最简 + 确定性·同 UC-8.x vote 书签）：e2e 经 window.__lf.invoke 直 invoke 各 average 命令注入真实
 //   参数 → waitUntil 等 run.jsonl 出现本窗口该 endpoint 的 outbound http-req（写族）/ + im:read:result
 //   （读族）→ 跑 runFourFacetRead 裁定。每命令独立 set_uc 窗口（窗口隔离保证 endpoint 唯一·非 tautology）。
+//   attend/read/close/delete 必须使用真实平均分卡 id：优先 UC8_AVERAGE_ID，其次 DOM data-average；没有真实 id 就红。
 //
 // 时序纪律（HX-C011）：waitUntil 等 hop 落进 run.jsonl，无固定 pause。少 invoke → ① 红（可证伪对偶）。
 // 覆盖（对 coverage-crossmap.md）：average/{publish,attend,read,close,delete} 五端点全实跑。
@@ -109,13 +110,22 @@ async function waitReadResult(ucId, reqId, endpoint) {
   );
 }
 
+const getFirstAverageId = () =>
+  browser.execute(() =>
+    document.querySelector('[data-average]')?.getAttribute('data-average') ?? ''
+  );
+
 const UC = 'UC-8.x-average';
 
 describe('UC-8.x · 平均分 CRUD（vote/score 第二网关·写族 4 ① + 读族 1 ①②）', () => {
   let CHANNEL_ID;
-  // 平均分卡 id：写族无真 server 回声给真 id·用确定性合成 id 作 wire 字段（① 出站只检 wire body
-  // 字段集/形态·不依赖 server 真 average 存在·读族 ② envelope 面亦与真 id 解耦——envelope 恒回灌）。
-  const AVERAGE_ID = `avg-${Math.random().toString(36).slice(2, 10)}`;
+  let AVERAGE_ID = process.env.UC8_AVERAGE_ID ?? '';
+
+  async function requireAverageId() {
+    AVERAGE_ID = AVERAGE_ID || (await getFirstAverageId());
+    expect(AVERAGE_ID).toBeTruthy();
+    return AVERAGE_ID;
+  }
 
   before(async () => {
     // 就绪 probe：等 data-ready 标志。
@@ -129,7 +139,8 @@ describe('UC-8.x · 平均分 CRUD（vote/score 第二网关·写族 4 ① + 读
 
     CHANNEL_ID = await getActiveChannel();
     expect(CHANNEL_ID).toBeTruthy();
-    console.log(`[UC-8.x-average setup] activeChannel=${CHANNEL_ID} averageId=${AVERAGE_ID}`);
+    AVERAGE_ID = AVERAGE_ID || (await getFirstAverageId());
+    console.log(`[UC-8.x-average setup] activeChannel=${CHANNEL_ID} averageId=${AVERAGE_ID || '<missing-real-average-id>'}`);
   });
 
   it('① 写族：average/publish 发布平均分（整 args 透传·camelCase wire·② N/A optional）', async () => {
@@ -165,9 +176,10 @@ describe('UC-8.x · 平均分 CRUD（vote/score 第二网关·写族 4 ① + 读
 
   it('① 写族：average/attend 提交评分（{id, score:number, postId?}·② N/A optional）', async () => {
     await invokeBridge('set_uc', { uc: UC });
+    const averageId = await requireAverageId();
 
     const r = await invokeBridge('im_average_attend', {
-      id: AVERAGE_ID,
+      id: averageId,
       score: 85,
     });
     expect(r.ok).toBe(true);
@@ -187,9 +199,10 @@ describe('UC-8.x · 平均分 CRUD（vote/score 第二网关·写族 4 ① + 读
 
   it('①② 读族：average/read 读详情（{id}·im:read:result {req_id, body} 回灌）', async () => {
     await invokeBridge('set_uc', { uc: UC });
+    const averageId = await requireAverageId();
 
     const reqId = `req-${Math.random().toString(36).slice(2, 12)}`;
-    const r = await invokeBridge('im_average_read', { id: AVERAGE_ID, reqId });
+    const r = await invokeBridge('im_average_read', { id: averageId, reqId });
     expect(r.ok).toBe(true);
 
     await waitReadResult(UC, reqId, 'averageRead');
@@ -207,8 +220,9 @@ describe('UC-8.x · 平均分 CRUD（vote/score 第二网关·写族 4 ① + 读
 
   it('① 写族：average/close 截止评分（{id, postId?}·② N/A optional）', async () => {
     await invokeBridge('set_uc', { uc: UC });
+    const averageId = await requireAverageId();
 
-    const r = await invokeBridge('im_average_close', { id: AVERAGE_ID });
+    const r = await invokeBridge('im_average_close', { id: averageId });
     expect(r.ok).toBe(true);
 
     await waitOutbound(UC, 'average/close');
@@ -226,8 +240,9 @@ describe('UC-8.x · 平均分 CRUD（vote/score 第二网关·写族 4 ① + 读
 
   it('① 写族：average/delete 删除平均分（{id}·② N/A optional）', async () => {
     await invokeBridge('set_uc', { uc: UC });
+    const averageId = await requireAverageId();
 
-    const r = await invokeBridge('im_average_delete', { id: AVERAGE_ID });
+    const r = await invokeBridge('im_average_delete', { id: averageId });
     expect(r.ok).toBe(true);
 
     await waitOutbound(UC, 'average/delete');
