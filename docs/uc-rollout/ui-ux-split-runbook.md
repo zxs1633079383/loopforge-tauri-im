@@ -95,3 +95,4 @@ Every UI/UX closure batch must archive:
 - `screenshot-summary.md`
 
 The screenshots must preserve machine selectors and show the `pd.cses7.com/message`-style direction: dark top/rail, light message canvas, dense channel list, stable composer.
+`scripts/capture-ui-screenshots.mjs` is green only when it actually writes both PNG files; if browser support is unavailable or `http://localhost:1420` is down, it must exit non-zero and record the failure in `screenshot-summary.md`.
