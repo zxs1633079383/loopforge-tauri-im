@@ -51,7 +51,7 @@ Use standalone Angular components. Keep the root component as orchestration only
 
 | Area | Command | Result | Archive | Notes |
 |---|---|---|---|---|
-| CL | `bash scripts/multi-end-loop.sh --area CL` | green | `/tmp/loopforge/runs/20260702-205658` | `uc-5.1` / `uc-5.4` / `uc-5.5` all passed in one area batch. |
+| CL | `bash scripts/multi-end-loop.sh --area CL` | partial | `/tmp/loopforge/runs/20260702-205658` | `uc-5.1` / `uc-5.4` passed in one area batch; `uc-5.5` only re-verified the top-pin path, and `uc-5.5b` still needs its own rerun before post-pin coverage can be called green. |
 | ML | `bash scripts/multi-end-loop.sh --area ML` | green | `/tmp/loopforge/runs/20260702-205744` | `uc-send-1` / `uc-1.5` / `uc-2.3` all passed in one area batch. |
 | CP | `bash scripts/multi-end-loop.sh --area CP` | green | `/tmp/loopforge/runs/20260702-210012` | First attempt exposed `uc-1.2` spec drift with real composer draft input; after updating `uc-1.2.e2e.mjs` to type into `compose-input`, rerun passed `uc-send-1` / `uc-1.2` / `uc-1.10` / `uc-1.10-cancel`. |
 | AX | `bash scripts/multi-end-loop.sh --area AX` | blocked | `/tmp/loopforge/runs/20260702-210107` | `uc-9.x` and `uc-2.4` passed, but `uc-10.1` failed because `posts/queryTodoList` + `im:todo:updated` landed in `__quiescence__`, while DOM todo rows were already present; this is a self-driven evidence-window/harness issue, not a presentational selector failure. |
