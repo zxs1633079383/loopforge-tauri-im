@@ -36,8 +36,8 @@
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
 |---|---|---|---|---|---|---|---|
 | [x] | 1.5 撤回 | `im_revoke`→`posts/revoke` | `真机curl真源 §3`{postId}✅ | `emit_post_batch_updated`(在线)/`emit_post_deleted`(离线) | data-revoke=1/行移除 | `message` mark_revoked | S |
-| [x] | 3.2 单条已读 ✅四面全绿(L2 双账号·issue #14/#47·helix gate bypass) | `im_mark_read`→`post/read`{channelId,posts:[postId]}✅ | `partials/6 UC-3.2` | `emit_post_read`(fat)✅L2 | data-read-bits✅ | `message.read_bits`✅batch_update | S |
-| [x] | 3.1 会话已读 ✅四面全绿(L2·后端补 channels/view→post_read echo·#15/#47) | `im_read_channel`→`channels/view`{channels:[{id}]}✅ | `partials/6 UC-3.1` | `emit_post_read`(fat)✅ | data-read-bits✅ | `message.read_bits`✅ batch_update | S/M |
+| [2] | 3.2 单条已读 历史绿证保留·当前收口 partial/L2-required（见 `all-uc-real-chain-status.md` / final report；issue #14/#47·helix gate bypass） | `im_mark_read`→`post/read`{channelId,posts:[postId]}✅ | `partials/6 UC-3.2` | `emit_post_read`(fat)✅L2 | data-read-bits✅ | `message.read_bits`✅batch_update | S |
+| [2] | 3.1 会话已读 历史绿证保留·当前收口 partial/L2-required（见 `all-uc-real-chain-status.md` / final report；L2·后端补 channels/view→post_read echo·#15/#47） | `im_read_channel`→`channels/view`{channels:[{id}]}✅ | `partials/6 UC-3.1` | `emit_post_read`(fat)✅ | data-read-bits✅ | `message.read_bits`✅ batch_update | S/M |
 | [x] | 3.3 模板已收到 | `templateReceived`→`post/templateReceived` | `partials/6 UC-3.3`{postId}(单数 path) | `emit_post_updated`/read:result | data-template-received | `message` | S |
 | [x] | 1.4 重发失败 | `im_send`(temp_id 复用)→`posts/create` | `真机curl真源 §1` | `emit_post_sending`→`emit_post_received` | data-send-status:failed→sending→sent | `message` upsert 覆盖 | S |
 | [x] | 1.7 转发/合并 | `im_create_posts`→`posts/createPosts` | `真机curl真源 附录A`{posts,channelIds}✅ | 各目标 channel `emit_post_received` | 多 channel 消息行 | `message`×N | M |
@@ -85,7 +85,7 @@
 |---|---|---|---|---|---|---|---|
 | [x] | 5.8 条件查频道 | `im_channel_query`→`channel/query` | `partials/2 channel/query`(条件分页) | `read_relay::emit_read_result`(读族透传·im:read:result) | data-channel-id 列表(③ N/A 读族) | N/A(读族只读) | S |
 | [x] | 11.1 维护公司大群 | `im_team_upsert`→`teams/upsert` | `partials/3 teams/upsert` | `emit_channel_created`/`emit_channel_update`(公司大群) | data-channel-id(team 大群) | `channel` | M |
-| [x] | 11.2 退出公司 ✅①L1+②④源 L2绿(issue #40/#48·quit_company 广播留存成员) | `im_team_quit`→`teams/member/quit`(DELETE) + WS `quit_company` | `partials/3 teams/member/quit`✅ | quit_company 多播留存成员(B侧观测) | channel/member 行移除(B侧) | `channel_member` 删(B侧) | M |
+| [2] | 11.2 退出公司 历史绿证保留·当前收口 partial/L2-required（见 `all-uc-real-chain-status.md` / final report；issue #40/#48·quit_company 广播留存成员） | `im_team_quit`→`teams/member/quit`(DELETE) + WS `quit_company` | `partials/3 teams/member/quit`✅ | quit_company 多播留存成员(B侧观测) | channel/member 行移除(B侧) | `channel_member` 删(B侧) | M |
 | [x] | 12.1 健康探针(1 面①) | `im_health`→`GET /health` | `partials/3 health` | (无投影) | data-health(可选) | (无落库) | ✅ ① 全绿·issue #41·corr_key=req_id |
 
 ## 阶段 L2 · 双账号广播（需第二真实连接·feasible·L1 稳后专批）
