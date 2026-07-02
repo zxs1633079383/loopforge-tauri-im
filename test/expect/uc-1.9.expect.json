@@ -64,7 +64,8 @@
       "sendStatus",
       "reactions",
       "templateReceived",
-      "systemNotice"
+      "systemNotice",
+      "pinned"
     ],
     "_note": "projection-schema §1 emit_post_updated fat 完整集（13 键）。**契约更正**：加急 post_update 走 type2 编辑路径 emit im:post:updated（fat 13 键·props 由 gate 合成 {channel_event_seq}）。projection-schema line186 明确：业务扩展字段（expediteMap…）**不吐**（HX-C005 热路径回读铁律·吐了须扩 PostFields 碰 parser 热路径）→ 加急标记**不在 post 投影**，权威在 DB message.expedite_map 列 + channel 表 urgent 列（line188：前端按 msg_id 回读）。原 _note「props.expediteMap 透传」与 line186 矛盾·已纠正。缺/多即 fail（FixB 反转：少一字段=漂移）。"
   },

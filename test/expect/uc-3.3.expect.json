@@ -44,7 +44,8 @@
       "sendStatus",
       "reactions",
       "templateReceived",
-      "systemNotice"
+      "systemNotice",
+      "pinned"
     ],
     "_note": "projection-schema §1 emit_post_updated → im:post:updated，data 键集 == fat 完整 13 键（同 emit_post_received）。缺/多即 fail。在线主路径：WS post_update action（updateAt bump · updateBy=SYS · props.template.userIds 含 self userId）→ gate EventKind::PostEdit → emit_post_updated。props 内含 template.userIds（已收回执列表），但 oracle 锁键集到顶层 13 键（props 作单字段·内部 template 结构由 DB/④ 面 + dataValues 可选断言核，避免把后端可变 props 子结构硬编进冻结契约）。"
   },

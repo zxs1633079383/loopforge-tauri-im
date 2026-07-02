@@ -28,7 +28,7 @@ export interface BusPayload {
  * 渲染核（camelCase）：temporaryId / channelId / userId / type / message /
  *                      props / createAt / updateAt / readBits / viewers
  * render-ready 终态（issue #53·C013 业务下沉 helix·壳纯绑定）：
- *   sendStatus / reactions / templateReceived / systemNotice
+ *   sendStatus / reactions / templateReceived / systemNotice / pinned
  */
 export interface MessageItemData {
   // —— 信号锚（snake_case，helix 自造）——
@@ -56,6 +56,8 @@ export interface MessageItemData {
   templateReceived: boolean;
   /** 系统通知行（helix 判 type∈NOTICE_TYPES）。data-system-notice 渲染源。 */
   systemNotice: boolean;
+  /** 消息置顶态（post_pin handler 下沉 props.pinned；无该语义时为 null）。data-pinned 渲染源。 */
+  pinned: boolean | null;
 }
 
 /**

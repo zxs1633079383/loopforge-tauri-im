@@ -47,7 +47,8 @@
       "sendStatus",
       "reactions",
       "templateReceived",
-      "systemNotice"
+      "systemNotice",
+      "pinned"
     ],
     "_note": "projection-schema §1 emit_post_updated fat 完整集（13 键）。quickReply WS action=post_update 触发此投影；props 内携 quickReply:[{emoji, userIds:[self]}]（由 Go 组装）。缺/多字段即 fail（spec06 FixB）。"
   },

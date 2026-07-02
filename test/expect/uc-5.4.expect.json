@@ -47,7 +47,8 @@
       "sendStatus",
       "reactions",
       "templateReceived",
-      "systemNotice"
+      "systemNotice",
+      "pinned"
     ],
     "dataValues": {
       "type": "NOTICE",

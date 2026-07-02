@@ -9,19 +9,16 @@
     "dom": "docs/spec/send-message-vertical-slice.md § revoke 行表现（data-revoke=1）；壳 applyPostDeleted → markRevokedById 命中 server id 标行",
     "storage": "N/A — 离线 PostRevoke 重放是 projection-only（emit_post_deleted 不带 storage effect）；message.revoke 列由更早的在线撤回写入·非本重放路径。本 UC 不裁 ④。"
   },
-
   "corrAnchor": {
     "note": "领域锚：撤回目标的 server_id（sid）由 e2e setup 阶段发消息后捕获·运行时填实值覆写本字段。reducer 按 sid（msg_id 别名）+ ch 锁定 im:post:deleted 束。",
     "ch": null,
     "sid": null
   },
-
   "outbound": {
     "method": "*",
     "urlEndsWith": "*",
     "_note": "① N/A：离线 gap-replay 无 per-post 出站命令（撤回命令在 setup 阶段已发·属在线分支）；重放靠冷启动批量 increment。method/url=* 声明本 UC ① N/A（reducer diffOutbound N/A 分支·守可证伪：本 UC 不靠 ① 裁绿）。"
   },
-
   "projection": {
     "event": "im:post:deleted",
     "dataKeys": [
@@ -41,16 +38,15 @@
       "sendStatus",
       "reactions",
       "templateReceived",
-      "systemNotice"
+      "systemNotice",
+      "pinned"
     ],
     "_note": "projection-schema §1：离线撤回 emit_post_deleted = fat MessageItemData（17 键·与 im:post:received 同 message_item_data 形态）。冷启动 increment 重放 PostRevoke 事件触发。键集严格对齐（多/缺即红）。"
   },
-
   "storage": {
     "optional": true,
     "_note": "④ N/A：离线 PostRevoke 重放 projection-only（emit_post_deleted 无 storage effect）。message 行 revoke 状态来自 setup 在线撤回的更早写入（DB 持久）·非本重放路径产物。reducer 不裁 ④（optional）。"
   },
-
   "dom": {
     "dataAttrs": {
       "revoke": "1"

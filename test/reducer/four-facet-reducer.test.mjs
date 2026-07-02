@@ -452,7 +452,8 @@ console.log('· UC-1.9 加急两阶段 outbound（urgentPost + urgentConfirm 同
       payload: { event: 'im:post:updated', data: {
         channel_id: CH, event_seq: 9, msg_id: SID, temporaryId: '', channelId: CH, userId: '444',
         type: 'TEXT', message: '', props: '{}', createAt: 1, updateAt: 2, readBits: '0', viewers: [],
-        sendStatus: 'sent', reactions: null, templateReceived: false, systemNotice: false } } }),
+        sendStatus: 'sent', reactions: null, templateReceived: false, systemNotice: false,
+        pinned: null } } }),
     // ④ 落库 message 行（加急 = type2 edit_content_op patch → batch_update·非 upsert）。
     JSON.stringify({ run_id: 'r', uc_id: 'UC-1.9', facet: 'storage', hop: 'storage', seq: 4,
       corr_key: `ch=${CH};sid=${SID}`,

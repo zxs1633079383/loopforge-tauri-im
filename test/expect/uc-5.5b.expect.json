@@ -46,7 +46,8 @@
       "sendStatus",
       "reactions",
       "templateReceived",
-      "systemNotice"
+      "systemNotice",
+      "pinned"
     ],
     "_note": "projection-schema §1 emit_post_updated → im:post:updated·data 键集 == fat 完整 13 键（同 emit_post_received·缺/多即 fail）。在线主路径：WS post_pin action（payload=pinned post 信息）→ 实现 phase 经 emit_post_updated 投出（pinned 态落 props·post-targeted sid 锚）。oracle 锁键集到顶层 13 键（props 作单字段·内部 pinned 子结构由 DB/④ 面核·避免把后端可变 props 子结构硬编进冻结契约）。**⛔ backend-down (2026-06-26)**：post_pin WS 帧依赖 cses-java 业务广播链（7091/3391=000·JDWP suspend）→ 当前不可观测·② 待 cses-java 恢复后真跑裁定·禁伪造绿。**当前 helix 真源**：ws/handlers/post_pin.rs 为 graceful no-op（待实现 phase 按用户拍板接 emit_post_updated·C004 红转绿改实现不改本 oracle）。"
   },

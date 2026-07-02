@@ -57,7 +57,8 @@
       "sendStatus",
       "reactions",
       "templateReceived",
-      "systemNotice"
+      "systemNotice",
+      "pinned"
     ],
     "_note": "projection-schema §1 emit_post_received fat完整集（13键，同UC-1.1）。缺/多即fail（FixB反转：少一字段=漂移）。命名陷阱createAt非createdAt已由键集锁定。type必为DOCUMENT原样透传。"
   },

@@ -2172,7 +2172,7 @@ export class ImStoreService {
     const temporaryId = d.temporaryId ?? "";
     const serverId = d.msg_id ?? "";
     const eventSeq = typeof d.event_seq === "number" ? d.event_seq : null;
-    const readBits = this.toReadBits(d.readBits);
+    const readBits = d.readBits === undefined || d.readBits === null ? null : this.toReadBits(d.readBits);
     const echoCh = d.channelId ?? d.channel_id ?? "";
 
     // O(1) 锚定位：带 ch → 严格 (tmp,ch)；不带 ch → 纯 tmp；无 tmp → server id。
@@ -2196,7 +2196,7 @@ export class ImStoreService {
                 eventSeq,
                 // sendStatus：helix render-ready 终态（恒 "sent"·入库成功=消息收到·取消转圈）。
                 sendStatus: this.toSendStatus(d.sendStatus),
-                readBits,
+                readBits: readBits ?? r.readBits,
                 text: d.message ?? r.text,
                 // type：helix render-ready（空串已容错 TEXT·壳不再 `|| "TEXT"` 兜底）。
                 type: d.type ?? r.type,
@@ -2208,6 +2208,8 @@ export class ImStoreService {
                 templateReceived: d.templateReceived ? true : r.templateReceived,
                 // systemNotice：helix 判定直绑（命中置位·非系统 echo 不抹既有态）。
                 systemNotice: d.systemNotice ? true : r.systemNotice,
+                // pinned：post_pin 明确 boolean 时更新；普通消息事件 pinned=null 时不抹既有态。
+                pinned: typeof d.pinned === "boolean" ? (d.pinned || undefined) : r.pinned,
               }
             : r,
         ),
@@ -2235,13 +2237,14 @@ export class ImStoreService {
       channelId: d.channelId ?? d.channel_id ?? "",
       eventSeq,
       sendStatus: this.toSendStatus(d.sendStatus),
-      readBits,
+      readBits: readBits ?? "",
       text: d.message ?? "",
       type: d.type ?? "TEXT",
       userId: d.userId || undefined,
       reactions: d.reactions ?? undefined,
       templateReceived: d.templateReceived || undefined,
       systemNotice: d.systemNotice || undefined,
+      pinned: typeof d.pinned === "boolean" ? (d.pinned || undefined) : undefined,
     };
     this._rows.update((rows) => [...rows, row]);
     this.rememberRowAnchors(row);
