@@ -35,7 +35,7 @@ BASE_URL_JAVA = "http://localhost:3399"   # cses-java（vote/average）
 COOKIE_ID = os.environ.get("COOKIE_ID", "444")
 COOKIE_ID_B = os.environ.get("MEMBER_B", "678")
 COMPANY_ID = os.environ.get("COMPANY_ID", "64118eebd2b665246b7880eb")
-TEAM_ID = os.environ.get("TEAM_ID", "__REPLACE_TEAM_ID__")
+TEAM_ID = os.environ.get("TEAM_ID", COMPANY_ID)
 
 _token_cache: str = ""
 
@@ -269,22 +269,6 @@ def set_steps(scenario_id: int, steps: list[dict]) -> None:
         af("test-scenario", "update", str(scenario_id), "--file", tmpfile)
     finally:
         os.unlink(tmpfile)
-
-
-def make_and_fill(
-    suite_id: int,
-    name: str,
-    description: str,
-    steps: list[dict],
-    priority: int = 1,
-) -> int | None:
-    """一步完成：建场景 → 填步骤 → 加入测试套件。"""
-    sid = create_scenario(name, description, priority)
-    if sid is None:
-        return None
-    set_steps(sid, steps)
-    af("test-suite", "update", str(suite_id), "--add-scenario", str(sid))
-    return sid
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1207,9 +1191,6 @@ def main() -> None:
         print(f"  运行套件命令（单行，--environment 接环境ID）：")
         print(f"    apifox test-suite run {suite_id} --project {PROJECT_ID} --access-token $APIFOX_TOKEN --environment {env_id}")
     print()
-    if TEAM_ID == "__REPLACE_TEAM_ID__":
-        print("  ⚠️  TEAM_ID 未设置！请运行前设置：")
-        print("     export TEAM_ID=<your_teamId>")
     print("\n完成！在 Apifox 桌面端刷新项目可看到新场景和套件。")
 
 

@@ -3,11 +3,18 @@ import {
   Component,
   OnDestroy,
   OnInit,
+  ViewEncapsulation,
   inject,
 } from "@angular/core";
-import { FormsModule } from "@angular/forms";
 import { ImStoreService } from "./im/im-store.service";
 import { MessageRow } from "./im/message-row.model";
+import { ImAuxPanelComponent } from "./im/ui/im-aux-panel.component";
+import { ImChannelListComponent } from "./im/ui/im-channel-list.component";
+import { ImComposerComponent } from "./im/ui/im-composer.component";
+import { ImMemberPanelComponent } from "./im/ui/im-member-panel.component";
+import { ImMessageListComponent } from "./im/ui/im-message-list.component";
+import { ImServerRailComponent } from "./im/ui/im-server-rail.component";
+import { ImStatusBarComponent } from "./im/ui/im-status-bar.component";
 
 /**
  * LoopForge IM 薄壳根组件 —— 6 语义区骨架（issue #46 · spec docs/spec/angular-ui-plan.md）。
@@ -22,14 +29,23 @@ import { MessageRow } from "./im/message-row.model";
  *  - 事件必配组件方法：模板每加 (click)="fn()" → 同 commit 加 fn()（否则 ng serve 假死）。
  *  - 未设字段不渲染该属性：[attr.data-x]="m.x ?? null"（null → Angular 不渲染）。
  *
- * 交互件方法当前多为**占位骨架**（仅保证模板编译 + 事件挂载位就绪），
- * 真实 invoke 由各 UC issue（#7-#45）逐个接通。已绿的 onSend/onSendDocument 走真实 store 流。
+ * 交互件方法走真实 store/Tauri invoke；测试只允许经 UI 或 `window.__lf.invoke`
+ * 打到 helix 指令，不允许直接改前端内存态造假。
  */
 @Component({
   selector: "app-root",
   standalone: true,
-  imports: [FormsModule],
+  imports: [
+    ImAuxPanelComponent,
+    ImChannelListComponent,
+    ImComposerComponent,
+    ImMemberPanelComponent,
+    ImMessageListComponent,
+    ImServerRailComponent,
+    ImStatusBarComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  encapsulation: ViewEncapsulation.None,
   template: `
     <main
       class="im"
@@ -38,633 +54,174 @@ import { MessageRow } from "./im/message-row.model";
       [attr.data-health]="store.health() || null"
     >
       <!-- ═══ H 状态指示区 ═══ -->
-      <header class="im__hd" data-testid="status-bar">
-        <span>LoopForge IM</span>
-        <span class="im__ready" [attr.data-ready]="store.ready()">
-          {{ store.ready() ? "ready" : "loading…" }}
-        </span>
-        <button
-          class="im__mini"
-          type="button"
-          data-testid="health-btn"
-          (click)="onHealth()"
-        >health</button>
-        <button
-          class="im__mini"
-          type="button"
-          data-testid="read-channel-btn"
-          [disabled]="!store.activeChannel()"
-          (click)="onReadChannel()"
-        >已读</button>
-      </header>
+      <app-im-status-bar
+        [ready]="store.ready()"
+        [activeChannel]="store.activeChannel()"
+        (healthClick)="onHealth()"
+        (readChannelClick)="onReadChannel()"
+      />
 
       <div class="im__body">
         <!-- ═══ SR 服务器栏（装饰·无 data-*·Discord 视觉）═══ -->
-        <nav class="im__rail" aria-hidden="true">
-          <div class="im__rail-home">L</div>
-          <div class="im__rail-div"></div>
-          @for (s of serverIcons; track s) {
-            <div class="im__rail-srv">{{ s }}</div>
-          }
-          <div class="im__rail-add">+</div>
-        </nav>
-        <!-- ═══ CL 频道列表区 ═══ -->
-        <aside class="im__col im__channels" data-testid="channel-list">
-          <div class="im__col-hd">
-            <span>频道</span>
-            <button
-              class="im__mini"
-              type="button"
-              data-testid="create-channel-btn"
-              (click)="onCreateChannel()"
-            >+群</button>
-            <button
-              class="im__mini"
-              type="button"
-              data-testid="query-channel-btn"
-              (click)="onQueryChannels()"
-            >查</button>
-            <button
-              class="im__mini"
-              type="button"
-              data-testid="online-status-btn"
-              (click)="onOnlineStatus()"
-            >在线</button>
-            <button
-              class="im__mini"
-              type="button"
-              data-testid="modules-get-all-btn"
-              (click)="onModulesGetAll()"
-            >模块</button>
-            <button
-              class="im__mini"
-              type="button"
-              data-testid="announcement-list-btn"
-              (click)="onAnnouncementList()"
-            >公告列</button>
-            <button
-              class="im__mini"
-              type="button"
-              data-testid="announcement-save-btn"
-              (click)="onAnnouncementSave()"
-            >存公告</button>
-            <button
-              class="im__mini"
-              type="button"
-              data-testid="sync-channels-btn"
-              (click)="onSyncChannels()"
-            >同步</button>
-            <button
-              class="im__mini"
-              type="button"
-              data-testid="team-upsert-btn"
-              (click)="onTeamUpsert()"
-            >团队</button>
-          </div>
-          @for (c of store.channels(); track c.channelId) {
-            <div
-              class="ch"
-              [class.ch--active]="c.channelId === store.activeChannel()"
-              [attr.data-channel-id]="c.channelId"
-              [attr.data-channel-type]="c.channelType ?? null"
-              [attr.data-channel-display-name]="c.displayName ?? null"
-              [attr.data-channel-notice]="c.notice ?? null"
-              [attr.data-channel-top]="c.top ? '1' : null"
-              [attr.data-unread]="c.unread ?? null"
-              [attr.data-last-message]="c.lastMessage ?? null"
-              [attr.data-urgent]="c.urgent ? '1' : null"
-              [attr.data-mention]="c.mention ? '1' : null"
-              [attr.data-has-schedule-post]="c.hasSchedule ? 'true' : null"
-              [attr.data-active-channel]="
-                c.channelId === store.activeChannel() ? '1' : null
-              "
-              (click)="onSelectChannel(c.channelId)"
-            >
-              <span class="ch__name">{{ c.displayName || c.channelId }}</span>
-              <span class="ch__ops">
-                <input
-                  class="im__mini-input"
-                  type="text"
-                  data-testid="change-channel-name-input"
-                  placeholder="新群名"
-                  #chNameInput
-                  (click)="$event.stopPropagation()"
-                />
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="change-channel-btn"
-                  (click)="
-                    $event.stopPropagation();
-                    onChangeChannel(c, 'displayName', chNameInput.value)
-                  "
-                >改名</button>
-                <input
-                  class="im__mini-input"
-                  type="text"
-                  data-testid="change-channel-notice-input"
-                  placeholder="公告"
-                  #chNoticeInput
-                  (click)="$event.stopPropagation()"
-                />
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="change-channel-notice-btn"
-                  (click)="
-                    $event.stopPropagation();
-                    onChangeChannel(c, 'notice', chNoticeInput.value)
-                  "
-                >公告</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="change-channel-top-btn"
-                  (click)="
-                    $event.stopPropagation();
-                    onChangeChannel(c, 'top', c.top ? '0' : '1')
-                  "
-                >{{ c.top ? '取消置顶' : '置顶' }}</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="close-channel-btn"
-                  (click)="onCloseChannel(c)"
-                >×</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="team-quit-btn"
-                  (click)="onTeamQuit(c)"
-                >退</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="ensure-channel-loaded-btn"
-                  (click)="$event.stopPropagation(); onEnsureChannelLoaded(c)"
-                >兜底</button>
-              </span>
-            </div>
-          }
-        </aside>
+        <app-im-server-rail [serverIcons]="serverIcons" />
+        <app-im-channel-list
+          [channels]="store.channels()"
+          [activeChannel]="store.activeChannel()"
+          (createChannelClick)="onCreateChannel()"
+          (queryChannelsClick)="onQueryChannels()"
+          (onlineStatusClick)="onOnlineStatus()"
+          (modulesGetAllClick)="onModulesGetAll()"
+          (announcementListClick)="onAnnouncementList()"
+          (announcementSaveClick)="onAnnouncementSave()"
+          (syncChannelsClick)="onSyncChannels()"
+          (teamUpsertClick)="onTeamUpsert()"
+          (selectChannel)="onSelectChannel($event)"
+          (changeChannel)="onChangeChannel($event.channel, $event.field, $event.value)"
+          (closeChannel)="onCloseChannel($event)"
+          (teamQuit)="onTeamQuit($event)"
+          (ensureChannelLoaded)="onEnsureChannelLoaded($event)"
+        />
 
-        <!-- ═══ ML 消息列表区（现状已绿·形态禁改·加法式扩待加 data-*）═══ -->
-        <section class="im__col im__list" data-testid="msg-list">
-          <button
-            class="im__mini im__load-older"
-            type="button"
-            data-testid="load-older-btn"
-            [disabled]="!store.activeChannel()"
-            (click)="onLoadOlder()"
-          >↑ 更早</button>
-          @for (m of store.rows(); track m.temporaryId) {
-            <div
-              class="msg"
-              [class.msg--sending]="m.sendStatus === 'sending'"
-              [class.msg--failed]="m.sendStatus === 'failed'"
-              [class.msg--revoked]="m.revoked"
-              [class.msg--highlighted]="m.highlighted"
-              [attr.data-msg-id]="m.msgId"
-              [attr.data-temporary-id]="m.temporaryId"
-              [attr.data-channel-id]="m.channelId"
-              [attr.data-event-seq]="m.eventSeq === null ? '' : m.eventSeq"
-              [attr.data-send-status]="m.sendStatus"
-              [attr.data-read-bits]="m.readBits"
-              [attr.data-revoke]="m.revoked ? '1' : null"
-              [attr.data-highlighted]="m.highlighted ? 'true' : null"
-              [attr.data-type]="m.type"
-              [attr.data-urgent]="m.urgent ? '1' : null"
-              [attr.data-reactions]="m.reactions ?? null"
-              [attr.data-template-received]="m.templateReceived ? '1' : null"
-              [attr.data-reply-id]="m.replyId ?? null"
-              [attr.data-pinned]="m.pinned ? '1' : null"
-              [attr.data-system-notice]="m.systemNotice ? '1' : null"
-              [attr.data-vote]="m.vote ?? null"
-              [attr.data-average]="m.average ?? null"
-            >
-              <div
-                class="msg__avatar"
-                [style.background]="avatarColor(m.userId)"
-                [attr.data-user-id]="m.userId ?? null"
-              >{{ avatarInitial(m.userId) }}</div>
-              <div class="msg__body">
-                <div class="msg__head">
-                  <span class="msg__author">{{ authorName(m.userId) }}</span>
-                  <span class="msg__time">{{ shortTime(m.createAt) }}</span>
-                </div>
-                <span class="msg__text">{{ m.text }}</span>
-                <span class="msg__ops">
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="revoke-btn"
-                  (click)="onRevoke(m)"
-                >撤</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="read-post-btn"
-                  (click)="onPostRead(m)"
-                >读</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="template-received-btn"
-                  (click)="onTemplateReceived(m)"
-                >收</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="quick-reply-btn"
-                  (click)="onQuickReply(m, '👍')"
-                >👍</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="forward-btn"
-                  (click)="onForward(m, [])"
-                >转</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="make-topic-btn"
-                  (click)="onMakeTopic(m)"
-                >话题</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="urgent-btn"
-                  (click)="onUrgentPost(m)"
-                >急</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="urgent-confirm-btn"
-                  (click)="onUrgentConfirm(m)"
-                >确</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="locate-btn"
-                  data-role="locate-post"
-                  (click)="onLocate(m)"
-                >定位</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="reply-drawer-btn"
-                  data-role="open-reply-drawer"
-                  (click)="onLoadReplies(m)"
-                >回</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="reply-branch-btn"
-                  data-role="open-reply-branch"
-                  (click)="onLoadReplyBranch(m)"
-                >支</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="bookmark-create-btn"
-                  (click)="onCreateBookmark(m)"
-                >藏</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="bookmark-delete-btn"
-                  (click)="onDeleteBookmark(m)"
-                >弃藏</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="post-pin-btn"
-                  (click)="onPinMessage(m)"
-                >顶</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="announcement-accept-list-btn"
-                  (click)="onAnnouncementAcceptList(m)"
-                >受</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="announcement-detail-btn"
-                  (click)="onAnnouncementDetail(m)"
-                >详公</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="announcement-read-btn"
-                  (click)="onAnnouncementRead(m)"
-                >阅公</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="announcement-delete-btn"
-                  (click)="onAnnouncementDelete(m)"
-                >删公</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="vote-create-btn"
-                  (click)="onCreateVote(m)"
-                >投</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="vote-do-btn"
-                  (click)="onSubmitVote(m)"
-                >选</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="vote-read-btn"
-                  (click)="onReadVote(m)"
-                >看</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="vote-close-btn"
-                  (click)="onCloseVote(m)"
-                >截</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="vote-delete-btn"
-                  (click)="onDeleteVote(m)"
-                >删投</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="average-publish-btn"
-                  (click)="onPublishAverage(m)"
-                >评</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="average-attend-btn"
-                  (click)="onAttendAverage(m)"
-                >打分</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="average-read-btn"
-                  (click)="onReadAverage(m)"
-                >看分</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="average-close-btn"
-                  (click)="onCloseAverage(m)"
-                >截分</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="average-delete-btn"
-                  (click)="onDeleteAverage(m)"
-                >删分</button>
-                @if (m.sendStatus === "failed") {
-                  <button
-                    class="im__mini"
-                    type="button"
-                    data-testid="resend-btn"
-                    (click)="onResend(m)"
-                  >重发</button>
-                }
-              </span>
-              </div>
-            </div>
-          }
-        </section>
+        <app-im-message-list
+          [rows]="store.rows()"
+          [activeChannel]="store.activeChannel()"
+          (loadOlderClick)="onLoadOlder()"
+          (revokeClick)="onRevoke($event)"
+          (postReadClick)="onPostRead($event)"
+          (templateReceivedClick)="onTemplateReceived($event)"
+          (quickReplyClick)="onQuickReply($event.row, $event.emoji)"
+          (forwardClick)="onForward($event.row, $event.targetChannels)"
+          (makeTopicClick)="onMakeTopic($event)"
+          (urgentPostClick)="onUrgentPost($event)"
+          (urgentConfirmClick)="onUrgentConfirm($event)"
+          (locateClick)="onLocate($event)"
+          (loadRepliesClick)="onLoadReplies($event)"
+          (loadReplyBranchClick)="onLoadReplyBranch($event)"
+          (bookmarkCreateClick)="onCreateBookmark($event)"
+          (bookmarkDeleteClick)="onDeleteBookmark($event)"
+          (postPinClick)="onPinMessage($event)"
+          (announcementAcceptListClick)="onAnnouncementAcceptList($event)"
+          (announcementDetailClick)="onAnnouncementDetail($event)"
+          (announcementReadClick)="onAnnouncementRead($event)"
+          (announcementDeleteClick)="onAnnouncementDelete($event)"
+          (voteCreateClick)="onCreateVote($event)"
+          (voteSubmitClick)="onSubmitVote($event)"
+          (voteReadClick)="onReadVote($event)"
+          (voteCloseClick)="onCloseVote($event)"
+          (voteDeleteClick)="onDeleteVote($event)"
+          (averagePublishClick)="onPublishAverage($event)"
+          (averageAttendClick)="onAttendAverage($event)"
+          (averageReadClick)="onReadAverage($event)"
+          (averageCloseClick)="onCloseAverage($event)"
+          (averageDeleteClick)="onDeleteAverage($event)"
+          (resendClick)="onResend($event)"
+        />
 
         <!-- ═══ MB 成员区 ═══ -->
-        <aside
-          class="im__col im__members"
-          data-testid="member-list"
-          [attr.data-member-count]="store.members().length"
-          [attr.data-members]="store.membersAttr() || null"
-        >
-          <div class="im__col-hd">
-            <span>成员</span>
-            <button
-              class="im__mini"
-              type="button"
-              data-testid="load-members-btn"
-              (click)="onLoadMembers()"
-            >载</button>
-            <input
-              class="im__mini-input"
-              type="text"
-              data-testid="change-member-input"
-              placeholder="成员id"
-              #memChangeInput
-            />
-            <button
-              class="im__mini"
-              type="button"
-              data-testid="change-member-btn"
-              (click)="onChangeMember('join', memChangeInput.value)"
-            >拉</button>
-            <button
-              class="im__mini"
-              type="button"
-              data-testid="kick-member-btn"
-              (click)="onChangeMember('leave', memChangeInput.value)"
-            >踢</button>
-          </div>
-          @for (mem of store.members(); track mem.memberId) {
-            <div
-              class="mem"
-              [attr.data-member-id]="mem.memberId"
-              [attr.data-admin]="mem.admin ? '1' : null"
-              [attr.data-nickname]="mem.nickname ?? null"
-            >
-              <div
-                class="mem__avatar"
-                [style.background]="avatarColor(mem.memberId)"
-              >{{ avatarInitial(mem.memberId) }}</div>
-              <span class="mem__name">{{ mem.nickname || mem.memberId }}</span>
-              @if (mem.admin) {
-                <span class="mem__crown" title="管理员">♛</span>
-              }
-              <span class="mem__ops">
-                <input
-                  class="im__mini-input"
-                  type="text"
-                  data-testid="change-nickname-input"
-                  placeholder="昵称"
-                  #memNickInput
-                  (click)="$event.stopPropagation()"
-                />
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="change-nickname-btn"
-                  (click)="
-                    $event.stopPropagation();
-                    onChangeNickname(mem.memberId, memNickInput.value)
-                  "
-                >名</button>
-                <button
-                  class="im__mini"
-                  type="button"
-                  data-testid="change-manger-btn"
-                  (click)="onChangeManger(mem.memberId, !mem.admin)"
-                >管</button>
-              </span>
-            </div>
-          }
-        </aside>
+        <app-im-member-panel
+          [members]="store.members()"
+          [membersAttr]="store.membersAttr()"
+          (loadMembersClick)="onLoadMembers()"
+          (memberChange)="onChangeMember($event.action, $event.memberId)"
+          (nicknameChange)="onChangeNickname($event.memberId, $event.nickname)"
+          (managerChange)="onChangeManger($event.memberId, $event.set)"
+        />
       </div>
 
-      <!-- ═══ AX 辅助区（抽屉显隐·按 UC 填）═══ -->
-      <section class="im__aux" data-testid="aux-area">
-        <div
-          class="im__panel"
-          data-testid="bookmark-panel"
-          [attr.data-bookmark]="store.bookmarks().length"
-        >
-          <button
-            class="im__mini"
-            type="button"
-            data-testid="bookmark-btn"
-            (click)="onBookmark()"
-          >书签</button>
-          @for (b of store.bookmarks(); track b.bookmarkId) {
-            <span class="aux-chip" [attr.data-bookmark-id]="b.bookmarkId"></span>
-          }
-        </div>
-        <div class="im__panel" data-testid="todo-panel">
-          @for (t of store.todos(); track t.todoId) {
-            <span
-              class="aux-chip"
-              [attr.data-todo-id]="t.todoId"
-              [attr.data-todo-type]="t.todoType ?? null"
-              [attr.data-todo-can-del]="t.canDel ? '1' : null"
-            ></span>
-          }
-        </div>
-        <div class="im__panel" data-testid="reply-drawer">
-          @for (r of store.replies(); track r.replyId) {
-            <span class="aux-chip" [attr.data-reply-id]="r.replyId"></span>
-          }
-        </div>
-      </section>
+      <app-im-aux-panel
+        [bookmarks]="store.bookmarks()"
+        [todos]="store.todos()"
+        [replies]="store.replies()"
+        (bookmarkClick)="onBookmark()"
+      />
 
-      <!-- ═══ CP composer ═══ -->
-      <footer class="im__compose">
-        <input
-          class="im__input"
-          type="text"
-          data-testid="compose-input"
-          data-role="composer-input"
-          placeholder="输入消息…"
-          [(ngModel)]="draft"
-          (keydown.enter)="onSend()"
-        />
-        <button
-          class="im__send"
-          type="button"
-          data-testid="send-btn"
-          [disabled]="!store.activeChannel()"
-          (click)="onSend()"
-        >发送</button>
-        <button
-          class="im__send"
-          type="button"
-          data-testid="send-document-btn"
-          [disabled]="!store.activeChannel()"
-          (click)="onSendDocument()"
-        >文档</button>
-        <button
-          class="im__send"
-          type="button"
-          data-testid="send-urgent-btn"
-          [disabled]="!store.activeChannel()"
-          (click)="onSendUrgent()"
-        >加急</button>
-        <button
-          class="im__mini"
-          type="button"
-          data-testid="schedule-btn"
-          [disabled]="!store.activeChannel()"
-          (click)="onSchedule()"
-        >定时</button>
-        <button
-          class="im__mini"
-          type="button"
-          data-testid="cancel-schedule-btn"
-          [disabled]="!store.activeChannel()"
-          (click)="onCancelSchedule()"
-        >取消定时</button>
-        <button
-          class="im__mini"
-          type="button"
-          data-testid="read-channel-btn"
-          [disabled]="!store.activeChannel()"
-          (click)="onReadChannel()"
-        >会话已读</button>
-      </footer>
+      <app-im-composer
+        [activeChannel]="store.activeChannel()"
+        [(draft)]="draft"
+        (sendClick)="onSend()"
+        (sendDocumentClick)="onSendDocument()"
+        (sendUrgentClick)="onSendUrgent()"
+        (scheduleClick)="onSchedule()"
+        (cancelScheduleClick)="onCancelSchedule()"
+        (readChannelClick)="onReadChannel()"
+      />
     </main>
   `,
   styles: [
     `
-      /* Discord 深色皮肤（Pencil loopforge-im.pen 视觉规格）·纯 CSS reskin·键到既有
-         class·零 markup 改动→data-attr 与 data-testid 契约不动（注：注释内禁出现星号加斜杠） */
+      /* pd.cses7 消息页风格 reskin：暗顶栏/侧栏 + 浅色会话列表/消息流，保留语义 DOM 锚点。 */
       .im {
-        --bg-deepest: #1e1f22; --bg-darker: #2b2d31; --bg-base: #313338;
-        --bg-input: #383a40; --bg-hover: #35373c; --bg-active: #404249;
-        --txt: #f2f3f5; --txt-2: #b5bac1; --txt-3: #949ba4; --muted: #80848e;
-        --accent: #5865f2; --green: #23a55a; --red: #f23f43; --yellow: #f0b232;
-        --divider: #1f2023;
+        --top: #292637; --rail: #312e42; --surface: #ffffff; --panel: #f5f6fa;
+        --canvas: #f1f4f8; --hover: #f3f5f8; --active: #e6e9ef; --bubble: #ffffff;
+        --txt: #1f2430; --txt-2: #5b6472; --txt-3: #8a94a3; --muted: #a6afbc;
+        --accent: #4d5cf2; --cyan: #16c7c8; --green: #22a06b; --red: #ef4444;
+        --yellow: #f6a623; --divider: #e5e8ef;
         display: flex; flex-direction: column; height: 100vh;
-        background: var(--bg-base); color: var(--txt);
-        font-family: Inter, "gg sans", -apple-system, "Segoe UI", system-ui, sans-serif;
-        font-size: 15px;
+        background: var(--canvas); color: var(--txt);
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        font-size: 14px; letter-spacing: 0;
       }
+      app-im-server-rail, app-im-channel-list, app-im-message-list, app-im-member-panel,
+      app-im-aux-panel, app-im-composer { display: contents; }
       .im__hd {
         display: flex; gap: 12px; align-items: center;
-        padding: 11px 16px; background: var(--bg-darker);
-        border-bottom: 1px solid var(--divider);
-        font-weight: 700; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+        min-height: 56px; padding: 0 16px; background: var(--top); color: #fff;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        font-weight: 700; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);
       }
-      .im__ready { font-size: 12px; color: var(--txt-3); font-weight: 600; }
+      .im__ready { font-size: 12px; color: #b9b8c8; font-weight: 600; }
       .im__ready[data-ready="true"] { color: var(--green); }
       .im__body { flex: 1; display: flex; min-height: 0; }
       .im__col { overflow-y: auto; }
       .im__col::-webkit-scrollbar { width: 8px; }
-      .im__col::-webkit-scrollbar-thumb { background: #1a1b1e; border-radius: 4px; }
-      .im__channels { width: 232px; background: var(--bg-darker); padding: 8px; }
-      .im__members { width: 232px; background: var(--bg-darker); padding: 8px; }
-      .im__list { flex: 1; background: var(--bg-base); padding: 12px 0; }
+      .im__col::-webkit-scrollbar-thumb { background: #c8ced8; border-radius: 4px; }
+      .im__channels {
+        width: 330px; background: var(--surface); padding: 12px 18px;
+        border-right: 1px solid var(--divider);
+      }
+      .im__members {
+        width: 184px; background: var(--panel); padding: 12px;
+        border-left: 1px solid var(--divider);
+      }
+      .im__list { flex: 1; background: var(--canvas); padding: 10px 0 88px; }
       .im__col-hd {
         display: flex; gap: 4px; align-items: center; flex-wrap: wrap;
-        font-size: 11px; font-weight: 700; text-transform: uppercase;
-        letter-spacing: 0.02em; color: var(--txt-3); padding: 6px 8px; margin-bottom: 4px;
+        font-size: 18px; font-weight: 700; color: var(--txt); padding: 0 0 12px; margin-bottom: 4px;
       }
       .ch, .mem {
-        position: relative; display: flex; justify-content: space-between;
-        align-items: center; gap: 8px; padding: 7px 8px; margin: 1px 0;
-        border-radius: 4px; cursor: pointer; color: var(--txt-3);
-        font-size: 15px; font-weight: 500;
+        position: relative; display: flex; align-items: center; gap: 10px;
+        padding: 10px 8px; margin: 0; border-radius: 6px; cursor: pointer;
+        color: var(--txt-2); font-size: 14px; font-weight: 500; min-height: 44px;
       }
-      .ch:hover, .mem:hover { background: var(--bg-hover); color: var(--txt-2); }
-      .ch--active { background: var(--bg-active); color: var(--txt); }
+      .ch { border-bottom: 1px solid #f0f2f6; }
+      .ch:hover, .mem:hover { background: var(--hover); color: var(--txt); }
+      .ch--active { background: var(--active); color: var(--txt); }
+      .ch__avatar {
+        width: 38px; height: 38px; border-radius: 8px; flex: none;
+        display: flex; align-items: center; justify-content: center;
+        background: linear-gradient(145deg, #eef3ff, #dfe6f8); color: var(--accent);
+        font-weight: 700;
+      }
+      .ch__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
       .ch__name, .mem__name {
-        flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       }
-      .ch__name::before { content: "# "; color: var(--muted); font-weight: 400; }
-      /* ops 始终在常规流·始终可点（不 hover-hide→不破坏 WebdriverIO 点击）·仅淡入强调 */
+      .ch__name { color: var(--txt); font-weight: 600; }
+      .ch__preview { color: var(--txt-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .ch__meta { flex: none; min-width: 18px; display: flex; justify-content: flex-end; }
+      .ch__badge {
+        min-width: 18px; height: 18px; border-radius: 9px; padding: 0 5px;
+        display: inline-flex; align-items: center; justify-content: center;
+        background: #ff4059; color: #fff; font-size: 11px; font-weight: 700;
+      }
       /* ops 浮层：绝对定位移出常规流（行收紧到只剩名/文本）·默认 opacity:0·hover 浮现。
          仍 pointer-events:auto + 不 display/visibility-hide → WebdriverIO 按 testid 仍可点。
          （若 uc-2.3 因遮挡掉绿则回退常规流·见提交说明） */
       .ch__ops, .mem__ops, .msg__ops {
         position: absolute; opacity: 0; transition: opacity 0.1s;
         display: flex; flex-wrap: wrap; align-items: center; gap: 3px;
-        background: var(--bg-active); border-radius: 6px; padding: 4px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45); z-index: 3;
+        background: #fff; border: 1px solid var(--divider); border-radius: 6px; padding: 4px;
+        box-shadow: 0 8px 26px rgba(31, 36, 48, 0.12); z-index: 3;
       }
       .ch__ops, .mem__ops {
         right: 6px; top: 50%; transform: translateY(-50%); flex-wrap: nowrap;
@@ -675,56 +232,67 @@ import { MessageRow } from "./im/message-row.model";
       }
       .msg {
         position: relative; display: flex; gap: 10px; align-items: flex-start;
-        padding: 5px 16px; word-break: break-word; white-space: pre-wrap;
+        padding: 6px 24px; word-break: break-word; white-space: pre-wrap;
       }
-      .msg:hover { background: #2e3035; }
-      .msg__text { flex: 1; color: var(--txt-2); font-size: 16px; line-height: 1.375; }
+      .msg:hover { background: rgba(255, 255, 255, 0.55); }
+      .msg__text {
+        flex: 1; width: fit-content; max-width: min(620px, 76%);
+        padding: 10px 14px; border-radius: 10px; background: var(--bubble);
+        color: var(--txt); font-size: 15px; line-height: 1.45;
+        box-shadow: 0 1px 2px rgba(31, 36, 48, 0.04);
+      }
       .msg--sending { opacity: 0.6; }
       .msg--failed .msg__text { color: var(--red); }
       .msg--revoked .msg__text {
         opacity: 0.5; font-style: italic; text-decoration: line-through;
       }
-      .msg--highlighted { background: #4a3f1e; box-shadow: inset 2px 0 0 var(--yellow); }
+      .msg--highlighted { background: #fff7df; box-shadow: inset 3px 0 0 var(--yellow); }
       .im__aux {
-        display: flex; gap: 12px; padding: 6px 16px; align-items: center;
-        border-top: 1px solid var(--divider); background: var(--bg-darker);
+        display: flex; gap: 12px; padding: 6px 24px; align-items: center;
+        border-top: 1px solid var(--divider); background: var(--surface);
       }
       .im__panel { display: inline-flex; gap: 5px; align-items: center; }
-      .aux-chip { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+      .aux-chip { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); }
       .im__load-older {
         display: block; margin: 4px auto 10px; color: var(--txt-2);
         background: transparent; border: none; font-size: 13px; cursor: pointer;
       }
       .im__compose {
-        display: flex; gap: 8px; padding: 12px 16px 20px; flex-wrap: wrap;
-        align-items: center; background: var(--bg-base);
+        position: fixed; left: 450px; right: 208px; bottom: 20px;
+        display: flex; gap: 8px; padding: 10px 14px; flex-wrap: wrap;
+        align-items: center; background: var(--surface); border: 1px solid var(--divider);
+        border-radius: 14px; box-shadow: 0 10px 30px rgba(31, 36, 48, 0.10);
+      }
+      .im__compose-to { color: var(--txt-3); border-right: 1px solid var(--divider); padding-right: 12px; }
+      .im__compose-to strong { color: var(--accent); font-weight: 700; }
+      .im__compose-to {
+        white-space: nowrap;
       }
       .im__input {
-        flex: 1; min-width: 160px; padding: 11px 16px; border-radius: 8px;
-        border: none; background: var(--bg-input); color: var(--txt); font-size: 15px;
+        flex: 1; min-width: 180px; padding: 10px 12px; border-radius: 10px;
+        border: none; background: transparent; color: var(--txt); font-size: 14px;
       }
       .im__input::placeholder { color: var(--txt-3); }
       .im__send {
-        padding: 10px 18px; border-radius: 8px; border: none;
+        padding: 9px 16px; border-radius: 8px; border: none;
         background: var(--accent); color: #fff; cursor: pointer;
-        font-weight: 600; font-size: 14px;
+        font-weight: 600; font-size: 13px;
       }
-      .im__send:hover { background: #4752c4; }
+      .im__send:hover { background: #3e4ad6; }
       .im__send:disabled, .im__mini:disabled { opacity: 0.4; cursor: not-allowed; }
       .im__mini {
-        padding: 4px 9px; border-radius: 6px; border: none;
-        background: var(--bg-input); color: var(--txt-2); cursor: pointer;
+        padding: 5px 9px; border-radius: 6px; border: none;
+        background: #eef1f6; color: var(--txt-2); cursor: pointer;
         font-size: 12px; font-weight: 500;
       }
-      .im__mini:hover { background: #4e5058; color: var(--txt); }
+      .im__mini:hover { background: #e0e5ee; color: var(--txt); }
       .im__mini:active { background: var(--accent); color: #fff; }
       .im__mini-input {
         width: 72px; padding: 5px 8px; border-radius: 6px; border: none;
-        background: var(--bg-deepest); color: var(--txt-2); font-size: 12px;
+        background: #f5f7fb; color: var(--txt-2); font-size: 12px;
       }
-      /* ═══ Discord 1:1：服务器栏 + 消息头像/作者头 ═══ */
       .im__rail {
-        width: 72px; background: var(--bg-deepest); display: flex;
+        width: 72px; background: var(--rail); display: flex;
         flex-direction: column; align-items: center; gap: 8px; padding: 12px 0;
         overflow-y: auto;
       }
@@ -734,13 +302,13 @@ import { MessageRow } from "./im/message-row.model";
         cursor: pointer; font-weight: 700; font-size: 15px; color: #fff;
         transition: border-radius 0.15s;
       }
-      .im__rail-home { background: var(--accent); border-radius: 16px; }
-      .im__rail-srv { background: #3a3c43; }
+      .im__rail-home { background: var(--accent); border-radius: 8px; }
+      .im__rail-srv { background: rgba(255, 255, 255, 0.12); }
       .im__rail-home:hover, .im__rail-srv:hover { border-radius: 16px; }
-      .im__rail-add { background: var(--bg-darker); color: var(--green); font-size: 22px; }
+      .im__rail-add { background: rgba(255, 255, 255, 0.10); color: var(--green); font-size: 22px; }
       .im__rail-div {
         width: 32px; height: 2px; border-radius: 1px; flex: none;
-        background: var(--divider);
+        background: rgba(255, 255, 255, 0.16);
       }
       .msg { padding-top: 8px; padding-bottom: 4px; }
       .msg__avatar {
@@ -759,40 +327,18 @@ import { MessageRow } from "./im/message-row.model";
         color: #fff; font-weight: 600; font-size: 13px;
       }
       .mem__crown { color: var(--yellow); font-size: 13px; flex: none; }
+      @media (max-width: 920px) {
+        .im__channels { width: 250px; }
+        .im__members { width: 170px; }
+        .im__compose { left: 330px; right: 184px; }
+      }
     `,
   ],
 })
 export class AppComponent implements OnInit, OnDestroy {
   readonly store = inject(ImStoreService);
 
-  // ——— Discord 1:1 渲染辅助（纯展示·从已有 userId/createAt 派生·不碰契约/投影）———
   readonly serverIcons = ["CS", "设", "运"];
-  private readonly avatarPalette = [
-    "#5865f2", "#23a55a", "#eb459e", "#f0b232",
-    "#e67e22", "#3498db", "#9b59b6", "#1abc9c",
-  ];
-  avatarColor(userId?: string): string {
-    const s = userId || "";
-    let h = 0;
-    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-    return this.avatarPalette[h % this.avatarPalette.length];
-  }
-  avatarInitial(userId?: string): string {
-    const s = (userId || "").trim();
-    return s ? s[0].toUpperCase() : "·";
-  }
-  authorName(userId?: string): string {
-    const s = (userId || "").trim();
-    if (!s) return "（我）";
-    return s.length > 10 ? s.slice(0, 8) + "…" : s;
-  }
-  shortTime(createAt?: number): string {
-    if (!createAt || !Number.isFinite(createAt)) return "";
-    const d = new Date(createAt);
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mm = String(d.getMinutes()).padStart(2, "0");
-    return hh + ":" + mm;
-  }
 
   // 活动频道不再硬编码：由 store.activeChannel() 提供（stream 第一个真实频道胜出，含 increment）。
   // demo-channel 非合法 26 位频道 id，helix parse 会拒（missing/invalid channel_id）。
@@ -801,29 +347,6 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     void this.store.start();
-    // UC-1.4 测试机件：debug/test 桥注入失败态注入器（仅 Tauri 环境·release 无 webdriver 不暴露 set_uc）。
-    // 复用 store.markSendFailed 生产路径——复现真 invoke 抛错的 DOM 失败态（非合成任意态）。
-    // 架构现实：im_send 入泵即返 Ok（不 await HTTP）→ 健康 live run 不会自然产生 failed 行；
-    // 重发前置须注入一个失败态，故 e2e 经此桥把已上屏的乐观行标 failed 再点重发。
-    if (
-      typeof window !== "undefined" &&
-      "__TAURI_INTERNALS__" in window &&
-      window.__lf
-    ) {
-      window.__lf.debugMarkFailed = (temporaryId: string) =>
-        this.store.markSendFailed(temporaryId);
-      // UC-2.3 定位测试机件：读族纯本地无 Rust 命令，经此桥复用 store.locatePost 生产路径
-      // （拉首屏 query_result ②④ + 给命中行打高亮 ③）。
-      window.__lf.debugLocatePost = (postId: string, channelId?: string) =>
-        this.store.locatePost(postId, channelId);
-      // UC-6.2 设/撤管理员测试机件：复用 store.setManger 生产路径（① 出站 channel/add|remove/manger +
-      // ③ DOM data-admin 乐观刷）。e2e 经此桥走与 UI『管』按钮同款 store 路径（非绕过·一次覆 ①③）。
-      window.__lf.debugSetManger = (
-        channelId: string,
-        userId: string,
-        set: boolean,
-      ) => this.store.setManger(channelId, userId, set);
-    }
   }
 
   ngOnDestroy(): void {
@@ -843,15 +366,13 @@ export class AppComponent implements OnInit, OnDestroy {
   onSendDocument(): void {
     const channelId = this.store.activeChannel();
     if (!channelId) return;
-    // 文档内容：草稿非空取草稿，否则给个默认 doc 文本（UC-1.2 验 type=DOCUMENT 透传）。
-    const text = this.draft.trim() || `doc-${Math.random().toString(36).slice(2, 8)}`;
+    const text = this.draft.trim();
+    if (!text) return;
     this.draft = "";
     void this.store.sendDocument(channelId, text);
   }
 
-  // ═══ CP 待接通交互件（占位骨架 · C007 必配方法 · 各 UC issue 接真实 invoke）═══
-  // 这些方法当前**只占位**（保证模板编译 + 事件挂载位就绪），真实 invoke 由对应 UC issue 实现。
-  // 占位实现：no-op（不在壳合成业务），仅消费参数避免 unused 告警。
+  // ═══ CP 交互件（真实 store/Tauri invoke · C007 必配方法）═══
 
   /** UC-1.9 加急（composer 便捷入口）：对当前频道最近一条已发送消息（有 msgId·非乐观）发加急。
    *  targetIds 取当前成员区已加载成员（无则空·则不发·e2e 走 bridge 注入真实 targetIds）。
@@ -884,15 +405,15 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.store.urgentConfirm(postId, channelId);
   }
 
-  /** UC-1.10 定时消息：channelId=当前活动频道·message=草稿（空则给默认定时文本）·
+  /** UC-1.10 定时消息：channelId=当前活动频道·message=草稿（空则不发）·
    *  schedulePostAt=当前 + 1 小时（毫秒）→ store.createSchedule（body 嵌套 post 由 Rust/helix 拼·
    *  壳不臆造）。hasSchedule 由 helix `im:channel:schedule-created` 投影驱动 data-has-schedule-post·
    *  壳纯渲染·无乐观合成。e2e 走 bridge 直 invoke 注入真实参数覆盖此 UI 便捷路径。 */
   onSchedule(): void {
     const channelId = this.store.activeChannel();
     if (!channelId) return;
-    const message =
-      this.draft.trim() || `lf-schedule-${Math.random().toString(36).slice(2, 8)}`;
+    const message = this.draft.trim();
+    if (!message) return;
     this.draft = "";
     const schedulePostAt = Date.now() + 3600 * 1000;
     void this.store.createSchedule(channelId, message, schedulePostAt);
@@ -928,7 +449,9 @@ export class AppComponent implements OnInit, OnDestroy {
    *  memberIds 取当前成员区（MB）已加载成员 id（无则空·Rust 命令自动补自身 CREATOR 满足 Users≥1）。
    *  e2e 走 bridge 直 invoke 注入真实 memberIds 覆盖此 UI 便捷路径。 */
   onCreateChannel(): void {
-    const displayName = `lf-grp-${Math.random().toString(36).slice(2, 8)}`;
+    const displayName = this.draft.trim();
+    if (!displayName) return;
+    this.draft = "";
     const memberIds = this.store.members().map((m) => m.memberId).filter(Boolean);
     void this.store.createChannel(displayName, memberIds);
   }
@@ -984,14 +507,16 @@ export class AppComponent implements OnInit, OnDestroy {
 
   /**
    * UC-5.6w 公告·保存（写族 WS post_update echo）：store.announcementSave（invoke im_announcement_save →
-   * 出站 post/announcement/save·camelCase Post·壳后端补 userId）。type=TEXT 占位·message=占位公告正文。
+   * 出站 post/announcement/save·camelCase Post·壳后端补 userId）。type=TEXT，message 使用用户动作触发时生成的真实请求正文。
    * server echo（im:post:updated）⛔ 当前阻于后端 WS 业务广播链(切 cses-im-server 后待复验)·① 出站经 cses-im-server 可真跑。无活动频道 → 不发。
    * e2e 走 bridge 直 invoke 注入真实 channelId/type/message 覆盖此便捷路径。
    */
   onAnnouncementSave(): void {
     const channelId = this.store.activeChannel();
     if (!channelId) return;
-    const message = `announcement-${Math.random().toString(36).slice(2, 8)}`;
+    const message = this.draft.trim();
+    if (!message) return;
+    this.draft = "";
     void this.store.announcementSave(channelId, "TEXT", message);
   }
 
@@ -1008,12 +533,14 @@ export class AppComponent implements OnInit, OnDestroy {
    *  公司大群=建群路径（id 缺省）→ helix im:channel:created 投影驱动 CL 新行（壳纯渲染）。
    *  e2e 走 bridge 直 invoke 注入真实 memberIds 覆盖此 UI 便捷路径。 */
   onTeamUpsert(): void {
-    const displayName = `lf-team-${Math.random().toString(36).slice(2, 8)}`;
+    const displayName = this.draft.trim();
+    if (!displayName) return;
+    this.draft = "";
     const memberIds = this.store.members().map((m) => m.memberId).filter(Boolean);
     void this.store.teamUpsert(displayName, memberIds);
   }
 
-  // ═══ CL 频道行交互件（占位骨架）═══
+  // ═══ CL 频道行交互件（真实 store/Tauri invoke）═══
 
   /** UC-2.1 切群首屏：点 CL 频道行 → store.queryMessages（invoke im_query_messages_by_channel·
    *  纯本地 Scan·无 HTTP 出站）→ helix Scan 回报 emit im:messages:query_result → ML 区渲染该频道
@@ -1080,7 +607,7 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.store.ensureChannelLoaded(channelId);
   }
 
-  // ═══ ML 消息行交互件（占位骨架）═══
+  // ═══ ML 消息行交互件（真实 store/Tauri invoke）═══
 
   /** UC-1.5 撤回：msgId=消息 server id → store.revoke（body `{postId}` 由 Rust/helix 拼·壳不臆造）。
    *  无 server id（未对账乐观消息）→ 不发。data-revoke=1 由 helix `im:post:batch-updated`（在线
@@ -1139,22 +666,12 @@ export class AppComponent implements OnInit, OnDestroy {
             .filter((id) => id && id !== row.channelId)
             .slice(0, 2);
     if (targets.length === 0) return; // 无可转发目标频道 → 不发
-    // Post 对象：转发源消息正文 + 新 temporaryId + type（前端从本地行构造·透传给后端在各目标频道
-    // 建**新**消息）。**不带源 id**——server PreSave 仅在 id=="" 时生成新 id（entity/post.go:188），
-    // 带源 id 会让各目标频道副本复用同一 id → 落库冲突/去重 → 不产生新消息（实测 createPosts 返
-    // SUCCESS 但目标频道无新行）。转发是「建新消息」非「引用原消息」，故 posts 元素只携内容不携源 id。
+    // Post 对象：转发源消息正文 + type（前端从本地行取真实文本·透传给后端在各目标频道建**新**消息）。
+    // **不带源 id / 不造 temporaryId**——server PreSave 负责新 id；投影按 server id 追加新行。
     const posts: Array<Record<string, unknown>> = [
-      { message: row.text, temporaryId: this.genForwardTmp(), type: row.type || "TEXT" },
+      { message: row.text, type: row.type || "TEXT" },
     ];
     void this.store.relayMessages(posts, targets);
-  }
-
-  /** 转发用临时 id（z-base-32 26 位·与 store.genTempId 同字符集·让转发 echo 可对账）。 */
-  private genForwardTmp(): string {
-    const charset = "ybndrfg8ejkmcpqxot1uwisza345h769";
-    let s = "";
-    for (let i = 0; i < 26; i++) s += charset[Math.floor(Math.random() * 32)];
-    return s;
   }
 
   /** UC-5.2 创建话题（消息转话题）：rootId=消息所在群 channelId·postId=消息 server id →
@@ -1165,15 +682,15 @@ export class AppComponent implements OnInit, OnDestroy {
     const rootId = row.channelId;
     const postId = row.msgId;
     if (!rootId || !postId) return; // 无根群 / 无 server id（未对账消息）→ 不发
-    const displayName = `lf-topic-${Math.random().toString(36).slice(2, 8)}`;
+    const displayName = row.text.trim();
+    if (!displayName) return;
     const memberIds = this.store.members().map((m) => m.memberId).filter(Boolean);
     void this.store.makeTopic(rootId, postId, displayName, memberIds);
   }
 
   /** UC-2.3 按 postId 定位：postId=消息 server id + channelId=消息所在群 → store.locatePost
    *  （读族纯本地·定位已加载行打高亮·复用 query_result ②④·新增 ③ DOM data-highlighted）。无 server id
-   *  （未对账乐观消息·定位锚须 server postId）→ 不定位。e2e 走 bridge 直 store API / 取已加载行
-   *  msg-id 作 target 注入覆盖此 UI 便捷路径。 */
+   *  （未对账乐观消息·定位锚须 server postId）→ 不定位。e2e 取已加载行 msg-id 后点击本按钮。 */
   onLocate(row: MessageRow): void {
     const postId = row.msgId;
     if (!postId) return; // 无 server id（未对账乐观消息）→ 定位锚须 server postId
@@ -1209,7 +726,7 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.store.loadOlder();
   }
 
-  // ═══ MB 成员区交互件（占位骨架）═══
+  // ═══ MB 成员区交互件（真实 store/Tauri invoke）═══
 
   /**
    * UC-6.4 成员快照/全量（读族·按 channelIds 拉成员·自愈）：channelId=当前活动频道 →
@@ -1259,9 +776,8 @@ export class AppComponent implements OnInit, OnDestroy {
    * UC-6.2 设/撤管理员：memberId=被设/撤管理员的成员 userId·set（true=设·false=撤）→
    * store.setManger（invoke im_channel_set_manger → 出站 channel/add/manger | channel/remove/manger
    * {channelId, users:[{id,name,role,teamId}]}）。channelId=当前活动频道（MB 区成员属当前会话）。
-   * DOM data-admin 乐观本地刷（add/remove manger 后端 WS 已注释·② 投影 L1 不到达·权威态由 L2 #45
-   * 广播帧对账·见 store.setManger doc）。无 memberId / 无活动频道 → 不发。e2e 走 bridge 直 invoke
-   * 注入真实 channelId/userId 覆盖此 UI 便捷路径。
+   * data-admin 只接受后端/helix 成员投影回灌，不在壳内乐观造管理员态。
+   * 无 memberId / 无活动频道 → 不发。e2e 通过真实成员行按钮触发。
    */
   onChangeManger(memberId: string, set: boolean): void {
     const channelId = this.store.activeChannel();
@@ -1269,7 +785,7 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.store.setManger(channelId, memberId, set);
   }
 
-  // ═══ AX 辅助区交互件（占位骨架）═══
+  // ═══ AX 辅助区交互件（真实 store/Tauri invoke）═══
 
   /**
    * UC-9.x 书签·加载收藏列表（读族）：channelId=当前活动频道 → store.loadBookmarks（invoke
@@ -1372,66 +888,75 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.store.pinMessage(channelId, postId);
   }
 
-  // ── UC-8.x 投票 CRUD 交互件（C007 必配方法 · 便捷 UI 入口 · e2e 走 bridge 直 invoke 覆盖）─────
+  // ── UC-8.x 投票 CRUD 交互件（C007 必配方法 · composer 输入提供业务参数）─────
   // 投票卡 id 取自 row.vote（emit_post_updated props.vote 透传的卡 id）·缺则取 row.msgId（消息 server id）。
   // 写族（create/do/close/delete）fire-and-forget 无乐观合成；读族（read）靠 im:read:result 投影驱动。
 
-  /** UC-8.x 投票·发起：对当前频道发起投票卡（fields=最简 wire 字段集·真源 partials/6 §createVote）。
-   *  此便捷入口用占位字段；e2e 走 bridge 直 invoke 注入真实 fields 覆盖。 */
+  /** UC-8.x 投票·发起：composer 输入 `标题|选项A,选项B`，空/不足两项不发。 */
   onCreateVote(row: MessageRow): void {
     const postId = (row.msgId ?? "").trim();
     if (!postId) return;
+    const draft = this.draft.trim();
+    const [rawTitle, rawOptions = ""] = draft.split("|");
+    const title = rawTitle.trim();
+    const options = rawOptions
+      .split(",")
+      .map((o) => o.trim())
+      .filter(Boolean);
+    if (!title || options.length < 2) return;
+    this.draft = "";
     void this.store.createVote({
-      title: "投票",
-      content: "",
-      options: ["A", "B"],
+      title,
+      content: row.text,
+      options,
       isReal: false,
       votes: 1,
     });
   }
 
-  /** UC-8.x 投票·提交：对投票卡（id=row.vote||msgId）提交所选项 indexes（占位 ["0"]）。
-   *  e2e 走 bridge 直 invoke 注入真实 id/indexes 覆盖。 */
+  /** UC-8.x 投票·提交：对投票卡（id=row.vote||msgId）提交所选项 indexes。
+   *  当前按钮提交第一个选项；完整选项选择控件在 UI/UX 拆分阶段补齐。 */
   onSubmitVote(row: MessageRow): void {
     const id = (row.vote ?? row.msgId ?? "").trim();
     if (!id) return;
     void this.store.submitVote(id, ["0"], (row.msgId ?? "").trim() || undefined);
   }
 
-  /** UC-8.x 投票·读详情（读族）：读投票卡详情（id=row.vote||msgId）→ im:read:result 回灌。
-   *  e2e 走 bridge 直 invoke 注入真实 id/reqId 覆盖。 */
+  /** UC-8.x 投票·读详情（读族）：读投票卡详情（id=row.vote||msgId）→ im:read:result 回灌。 */
   onReadVote(row: MessageRow): void {
     const id = (row.vote ?? row.msgId ?? "").trim();
     if (!id) return;
     void this.store.readVote(id);
   }
 
-  /** UC-8.x 投票·截止：截止投票卡（id=row.vote||msgId）。e2e 走 bridge 直 invoke 覆盖。 */
+  /** UC-8.x 投票·截止：截止投票卡（id=row.vote||msgId）。 */
   onCloseVote(row: MessageRow): void {
     const id = (row.vote ?? row.msgId ?? "").trim();
     if (!id) return;
     void this.store.closeVote(id);
   }
 
-  /** UC-8.x 投票·删除：删除投票卡（id=row.vote||msgId）。e2e 走 bridge 直 invoke 覆盖。 */
+  /** UC-8.x 投票·删除：删除投票卡（id=row.vote||msgId）。 */
   onDeleteVote(row: MessageRow): void {
     const id = (row.vote ?? row.msgId ?? "").trim();
     if (!id) return;
     void this.store.deleteVote(id);
   }
 
-  // ── UC-8.x 平均分 CRUD 交互件（C007 必配方法 · 便捷 UI 入口 · e2e 走 bridge 直 invoke 覆盖）─────
+  // ── UC-8.x 平均分 CRUD 交互件（C007 必配方法 · composer 输入提供业务参数）─────
   // 平均分卡 id 取自 row.average（emit_post_updated props.average 透传的卡 id）·缺则取 row.msgId（消息 server id）。
   // 写族（publish/attend/close/delete）fire-and-forget 无乐观合成；读族（read）靠 im:read:result 投影驱动。
 
-  /** UC-8.x 平均分·发布：对当前频道发布平均分卡（fields=最简 wire 字段集·真源 partials/6 §average/publish）。
-   *  此便捷入口用占位字段；e2e 走 bridge 直 invoke 注入真实 fields 覆盖。 */
+  /** UC-8.x 平均分·发布：composer 输入标题，空则不发。 */
   onPublishAverage(row: MessageRow): void {
     const postId = (row.msgId ?? "").trim();
     if (!postId) return;
+    const title = this.draft.trim();
+    if (!title) return;
+    this.draft = "";
     void this.store.publishAverage({
-      title: "平均分",
-      content: "",
+      title,
+      content: row.text,
       maxScore: 100,
       minScore: 0,
       isDelMaxMin: false,
@@ -1441,30 +966,31 @@ export class AppComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** UC-8.x 平均分·提交评分：对平均分卡（id=row.average||msgId）提交分值（占位 60）。
-   *  e2e 走 bridge 直 invoke 注入真实 id/score 覆盖。 */
+  /** UC-8.x 平均分·提交评分：composer 输入数字分值，非法则不发。 */
   onAttendAverage(row: MessageRow): void {
     const id = (row.average ?? row.msgId ?? "").trim();
     if (!id) return;
-    void this.store.attendAverage(id, 60, (row.msgId ?? "").trim() || undefined);
+    const score = Number(this.draft.trim());
+    if (!Number.isFinite(score)) return;
+    this.draft = "";
+    void this.store.attendAverage(id, score, (row.msgId ?? "").trim() || undefined);
   }
 
-  /** UC-8.x 平均分·读详情（读族）：读平均分卡详情（id=row.average||msgId）→ im:read:result 回灌。
-   *  e2e 走 bridge 直 invoke 注入真实 id/reqId 覆盖。 */
+  /** UC-8.x 平均分·读详情（读族）：读平均分卡详情（id=row.average||msgId）→ im:read:result 回灌。 */
   onReadAverage(row: MessageRow): void {
     const id = (row.average ?? row.msgId ?? "").trim();
     if (!id) return;
     void this.store.readAverage(id);
   }
 
-  /** UC-8.x 平均分·截止：截止平均分卡（id=row.average||msgId）。e2e 走 bridge 直 invoke 覆盖。 */
+  /** UC-8.x 平均分·截止：截止平均分卡（id=row.average||msgId）。 */
   onCloseAverage(row: MessageRow): void {
     const id = (row.average ?? row.msgId ?? "").trim();
     if (!id) return;
     void this.store.closeAverage(id, (row.msgId ?? "").trim() || undefined);
   }
 
-  /** UC-8.x 平均分·删除：删除平均分卡（id=row.average||msgId）。e2e 走 bridge 直 invoke 覆盖。 */
+  /** UC-8.x 平均分·删除：删除平均分卡（id=row.average||msgId）。 */
   onDeleteAverage(row: MessageRow): void {
     const id = (row.average ?? row.msgId ?? "").trim();
     if (!id) return;

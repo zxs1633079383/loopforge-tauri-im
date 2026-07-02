@@ -20,7 +20,7 @@ export class TauriBridgeService {
   }
 
   /**
-   * 调用 Tauri 命令。非 Tauri 环境下返回 reject（前端可捕获走 mock）。
+   * 调用 Tauri 命令。非 Tauri 环境下返回 reject，避免纯浏览器调试误以为命令已执行。
    */
   async invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
     if (!this.isTauri()) {

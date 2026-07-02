@@ -1,8 +1,8 @@
 // UC-6.1 拉/踢人 e2e —— WebdriverIO，直连 4445 内嵌 webdriver（wdio.conf.mjs）。
 //
 // UC-6.1 是命令触发型 UC（admin 增减已存在频道的成员）：MB 区填成员 id + 点
-// [data-testid=change-member-btn]（拉）/ [data-testid=kick-member-btn]（踢）/ 或 bridge 直 invoke
-// im_channel_member_change → 出站 POST channel/member/change {channelId, joinUsers:[{id,teamId,role}]}
+// [data-testid=change-member-btn]（拉）/ [data-testid=kick-member-btn]（踢）→ onChangeMember →
+// store.changeMember → im_channel_member_change → 出站 POST channel/member/change {channelId, joinUsers:[{id,teamId,role}]}
 // （leave 同结构 leaveUsers·真机curl真源 §5·两者可同时非 nil）→ WS channel_member_update（全量帧含
 // memberChange.join/leave·broadcast 到 channelId）→ ④ channel_member 表 BatchUpsert（join·复合 PK
 // channel_id,user_id）/ BatchDelete（leave）+ ② im:channel:member-updated{channel_id, channel}
@@ -21,8 +21,7 @@
 // 时序纪律（HX-C011 / four-facet-oracle §2）：一律 waitUntil 等条件，禁固定 pause 猜 settle。超时=真 bug。
 //
 // 依赖前置：debug app 已起（4445 + 1420）+ seeded db + 真 go 一轮（拉人需真后端推 channel_member_update
-//   echo）+ debug-only invoke set_uc / im_create_channel / im_channel_member_change 已注册 + run.jsonl
-//   落点经 env HELIX_RUN_JSONL 暴露。
+//   echo）+ debug-only invoke set_uc / im_create_channel 已注册 + run.jsonl 落点经 env HELIX_RUN_JSONL 暴露。
 //
 // 锚频道选取（admin 权限真实约束·C003/C004）：拉人须本人在该频道有 admin 权限（go ChannelMemberChange
 //   作用于 session 所在 channel）。seeded 频道身份/成员关系不可控 → 先建一个本人 CREATOR 的新群
@@ -30,7 +29,7 @@
 //   445 是新拉进（非已在册·守可证伪：拉进后 data-members 必含 445·④ channel_member 必新增行）。
 //   诚实退化：建群无新行 / 拉人后 DOM data-members 不含 445 → fail（不放水·非 tautology）。
 
-import { browser, expect } from '@wdio/globals';
+import { $, browser, expect } from '@wdio/globals';
 import { readFileSync } from 'node:fs';
 import { runFourFacet } from '../reducer/four-facet-reducer.mjs';
 
@@ -109,20 +108,37 @@ describe('UC-6.1 · 拉/踢人（四面契约）', () => {
     console.log(`[UC-6.1] 拉人锚频道（本人新建·待拉成员 ${JOIN_MEMBER_ID}）channelId=${TARGET_CHANNEL_ID}`);
 
     // 把活动频道切到新建群（壳 onChangeMember 取 activeChannel 作目标频道·亦让 reducer 锚一致）。
-    await invokeBridge('im_query_messages_by_channel', { channelId: TARGET_CHANNEL_ID });
+    const channelRow = await $(`[data-channel-id="${TARGET_CHANNEL_ID}"]`);
+    await channelRow.waitForDisplayed({
+      timeout: 10000,
+      timeoutMsg: `新建群行未显示，无法点击切换 active channel: ${TARGET_CHANNEL_ID}`,
+    });
+    await channelRow.click();
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(() =>
+          document.querySelector('main.im')?.getAttribute('data-active-channel')
+        )) === TARGET_CHANNEL_ID,
+      {
+        timeout: 10000,
+        interval: 200,
+        timeoutMsg: `点击新建群后 active channel 未切到 ${TARGET_CHANNEL_ID}`,
+      }
+    );
 
     // 开 UC 窗口（窗口内帧/投影归 UC-6.1·建群已在窗口外完成）。
     await invokeBridge('set_uc', { uc: 'UC-6.1' });
   });
 
   it('①②③④：拉人出站 channel/member/change → 投影 member-updated + 落库 channel_member upsert + DOM data-members 回读', async () => {
-    // —— 触发拉人（bridge 直 invoke·注入锚频道 + 拉进成员 userId·C007 按钮路径同链路）——
-    // joinUserIds 显式传 → 出站 body 携 joinUsers:[{id:445,...}] → echo 回该成员入册帧。
-    const r = await invokeBridge('im_channel_member_change', {
-      channelId: TARGET_CHANNEL_ID,
-      joinUserIds: [JOIN_MEMBER_ID],
-    });
-    expect(r.ok).toBe(true);
+    // —— 触发拉人（真实 UI 输入 + 按钮）——
+    // onChangeMember 从 activeChannel 取锚频道、从输入框取成员 userId，进入真实 store/Tauri/helix/后端链路。
+    const input = await $('[data-testid="change-member-input"]');
+    await input.waitForDisplayed({ timeout: 10000, timeoutMsg: '成员输入框未显示' });
+    await input.setValue(JOIN_MEMBER_ID);
+    const joinBtn = await $('[data-testid="change-member-btn"]');
+    await joinBtn.waitForClickable({ timeout: 10000, timeoutMsg: '拉人按钮不可点击' });
+    await joinBtn.click();
 
     // —— ③ DOM：等 MB 区 data-members 含拉进的 userId（member-updated 投影→applyMemberUpdated upsert 行）——
     await browser.waitUntil(

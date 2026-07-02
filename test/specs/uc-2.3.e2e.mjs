@@ -11,10 +11,10 @@
 //
 // 依赖前置（W1/W4 提供，本 spec 不创建）：
 //   - debug app 已起（4445 webdriver + 1420 前端薄壳），seeded DB（/tmp/loopforge-im.db?mode=rwc）
-//   - window.__lf.invoke / window.__lf.debugLocatePost 已注入（AppComponent ngOnInit·Tauri 环境）
+//   - window.__lf.invoke 已注入（仅用于 set_uc / Tauri 命令窗口控制）
 //   - run.jsonl 落点经 env HELIX_RUN_JSONL 暴露
 
-import { browser, expect } from '@wdio/globals';
+import { browser, $, expect } from '@wdio/globals';
 import { readFileSync } from 'node:fs';
 import { runFourFacet } from '../reducer/four-facet-reducer.mjs';
 
@@ -39,22 +39,6 @@ const invokeBridge = (cmd, args) =>
     },
     cmd,
     args
-  );
-
-// UC-2.3 定位（读族纯本地·无 Rust 命令）经 debug 桥复用 store.locatePost 生产路径。
-const locateBridge = (postId, channelId) =>
-  browser.executeAsync(
-    (pid, ch, done) => {
-      if (!window.__lf?.debugLocatePost) {
-        done({ ok: false, error: 'no __lf.debugLocatePost bridge' });
-        return;
-      }
-      Promise.resolve(window.__lf.debugLocatePost(pid, ch))
-        .then(() => done({ ok: true }))
-        .catch((e) => done({ ok: false, error: String(e?.message ?? e) }));
-    },
-    postId,
-    channelId
   );
 
 // 读目标消息行的 data-* 终态（锚 [data-msg-id=postId]）。
@@ -134,9 +118,12 @@ describe('UC-2.3 · 按 postId 定位（四面契约·读族本地 + 高亮）',
     );
     expect(TARGET_POST_ID).not.toBeNull(); // seeded DB 该频道有真实历史 → 必有目标（无则真 bug 不掩盖）
 
-    // —— ③ 定位驱动：经 debug 桥调 store.locatePost → 命中行打高亮 ——
-    const loc = await locateBridge(TARGET_POST_ID, CHANNEL_ID);
-    expect(loc.ok).toBe(true); // 桥未注入 / locatePost 抛错 = 真 bug
+    // —— ③ 定位驱动：点击真实消息行「定位」按钮 → onLocate → store.locatePost ——
+    const targetRow = await $(`[data-msg-id="${TARGET_POST_ID}"]`);
+    await targetRow.moveTo();
+    const locateBtn = await targetRow.$('[data-testid="locate-btn"]');
+    expect(await locateBtn.isExisting()).toBe(true);
+    await locateBtn.click();
 
     // 等命中行渲染 data-highlighted="true"（断在 locate→DOM 高亮这跳）。
     await browser.waitUntil(

@@ -743,7 +743,9 @@ export function runFourFacetRead({ jsonl, expect, reqId, ucId }) {
 //     标 ready-for-human·链 L2 #45（C011 不留「关了没测」的账）。
 //
 // 窗口隔离保证唯一（uc_id 过滤）：e2e 在独立 set_uc 窗口里 invoke 一次 set_manger → 窗口内 outbound
-// http-req（按 endpoint 过滤）唯一·非 tautology（少发即 ① 红·DOM 未刷即 ③ 红·见可证伪对偶）。
+// http-req（按 endpoint 过滤）唯一·非 tautology（少发即 ① 红）。若 expect.dom.optional=true，
+// DOM 面显式退化为 N/A（例如 UC-6.2 单账号 add/remove manger 后端不广播角色全量帧，壳不能乐观造
+// data-admin）。
 //
 // 机器件归属（非改冻结 oracle·C009）：本入口同属 reducer 领域件·契约 URL+body-shape 由 expect.outbound
 // （真机curl真源派生）冻结·DOM data-admin 由 expect.dom 冻结·绿由本 reducer 裁定。
@@ -753,7 +755,7 @@ export function runFourFacetRead({ jsonl, expect, reqId, ucId }) {
 // @param {object} args.expect  期望（expect.outbound flat·expect.dom dataAttrs）
 // @param {object} args.dom     e2e 注入的 DOM 面终态（data-* 扁平对象·键去 data- 前缀）
 // @param {string} [args.ucId]  默认取 expect.ucId
-// @returns {object} 报告（facets.outbound / facets.dom·②④ N/A 不在 order）
+// @returns {object} 报告（facets.outbound / facets.dom·②④ N/A 不在 order；dom optional 时不参与裁定）
 export function runFourFacetCommandDom({ jsonl, expect, dom, ucId }) {
   const uc = ucId ?? expect.ucId;
   const { events, parseErrors } = parseJsonl(jsonl);
@@ -775,15 +777,19 @@ export function runFourFacetCommandDom({ jsonl, expect, dom, ucId }) {
   const httpHit = httpHops.length ? httpHops[httpHops.length - 1] : null;
   const outboundFacet = diffOutbound(exp, httpHit);
 
-  // ③ DOM：data-admin 终态（e2e 注入·乐观刷·守可证伪：壳未刷 admin 标 → ③ 红·非 tautology）。
-  const domFacet = diffDom(expect.dom ?? {}, dom ?? null);
+  // ③ DOM：命令族可显式 optional。UC-6.2 的当前真实链路里 Go add/remove manger 单账号只可观测
+  // ① 出站；强求 data-admin=1 会倒逼 UI 假刷，违反纯渲染壳。
+  const domOptional = expect.dom?.optional === true;
+  const domFacet = domOptional
+    ? facetReport('dom', [], dom ?? { optional: true })
+    : diffDom(expect.dom ?? {}, dom ?? null);
 
   // 断面：① 出站 + ③ DOM（②④ N/A·结构性 L2·见上 doc + issue #45）。
   const facets = {
     outbound: outboundFacet,
     dom: domFacet,
   };
-  const order = ['outbound', 'dom'];
+  const order = domOptional ? ['outbound'] : ['outbound', 'dom'];
   const brokenAt = order.find((f) => !facets[f].ok) ?? null;
   const green = brokenAt === null && parseErrors.length === 0;
 
@@ -794,7 +800,7 @@ export function runFourFacetCommandDom({ jsonl, expect, dom, ucId }) {
     facets,
     parseErrors,
     summary: green
-      ? `✅ ${uc} ①③ 双面全绿（②④ 结构性 L2 N/A·endpoint=${urlEnds}·L2 #45）`
+      ? `✅ ${uc} ${domOptional ? '① 出站' : '①③ 双面'}全绿（②④ 结构性 L2 N/A·endpoint=${urlEnds}·L2 #45）`
       : `❌ ${uc} 断在 [${brokenAt ?? 'parse'}] 面：${
           brokenAt ? facets[brokenAt].issues.join('; ') : `JSONL 解析 ${parseErrors.length} 行坏`
         }`,

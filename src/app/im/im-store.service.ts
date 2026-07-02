@@ -240,9 +240,7 @@ export class ImStoreService {
   /**
    * 把乐观行标 failed（生产路径：send/sendDocument invoke 抛错时调用）。
    *
-   * 单一真源——出站失败的 DOM 终态由本方法兑现（patchByTemp 标 failed + 清 pendingText）。
-   * UC-1.4 测试机件经 debug 桥（main.ts `__lf.debugMarkFailed`，仅 Tauri dev/test 注入）
-   * 复用本方法**复现真实失败态**（与真 invoke 抛错产生的 DOM 完全一致·非合成任意态）。
+   * 单一真源——真实 invoke 抛错后的 DOM 终态由本方法兑现（patchByTemp 标 failed + 清 pendingText）。
    * 行内已存 text（applyPostSending 取 pendingText 落进行）→ resend 复用 row.text 重走 posts/create，
    * 故此处清 pendingText（与原 send catch 行为一致），不影响重发。
    */
@@ -541,12 +539,8 @@ export class ImStoreService {
    * 取 identity·真源 §19/§20）→ helix-im outbound/channel_change_dedicated.rs AddMangerCommand /
    * RemoveMangerCommand 兑现。壳只供 channelId（目标频道）+ userId（被设/撤的成员）+ set（true=设·false=撤）。
    *
-   * **DOM data-admin 乐观本地刷（结构性例外·非投影驱动）**：add/remove manger 后端 WS 已注释（仅
-   * GrpcInvoke），操作者实际收 `channel_member_role_updated`（helix graceful no-op·角色态由后续全量
-   * `channel_member_update` 广播帧覆盖·须第二账号触发·见 L2 #45）。故 L1 单账号 ② emit_channel_member_updated
-   * 不到达·data-admin 无投影源 → 本壳在出站成功后乐观把该成员行 admin 标置为目标态（set ? true : false）·
-   * 让 MB 区成员行 data-admin 即时反映用户操作（L1 仅 ① 出站契约可证·data-admin 权威态由 L2 #45 广播帧对账）。
-   * 无 channelId / userId → 不发。非 Tauri / 命令缺失 → 出站静默但仍乐观刷（UI 反馈不依赖出站确认）。
+   * data-admin 必须由后端 WS / helix 成员投影回灌后刷新；壳不在本地乐观标管理员。
+   * 无 channelId / userId → 不发。非 Tauri / 命令缺失 → 静默。
    */
   async setManger(
     channelId: string,
@@ -563,20 +557,8 @@ export class ImStoreService {
         set,
       });
     } catch {
-      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（仍乐观刷 data-admin 供 UI 反馈）。
+      // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（管理员态靠后端/helix 回灌）。
     }
-    // 乐观刷 MB 区该成员行 data-admin（结构性例外·见 doc·权威态 L2 #45 广播帧对账）。
-    let found = false;
-    this._members.update((rows) => {
-      const next = rows.map((m) => {
-        if (m.memberId !== uid) return m;
-        found = true;
-        return { ...m, admin: set };
-      });
-      if (found) return next;
-      // 成员行缺 → upsert（让 data-admin 可读·data-member-id=userId）。
-      return [...next, { memberId: uid, admin: set }];
-    });
   }
 
   /**

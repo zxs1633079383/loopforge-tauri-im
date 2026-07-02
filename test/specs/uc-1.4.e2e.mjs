@@ -73,7 +73,6 @@ const readRow = (tmp) =>
 describe('UC-1.4 · 重发失败消息（四面契约）', () => {
   // UC-1.4 前置：先发一条消息失败，然后重发。
   // Phase2 接线：UI 上已有「重发」按钮，点击触发 im_send(同 temporaryId)。
-  const TEXT = `lf-resend-${Math.random().toString(36).slice(2, 8)}`;
   let CHANNEL_ID;
 
   before(async () => {
@@ -100,52 +99,20 @@ describe('UC-1.4 · 重发失败消息（四面契约）', () => {
   });
 
   it('①②③④：重发失败消息 failed→sending→sent + 出站 body + 投影字段集 + 落库 upsert', async () => {
-    // —— 前置：先驱真实发送产生乐观 sending 行，再注入失败态（复现真出站失败）——
-    // 架构现实：im_send 入泵即返 Ok（不 await HTTP）→ 健康 live run 不自然产生 failed 行。
-    // 故经 debug 桥 __lf.debugMarkFailed（复用 store.markSendFailed 生产路径·非合成态）把
-    // 已上屏的乐观行标 failed，再点重发——重发四面（出站/投影/落库/DOM=sent）是本 UC 冻结 oracle。
-    await invokeBridge('set_uc', { uc: 'UC-1.4-setup' });
-
-    const input = await $('[data-role="composer-input"]');
-    await input.setValue(TEXT);
-    const sendBtn = await $('[data-testid="send-btn"]');
-    await sendBtn.click();
-
-    // 等乐观 sending 行上屏（im:post:sending 投影驱动），读真 temporaryId 作锚。
-    await browser.waitUntil(
-      async () => {
-        const tid = await browser.execute(
-          () =>
-            document
-              .querySelector('[data-send-status="sending"]')
-              ?.getAttribute('data-temporary-id') ?? null
-        );
-        return !!tid;
-      },
-      { timeout: 8000, timeoutMsg: '乐观行未上屏（断在 click→store.send→乐观渲染）' }
-    );
+    // —— 前置：只消费真实失败行，不再通过 debug hook 造 failed 态 ——
+    // 架构现实：im_send 入泵即返 Ok（不 await HTTP），健康 live run 通常不会自然产生 failed 行。
+    // 如果当前环境没有真实失败行，本 UC 必须红，提示补 helix/后端真实失败投影或由外部 runbook 制造
+    // 真出站失败前置；禁止在前端直接 patch 内存态制造假绿。
     const TMP = await browser.execute(
       () =>
         document
-          .querySelector('[data-send-status="sending"]')
+          .querySelector('[data-send-status="failed"][data-temporary-id]')
           ?.getAttribute('data-temporary-id') ?? null
     );
     expect(TMP).toBeTruthy();
-    console.log(`[UC-1.4 DOM] 乐观行上屏 tmp=${TMP}`);
-
-    // 注入失败态（debug 桥·复现真出站失败 DOM）→ 行 sending→failed。
-    await browser.execute((t) => window.__lf?.debugMarkFailed?.(t), TMP);
-    await browser.waitUntil(
-      async () => {
-        const r = await readRow(TMP);
-        return r && r['send-status'] === 'failed';
-      },
-      { timeout: 5000, timeoutMsg: '注入失败态未生效（debug 桥 markSendFailed→failed 渲染）' }
-    );
-    console.log(`[UC-1.4 DOM] 失败态注入 tmp=${TMP} status=failed`);
+    console.log(`[UC-1.4 DOM] 使用真实失败行 tmp=${TMP}`);
 
     // —— ③ DOM 主驱动：失败行出现重发按钮 → 点重发 ——
-    await invokeBridge('set_uc', { uc: 'UC-1.4' });
     const failedRow = await $(`[data-temporary-id="${TMP}"]`);
     const resendBtn = await failedRow.$('[data-testid="resend-btn"]');
     expect(await resendBtn.isExisting()).toBe(true);
