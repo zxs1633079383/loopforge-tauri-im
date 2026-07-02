@@ -134,7 +134,7 @@ def http_step(
 ) -> dict:
     """生成 customHttp 步骤。cookieId 通过 preProcessor pm.request.headers.upsert 注入（变量替换稳定）。"""
     # 用 cookie_id 参数判断是 user A 还是 B
-    cookie_var = COOKIE_VAR_B if cookie_id == f"{{{{{COOKIE_VAR_B}}}}}" else COOKIE_VAR_A
+    cookie_var = COOKIE_VAR_B if cookie_id in (f"{{{{{COOKIE_VAR_B}}}}}", COOKIE_ID_B) else COOKIE_VAR_A
 
     if body is None:
         req_body = {"type": "none", "data": ""}
@@ -250,6 +250,92 @@ def note_step(sid: str, msg: str) -> dict:
             "defaultEnable": True,
         },
     }
+
+
+def _post_id_extract_expr() -> str:
+    return (
+        "Array.isArray(r.data) "
+        "? ((r.data.find(p => p && p.userId !== 'SYS' && p.type !== 'NOTICE') || r.data[0] || {}).id "
+        "|| (r.data.find(p => p && p.userId !== 'SYS' && p.type !== 'NOTICE') || r.data[0] || {}).postId) "
+        ": (r.data?.id || r.data?.postId)"
+    )
+
+
+def post_create_body(message: str, post_type: str = "TEXT", user_id: str = COOKIE_ID) -> dict:
+    props = {"template": {"userIds": []}} if post_type == "TEMPLATE" else {}
+    if post_type == "ANNOUNCEMENT":
+        props = {"announcement": {"content": message}}
+    return {
+        "viewers": ["all"],
+        "message": message,
+        "mentions": [],
+        "temporaryId": "{{$randomUUID}}",
+        "type": post_type,
+        "simpleMessage": message,
+        "channelId": "{{groupChannelId}}",
+        "userId": user_id,
+        "teamId": TEAM_ID,
+        "userSnapshot": {
+            "orgName": "test",
+            "deptName": "test",
+            "userName": "test" if user_id == COOKIE_ID else "userB",
+            "userId": user_id,
+            "teamId": TEAM_ID,
+        },
+        "id": "",
+        "props": props,
+        "topicId": "",
+        "revoke": False,
+    }
+
+
+def create_post_steps(
+    prefix: str,
+    message: str,
+    post_var: str = "postId",
+    post_type: str = "TEXT",
+    user_id: str = COOKIE_ID,
+    cookie_id: str = "{{cookieId}}",
+) -> list[dict]:
+    """Create a real post and refresh post_var via getLatestPost."""
+    return [
+        http_step(f"{prefix}a", f"POST posts/create [{prefix}]", "post",
+                  "/api/cses/posts/create",
+                  body=post_create_body(message, post_type=post_type, user_id=user_id),
+                  cookie_id=cookie_id),
+        script_step(f"{prefix}b", f"{prefix} posts/create SUCCESS"),
+        delay_step(f"{prefix}c", 800),
+        http_step(f"{prefix}d", f"GET posts/getLatestPost [{prefix}]", "post",
+                  "/api/cses/posts/getLatestPost",
+                  body='{"channelId":"{{groupChannelId}}"}'),
+        script_step(f"{prefix}e", f"{prefix} read-back SUCCESS",
+                    expect_data=True,
+                    extract={post_var: _post_id_extract_expr()}),
+    ]
+
+
+def fresh_group_channel_steps(prefix: str, channel_var: str) -> list[dict]:
+    """Create a fresh real group channel and store its id in channel_var."""
+    body = {
+        "teamId": TEAM_ID,
+        "displayName": f"loopforge-{prefix}",
+        "orient": "",
+        "type": "P",
+        "users": [
+            {"id": COOKIE_ID, "teamId": TEAM_ID, "role": "CREATOR"},
+            {"id": COOKIE_ID_B, "teamId": TEAM_ID, "role": "MEMBER"},
+        ],
+        "picturetype": "USER",
+        "picture": {"userIds": [COOKIE_ID, COOKIE_ID_B]},
+        "forceCreate": True,
+    }
+    return [
+        http_step(f"{prefix}a", f"POST channel/create [{prefix}]", "post",
+                  "/api/cses/channel/create", body=body),
+        script_step(f"{prefix}b", f"{prefix} channel/create SUCCESS",
+                    expect_data=True,
+                    extract={channel_var: "r.data?.id || r.data?.channelId || r.data"}),
+    ]
 
 
 # ── 创建/更新场景 ────────────────────────────────────────────────────────────
@@ -418,17 +504,15 @@ def steps_uc18() -> list[dict]:
 def steps_uc110() -> list[dict]:
     """UC-1.10 定时消息"""
     # scheduleTime 单位秒（服务端用 Unix seconds，不是 ms）
-    create_body = (
-        '{"channelId":"{{groupChannelId}}","message":"定时消息测试","type":"TEXT",'
-        '"scheduleTime":' + str(int(time.time()) + 3600) + ','
-        '"userId":"' + COOKIE_ID + '",'
-        '"teamId":"' + TEAM_ID + '"}'
-    )
+    create_body = {
+        "post": post_create_body("定时消息测试"),
+        "schedulePostAt": int(time.time()) + 3600,
+    }
     return [
         http_step("s1", "POST posts/createSchedule", "post",
                   "/api/cses/posts/createSchedule", body=create_body),
         script_step("s2", "UC-1.10 createSchedule SUCCESS",
-                    extract={"schedulePostId": "r.data?.id || r.data?.postId"}),
+                    extract={"schedulePostId": "r.data?.id || r.data?.postId || r.data?.post?.id"}),
         http_step("s3", "POST posts/getSchedule", "post",
                   "/api/cses/posts/getSchedule",
                   body='{"channelId":"{{groupChannelId}}","userId":"' + COOKIE_ID + '"}'),
@@ -443,13 +527,14 @@ def steps_uc110() -> list[dict]:
 def steps_uc15() -> list[dict]:
     """UC-1.5 撤回消息 — POST posts/revoke"""
     return [
+        *create_post_steps("s0r", "loopforge-revoke-target", "revokePostId"),
         http_step("s1", "POST posts/revoke", "post", "/api/cses/posts/revoke",
-                  body='{"postId":"{{postId}}","channelId":"{{groupChannelId}}"}'),
+                  body='{"postId":"{{revokePostId}}","channelId":"{{groupChannelId}}"}'),
         script_step("s2", "UC-1.5 撤回 SUCCESS"),
         delay_step("s3", 200),
         # 方向A: read-back 验证撤回已落库（posts/get 也需要 channelId）
         http_step("s4", "POST posts/get [方向A 验证撤回]", "post", "/api/cses/posts/get",
-                  body='{"postId":"{{postId}}","channelId":"{{groupChannelId}}"}'),
+                  body='{"postIds":["{{revokePostId}}"]}'),
         script_step("s5", "UC-1.5 read-back SUCCESS"),
     ]
 
@@ -462,7 +547,7 @@ def steps_uc32() -> list[dict]:
         script_step("s2", "UC-3.2 单条已读 SUCCESS"),
         # read-back: post/read/list 需要 channelId + userId
         http_step("s3", "POST post/read/list [read-back]", "post", "/api/cses/post/read/list",
-                  body='{"postId":"{{postId}}","channelId":"{{groupChannelId}}","userId":"' + COOKIE_ID + '"}'),
+                  body='{"postIds":["{{postId}}"]}'),
         script_step("s4", "UC-3.2 read/list SUCCESS"),
     ]
 
@@ -479,9 +564,10 @@ def steps_uc31() -> list[dict]:
 def steps_uc33() -> list[dict]:
     """UC-3.3 模板已收到 — POST post/templateReceived"""
     return [
+        *create_post_steps("s0t", "loopforge-template-received", "templatePostId", "TEMPLATE"),
         http_step("s1", "POST post/templateReceived", "post",
                   "/api/cses/post/templateReceived",
-                  body='{"postId":"{{postId}}","channelId":"{{groupChannelId}}"}'),
+                  body='{"postId":"{{templatePostId}}"}'),
         script_step("s2", "UC-3.3 templateReceived SUCCESS"),
     ]
 
@@ -563,13 +649,14 @@ def steps_uc21() -> list[dict]:
 def steps_uc23() -> list[dict]:
     """UC-2.3 按 postId 定位 — posts/getPostsAfterIndex + top20"""
     return [
+        *create_post_steps("s0h", "loopforge-history-anchor", "historyPostId"),
         http_step("s1", "POST posts/top20", "post", "/api/cses/posts/top20",
-                  body='{"channelId":"{{groupChannelId}}"}'),
+                  body='{"channel_id":"{{groupChannelId}}"}'),
         script_step("s2", "UC-2.3 top20 SUCCESS"),
-        # getPostsAfterIndex: 去掉 after 字段（服务端不识别），仅传 channelId + postId
+        # getPostsAfterIndex: Go wire 字段 postIds 实为单个 postId
         http_step("s3", "POST posts/getPostsAfterIndex", "post",
                   "/api/cses/posts/getPostsAfterIndex",
-                  body='{"channelId":"{{groupChannelId}}","postId":"{{postId}}"}'),
+                  body='{"postIds":"{{historyPostId}}"}'),
         script_step("s4", "UC-2.3 getPostsAfterIndex SUCCESS"),
     ]
 
@@ -596,7 +683,7 @@ def steps_uc54() -> list[dict]:
         script_step("s2", "UC-5.4 change/info SUCCESS"),
         http_step("s3", "POST channel/change/notice (群公告)", "post",
                   "/api/cses/channel/change/notice",
-                  body='{"channelId":"{{groupChannelId}}","content":"e2e notice content"}'),
+                  body='{"id":"{{groupChannelId}}","notice":{"text":"e2e notice content"}}'),
         script_step("s4", "UC-5.4 change/notice SUCCESS"),
     ]
 
@@ -647,23 +734,27 @@ def steps_uc56r() -> list[dict]:
 
 def steps_uc56w() -> list[dict]:
     """UC-5.6w 公告写族 (save/read/delete)"""
-    # announcement/save: 将频道内置顶的 postId 设为公告；需要 userId 鉴权
-    save_body = (
-        '{"postId":"{{postId}}","channelId":"{{groupChannelId}}",'
-        '"userId":"' + COOKIE_ID + '"}'
-    )
+    # announcement/save expects a full ANNOUNCEMENT post body and creates the post server-side.
+    save_body = post_create_body("apifox announcement", post_type="ANNOUNCEMENT")
     return [
         http_step("s1", "POST post/announcement/save", "post",
                   "/api/cses/post/announcement/save",
                   body=save_body),
         script_step("s2", "UC-5.6w announcement/save SUCCESS"),
+        delay_step("s2b", 800),
+        http_step("s2c", "GET posts/getLatestPost [announcement]", "post",
+                  "/api/cses/posts/getLatestPost",
+                  body='{"channelId":"{{groupChannelId}}"}'),
+        script_step("s2d", "UC-5.6w announcement read-back SUCCESS",
+                    expect_data=True,
+                    extract={"announcementPostId": _post_id_extract_expr()}),
         http_step("s3", "POST post/announcement/read", "post",
                   "/api/cses/post/announcement/read",
-                  body='{"channelId":"{{groupChannelId}}"}'),
+                  body='{"postId":"{{announcementPostId}}","channelId":"{{groupChannelId}}"}'),
         script_step("s4", "UC-5.6w announcement/read SUCCESS"),
         http_step("s5", "POST post/announcement/delete", "post",
                   "/api/cses/post/announcement/delete",
-                  body='{"postIds":["{{postId}}"],"channelId":"{{groupChannelId}}"}'),
+                  body='{"postIds":["{{announcementPostId}}"]}'),
         script_step("s6", "UC-5.6w announcement/delete SUCCESS"),
     ]
 
@@ -721,7 +812,7 @@ def steps_uc64() -> list[dict]:
     return [
         http_step("s1", "POST channel/member/snapshot", "post",
                   "/api/cses/channel/member/snapshot",
-                  body='{"channelId":"{{groupChannelId}}","page":0,"pageSize":50}'),
+                  body='{"channelId":"{{groupChannelId}}","startTime":0,"endTime":9999999999999}'),
         script_step("s2", "UC-6.4 member/snapshot SUCCESS"),
         http_step("s3", "POST channels/member/byIds", "post",
                   "/api/cses/channels/member/byIds",
@@ -737,14 +828,16 @@ def steps_uc64() -> list[dict]:
 def steps_uc61() -> list[dict]:
     """UC-6.1 拉/踢人 — channel/member/change"""
     join_body = (
-        '{"channelId":"{{groupChannelId}}",'
+        '{"channelId":"{{uc61ChannelId}}",'
         '"joinUsers":[{"id":"' + COOKIE_ID_B + '","teamId":"' + TEAM_ID + '","role":"MEMBER"}]}'
     )
     leave_body = (
-        '{"channelId":"{{groupChannelId}}",'
+        '{"channelId":"{{uc61ChannelId}}",'
         '"leaveUsers":[{"id":"' + COOKIE_ID_B + '","teamId":"' + TEAM_ID + '","role":"MEMBER"}]}'
     )
+    rejoin_body = join_body
     return [
+        *fresh_group_channel_steps("s0m", "uc61ChannelId"),
         http_step("s1", "POST channel/member/change (加人 join)", "post",
                   "/api/cses/channel/member/change", body=join_body),
         script_step("s2", "UC-6.1 加人 SUCCESS"),
@@ -752,25 +845,28 @@ def steps_uc61() -> list[dict]:
         http_step("s4", "POST channel/member/change (踢人 leave)", "post",
                   "/api/cses/channel/member/change", body=leave_body),
         script_step("s5", "UC-6.1 踢人 SUCCESS"),
-        http_step("s6", "POST channel/member/leave (自退)", "post",
+        http_step("s6", "POST channel/member/change (重新加人供自退)", "post",
+                  "/api/cses/channel/member/change", body=rejoin_body),
+        script_step("s7", "UC-6.1 重新加人 SUCCESS"),
+        http_step("s8", "POST channel/member/leave (B自退)", "post",
                   "/api/cses/channel/member/leave",
-                  body='{"channelId":"{{groupChannelId}}"}'),
-        script_step("s7", "UC-6.1 member/leave SUCCESS"),
+                  body='{"channelId":"{{uc61ChannelId}}"}',
+                  cookie_id="{{cookieId_B}}"),
+        script_step("s9", "UC-6.1 member/leave SUCCESS"),
     ]
 
 
 def steps_uc62() -> list[dict]:
-    """UC-6.2 设/撤管理员 (对自己操作，B 在 UC-6.1 已被踢出频道)"""
-    # UC-6.1 已将 B 踢出群，此处对 A 自身做 add/remove manger 测试
+    """UC-6.2 设/撤管理员"""
     return [
         http_step("s1", "POST channel/add/manger", "post",
                   "/api/cses/channel/add/manger",
-                  body='{"channelId":"{{groupChannelId}}","users":["' + COOKIE_ID + '"]}'),
+                  body='{"channelId":"{{groupChannelId}}","users":[{"id":"' + COOKIE_ID_B + '","teamId":"' + TEAM_ID + '","role":"ADMIN"}]}'),
         script_step("s2", "UC-6.2 设管理员 SUCCESS"),
         delay_step("s3", 200),
         http_step("s4", "POST channel/remove/manger", "post",
                   "/api/cses/channel/remove/manger",
-                  body='{"channelId":"{{groupChannelId}}","users":["' + COOKIE_ID + '"]}'),
+                  body='{"channelId":"{{groupChannelId}}","users":[{"id":"' + COOKIE_ID_B + '","teamId":"' + TEAM_ID + '","role":"MEMBER"}]}'),
         script_step("s5", "UC-6.2 撤管理员 SUCCESS"),
     ]
 
@@ -825,18 +921,19 @@ def steps_uc42() -> list[dict]:
 def steps_uc45() -> list[dict]:
     """UC-4.5 陌生 channel 兜底"""
     return [
+        *fresh_group_channel_steps("s0u45", "uc45ChannelId"),
         # incrementByChannelId: 字段名 seq 而非 fromSeq（参考 channels/load/increment 的 cursors.fromSeq）
         http_step("s1", "POST channel/load/incrementByChannelId", "post",
                   "/api/cses/channel/load/incrementByChannelId",
-                  body='{"channelId":"{{groupChannelId}}","seq":0}'),
+                  body='{"channelId":"{{uc45ChannelId}}","seq":0}'),
         script_step("s2", "UC-4.5 load/incrementByChannelId SUCCESS"),
         http_step("s3", "POST channel/load/notice", "post",
                   "/api/cses/channel/load/notice",
-                  body='{"channelId":"{{groupChannelId}}"}'),
+                  body='{"channelId":"{{uc45ChannelId}}"}'),
         script_step("s4", "UC-4.5 channel/load/notice SUCCESS"),
         http_step("s5", "POST channel/load/admin", "post",
                   "/api/cses/channel/load/admin",
-                  body='{"channelId":"{{groupChannelId}}"}'),
+                  body='{"channelId":"{{uc45ChannelId}}"}'),
         script_step("s6", "UC-4.5 channel/load/admin SUCCESS"),
     ]
 
@@ -997,7 +1094,7 @@ def steps_l2_61b() -> list[dict]:
         delay_step("s3", 200),
         http_step("s4", "POST channel/member/snapshot [B侧read-back]", "post",
                   "/api/cses/channel/member/snapshot",
-                  body='{"channelId":"{{groupChannelId}}"}', cookie_id=COOKIE_ID_B),
+                  body='{"channelId":"{{groupChannelId}}","startTime":0,"endTime":9999999999999}', cookie_id=COOKIE_ID_B),
         script_step("s5", "L2-6.1b B侧成员快照 SUCCESS",
                     expect_data=True),
     ]
@@ -1021,17 +1118,19 @@ def steps_l2_62b() -> list[dict]:
     return [
         http_step("s1", "POST channel/add/manger [A设B为admin]", "post",
                   "/api/cses/channel/add/manger",
-                  body='{"channelId":"{{groupChannelId}}","users":["' + COOKIE_ID_B + '"]}',
+                  body='{"channelId":"{{groupChannelId}}","users":[{"id":"' + COOKIE_ID_B + '","teamId":"' + TEAM_ID + '","role":"ADMIN"}]}',
                   cookie_id=COOKIE_ID),
         script_step("s2", "L2-6.2b 设B为admin SUCCESS"),
         delay_step("s3", 200),
-        http_step("s4", "POST channel/member/snapshot [B侧 read-back 验证role]", "post",
-                  "/api/cses/channel/member/snapshot",
+        http_step("s4", "POST channel/load/admin [B侧 read-back 验证role]", "post",
+                  "/api/cses/channel/load/admin",
                   body='{"channelId":"{{groupChannelId}}"}', cookie_id=COOKIE_ID_B),
-        script_step("s5", "L2-6.2b B侧能看到自己是admin SUCCESS"),
+        script_step("s5", "L2-6.2b B侧能看到admin SUCCESS",
+                    extra_checks='pm.expect(JSON.stringify(r.data || [])).to.include("' + COOKIE_ID_B + '");',
+                    expect_data=True),
         http_step("s6", "POST channel/remove/manger [A撤B admin]", "post",
                   "/api/cses/channel/remove/manger",
-                  body='{"channelId":"{{groupChannelId}}","users":["' + COOKIE_ID_B + '"]}',
+                  body='{"channelId":"{{groupChannelId}}","users":[{"id":"' + COOKIE_ID_B + '","teamId":"' + TEAM_ID + '","role":"MEMBER"}]}',
                   cookie_id=COOKIE_ID),
         script_step("s7", "L2-6.2b 撤B admin SUCCESS"),
     ]
@@ -1135,6 +1234,12 @@ def main() -> None:
         {"name": "bookmarkId",    "value": "",             "enable": True},
         {"name": "schedulePostId","value": "",             "enable": True},
         {"name": "teamChannelId", "value": "",             "enable": True},
+        {"name": "revokePostId",  "value": "",             "enable": True},
+        {"name": "templatePostId","value": "",             "enable": True},
+        {"name": "historyPostId", "value": "",             "enable": True},
+        {"name": "announcementPostId", "value": "",        "enable": True},
+        {"name": "uc45ChannelId", "value": "",             "enable": True},
+        {"name": "uc61ChannelId", "value": "",             "enable": True},
     ]
     # name 是位置参数；--base-url 必填
     env_r = af("environment", "create", "loopforge-im-local",
@@ -1170,10 +1275,10 @@ def main() -> None:
         ("阶段2 发消息",     ["UC-1.1", "UC-1.2", "UC-1.9", "UC-1.8", "UC-1.10", "UC-5.2"]),
         ("阶段3 消息操作",   ["UC-1.5", "UC-3.2", "UC-3.1", "UC-3.3", "UC-1.4", "UC-1.7", "UC-2.4"]),
         ("阶段4 历史浏览",   ["UC-2.1", "UC-2.3", "UC-2.2"]),
-        ("阶段5 频道管理",   ["UC-5.4", "UC-5.5", "UC-5.6r", "UC-5.6w", "UC-5.7", "UC-6.3", "UC-6.4", "UC-6.1", "UC-6.2"]),
+        ("阶段5 频道管理",   ["UC-5.4", "UC-5.5", "UC-5.6r", "UC-5.6w", "UC-5.7", "UC-6.3", "UC-6.4", "UC-6.2", "UC-6.1"]),
         ("阶段6 杂项",       ["UC-9.x", "UC-10.1", "UC-10.3", "UC-4.2", "UC-4.5", "UC-4.4", "UC-8.x 投票", "UC-8.x 平均", "UC-10.2"]),
         ("阶段7 teams",      ["UC-5.8", "UC-11.1", "UC-11.2"]),
-        ("L2 双账号",        ["L2-US-17", "L2-6.1b", "L2-5.3b", "L2-6.2b"]),
+        ("L2 双账号",        ["L2-US-17", "L2-6.1b", "L2-6.2b", "L2-5.3b"]),
         # 关闭/退出群销毁 groupChannelId，必须最后运行。
         ("阶段8 收尾销毁频道", ["UC-5.3"]),
     ]
@@ -1200,9 +1305,10 @@ def main() -> None:
         # 按阶段分组
         for group_name, prefixes in STAGE_GROUPS:
             group_sids = []
-            for uc_name, sid in name_to_sid.items():
-                if any(uc_name.startswith(p) for p in prefixes):
-                    group_sids.append(sid)
+            for prefix in prefixes:
+                for uc_name, sid in name_to_sid.items():
+                    if uc_name.startswith(prefix):
+                        group_sids.append(sid)
             if not group_sids:
                 continue
             items.append({
