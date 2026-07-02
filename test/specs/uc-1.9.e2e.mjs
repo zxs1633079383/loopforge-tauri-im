@@ -57,12 +57,22 @@ const invokeBridge = (cmd, args) =>
     args
   );
 
-// 从 seeded channel_member 取活动频道的非自身成员 id 作 targetIds（真源·壳不臆造）。
+// 从 seeded channel_member 取指定频道的非自身成员 id 作 targetIds（真源·壳不臆造）。
 const seededTargets = (channelId) => {
   const sql = `SELECT user_id FROM channel_member WHERE channel_id='${channelId}' AND user_id!='${SELF_ID}' LIMIT 5;`;
   const out = execFileSync('sqlite3', [SEED_DB, sql], { encoding: 'utf8' });
   return out.split('\n').map((s) => s.trim()).filter(Boolean);
 };
+
+const activeChannelId = () =>
+  browser.execute(() => document.querySelector('main.im')?.getAttribute('data-active-channel') ?? null);
+
+const renderedChannelIds = () =>
+  browser.execute(() =>
+    Array.from(document.querySelectorAll('[data-channel-id]'))
+      .map((el) => el.getAttribute('data-channel-id'))
+      .filter(Boolean)
+  );
 
 // 读消息行的 data-* 终态（锚 [data-msg-id=sid]）。
 const readMessageRow = (msgId) =>
@@ -98,13 +108,34 @@ describe('UC-1.9 · 加急消息 + 加急已读（四面契约）', () => {
     );
 
     // 取当前活动频道 id。
-    CHANNEL_ID = await browser.execute(
-      () => document.querySelector('[data-active-channel]')?.getAttribute('data-active-channel')
-    );
+    CHANNEL_ID = await activeChannelId();
     expect(CHANNEL_ID).toBeTruthy();
 
-    // targetIds：从 seeded channel_member 取活动频道非自身成员（真源·壳不臆造空数组）。
+    // targetIds：优先用当前活动频道；若它是单人频道，则从真实渲染的 CL 频道里选择一个有非自身成员的频道。
+    // 只消费真实 UI + helix storage，不造 targetId；找不到即真实前置红（seeded DB / CL 渲染缺口）。
     TARGET_IDS = seededTargets(CHANNEL_ID);
+    if (TARGET_IDS.length === 0) {
+      const candidates = await renderedChannelIds();
+      for (const id of candidates) {
+        const ids = seededTargets(id);
+        if (ids.length === 0) continue;
+        CHANNEL_ID = id;
+        TARGET_IDS = ids;
+        const clicked = await browser.execute((ch) => {
+          const el = document.querySelector(`[data-channel-id="${ch}"]`);
+          if (!el) return false;
+          el.click();
+          return true;
+        }, CHANNEL_ID);
+        expect(clicked).toBe(true);
+        await browser.waitUntil(async () => (await activeChannelId()) === CHANNEL_ID, {
+          timeout: 8000,
+          interval: 150,
+          timeoutMsg: `切换到可加急频道失败：${CHANNEL_ID}`,
+        });
+        break;
+      }
+    }
     expect(TARGET_IDS.length).toBeGreaterThan(0); // 无目标成员 → 后端 Validate 拒空 → 测试无意义
     console.log(`[UC-1.9 前置] channel=${CHANNEL_ID} targetIds=${JSON.stringify(TARGET_IDS)}`);
   });
@@ -119,31 +150,34 @@ describe('UC-1.9 · 加急消息 + 加急已读（四面契约）', () => {
     const sendBtn = await $('[data-testid="send-btn"]');
     await sendBtn.click();
 
-    // 等乐观 sending 行出现（im:post:sending 投影驱动）。
-    await browser.waitUntil(
-      async () => {
-        const tid = await browser.execute(
-          () =>
-            document
-              .querySelector('[data-send-status="sending"]')
-              ?.getAttribute('data-temporary-id') ?? null
-        );
-        return !!tid;
-      },
-      { timeout: 8000, timeoutMsg: '乐观 sending 行未出现' }
-    );
-
-    // 等 echo 覆写（status=sent）。
+    // 等乐观 sending 行出现（im:post:sending 投影驱动），并捕获本次 temporary-id。
     let tmp = null;
     await browser.waitUntil(
       async () => {
         tmp = await browser.execute(
           () =>
             document
-              .querySelector('[data-send-status="sent"]')
+              .querySelector('[data-send-status="sending"]')
               ?.getAttribute('data-temporary-id') ?? null
         );
         return !!tmp;
+      },
+      { timeout: 8000, timeoutMsg: '乐观 sending 行未出现' }
+    );
+
+    // 等该特定乐观行 echo 覆写（status=sent），避免历史 sent 行抢答。
+    await browser.waitUntil(
+      async () => {
+        const sid = await browser.execute(
+          (t) => {
+            const el = document.querySelector(`[data-temporary-id="${t}"]`);
+            if (!el || el.getAttribute('data-send-status') !== 'sent') return null;
+            const got = el.getAttribute('data-msg-id');
+            return got && got !== t ? got : null;
+          },
+          tmp
+        );
+        return !!sid;
       },
       { timeout: 15000, timeoutMsg: 'echo 未覆写（断在 send→posts/create→echo 对账）' }
     );
