@@ -11,4 +11,3 @@ Committed report files must include:
 - Apifox report path when used
 - screenshot paths when used
 - final status line
-
