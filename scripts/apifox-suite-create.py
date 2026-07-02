@@ -171,6 +171,7 @@ def script_step(
     extra_checks: str = "",
     extract: dict[str, str] | None = None,
     expect_data: bool = False,
+    require_extract: bool = False,
 ) -> dict:
     """生成断言 + 变量提取 script 步骤 (pm API)。
     expect_data=True 时额外断言 r.data 存在（用 .to.exist，同时拒绝 null 和 undefined）。
@@ -189,6 +190,8 @@ def script_step(
     if extract:
         for var, expr in extract.items():
             lines.append(f'const _v_{var} = {expr};')
+            if require_extract:
+                lines.append(f'pm.expect(_v_{var}, "{var} extracted").to.exist;')
             lines.append(f'if (_v_{var} !== undefined && _v_{var} !== null) pm.environment.set("{var}", _v_{var});')
     return {
         "type": "script",
@@ -252,12 +255,35 @@ def note_step(sid: str, msg: str) -> dict:
     }
 
 
-def _post_id_extract_expr() -> str:
+def _post_id_extract_expr(
+    message: str | None = None,
+    post_type: str | None = None,
+    user_id: str | None = None,
+) -> str:
+    predicates = ["p"]
+    if message is not None:
+        message_js = json.dumps(message, ensure_ascii=False)
+        predicates.append(
+            "("
+            f"String(p.message || '') === {message_js} || "
+            f"String(p.simpleMessage || '') === {message_js} || "
+            f"String(p.props?.announcement?.content || '') === {message_js} || "
+            f"String(p.props?.announcement?.text || '') === {message_js}"
+            ")"
+        )
+    if post_type is not None:
+        post_type_js = json.dumps(post_type.upper(), ensure_ascii=False)
+        predicates.append(f"String(p.type || p.postType || '').toUpperCase() === {post_type_js}")
+    if user_id is not None:
+        user_id_js = json.dumps(user_id, ensure_ascii=False)
+        predicates.append(f"String(p.userId || p.userSnapshot?.userId || '') === {user_id_js}")
+    predicate = " && ".join(predicates)
     return (
-        "Array.isArray(r.data) "
-        "? ((r.data.find(p => p && p.userId !== 'SYS' && p.type !== 'NOTICE') || r.data[0] || {}).id "
-        "|| (r.data.find(p => p && p.userId !== 'SYS' && p.type !== 'NOTICE') || r.data[0] || {}).postId) "
-        ": (r.data?.id || r.data?.postId)"
+        "(() => { "
+        "const items = Array.isArray(r.data) ? r.data : (r.data ? [r.data] : []); "
+        f"const hit = items.find(p => {predicate}); "
+        "return hit?.id || hit?.postId; "
+        "})()"
     )
 
 
@@ -298,19 +324,21 @@ def create_post_steps(
     cookie_id: str = "{{cookieId}}",
 ) -> list[dict]:
     """Create a real post and refresh post_var via getLatestPost."""
+    unique_message = f"{message}-{prefix}-{int(time.time() * 1000)}"
     return [
         http_step(f"{prefix}a", f"POST posts/create [{prefix}]", "post",
                   "/api/cses/posts/create",
-                  body=post_create_body(message, post_type=post_type, user_id=user_id),
+                  body=post_create_body(unique_message, post_type=post_type, user_id=user_id),
                   cookie_id=cookie_id),
         script_step(f"{prefix}b", f"{prefix} posts/create SUCCESS"),
-        delay_step(f"{prefix}c", 800),
+        delay_step(f"{prefix}c", 1500),
         http_step(f"{prefix}d", f"GET posts/getLatestPost [{prefix}]", "post",
                   "/api/cses/posts/getLatestPost",
                   body='{"channelId":"{{groupChannelId}}"}'),
         script_step(f"{prefix}e", f"{prefix} read-back SUCCESS",
                     expect_data=True,
-                    extract={post_var: _post_id_extract_expr()}),
+                    require_extract=True,
+                    extract={post_var: _post_id_extract_expr(unique_message, post_type, user_id)}),
     ]
 
 
@@ -503,7 +531,7 @@ def steps_uc18() -> list[dict]:
 
 def steps_uc110() -> list[dict]:
     """UC-1.10 定时消息"""
-    # scheduleTime 单位秒（服务端用 Unix seconds，不是 ms）
+    # schedulePostAt 单位秒（服务端用 Unix seconds，不是 ms）
     create_body = {
         "post": post_create_body("定时消息测试"),
         "schedulePostAt": int(time.time()) + 3600,
@@ -675,7 +703,7 @@ def steps_uc22() -> list[dict]:
 def steps_uc54() -> list[dict]:
     """UC-5.4 群属性修改 — channel/change/info (主路径) + change/notice"""
     # change/displayName 和 change/purpose 作为独立端点不存在（44B failed）
-    # 改群名+简介用 change/info 统一搞定；change/notice 用 content 字段
+    # 改群名+简介用 change/info 统一搞定；change/notice 用 notice 对象
     return [
         http_step("s1", "POST channel/change/info (改群名+简介)", "post",
                   "/api/cses/channel/change/info",
@@ -735,7 +763,8 @@ def steps_uc56r() -> list[dict]:
 def steps_uc56w() -> list[dict]:
     """UC-5.6w 公告写族 (save/read/delete)"""
     # announcement/save expects a full ANNOUNCEMENT post body and creates the post server-side.
-    save_body = post_create_body("apifox announcement", post_type="ANNOUNCEMENT")
+    announcement_message = f"apifox announcement-{int(time.time() * 1000)}"
+    save_body = post_create_body(announcement_message, post_type="ANNOUNCEMENT")
     return [
         http_step("s1", "POST post/announcement/save", "post",
                   "/api/cses/post/announcement/save",
@@ -747,7 +776,8 @@ def steps_uc56w() -> list[dict]:
                   body='{"channelId":"{{groupChannelId}}"}'),
         script_step("s2d", "UC-5.6w announcement read-back SUCCESS",
                     expect_data=True,
-                    extract={"announcementPostId": _post_id_extract_expr()}),
+                    require_extract=True,
+                    extract={"announcementPostId": _post_id_extract_expr(announcement_message, "ANNOUNCEMENT", COOKIE_ID)}),
         http_step("s3", "POST post/announcement/read", "post",
                   "/api/cses/post/announcement/read",
                   body='{"postId":"{{announcementPostId}}","channelId":"{{groupChannelId}}"}'),

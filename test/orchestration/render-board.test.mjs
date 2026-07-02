@@ -55,7 +55,7 @@ function run(dir) {
 
 // ── 2. 已 HELIX_READY/已 BOUND_GREEN 几行 → 泳道分布正确 ────────────────────
 {
-  const ready = ['applyMessageItem', 'applyMembersSnapshot', 'applyDialogList', 'applyOlderLoaded', 'applyMemberUpdated'];
+  const ready = ['applyMessageItem', 'applyChannelMembers', 'applyDialogList', 'applyOlderLoaded', 'applyChannelReplies'];
   const green = ['applyMessageItem', 'applyDialogList'];
   const dir = mkFixture(ready, green, []);
   const out = run(dir);
@@ -69,8 +69,8 @@ function run(dir) {
   check('applyDialogList 行标 🟩 BOUND_GREEN',
     /🟩 applyDialogList\b.*BOUND_GREEN/.test(out));
   // 行级：ready-not-green 行标 🟨 BINDABLE
-  check('applyMembersSnapshot 行标 🟨 BINDABLE',
-    /🟨 applyMembersSnapshot\b.*BINDABLE/.test(out));
+  check('applyChannelMembers 行标 🟨 BINDABLE',
+    /🟨 applyChannelMembers\b.*BINDABLE/.test(out));
   check('applyOlderLoaded 行标 🟨 BINDABLE',
     /🟨 applyOlderLoaded\b.*BINDABLE/.test(out));
   // 行级：未解锁行标 ⬛ PENDING
@@ -81,7 +81,7 @@ function run(dir) {
 
 // ── 3. 可证伪对偶：抽掉一行 green → 汇总必随之变化（证明非死字符串）─────────
 {
-  const ready = ['applyMessageItem', 'applyMembersSnapshot', 'applyDialogList', 'applyOlderLoaded', 'applyMemberUpdated'];
+  const ready = ['applyMessageItem', 'applyChannelMembers', 'applyDialogList', 'applyOlderLoaded', 'applyChannelReplies'];
   const dirA = mkFixture(ready, ['applyMessageItem', 'applyDialogList'], []);
   const dirB = mkFixture(ready, ['applyMessageItem'], []); // 抽掉 applyDialogList 的绿
   const outA = run(dirA);
