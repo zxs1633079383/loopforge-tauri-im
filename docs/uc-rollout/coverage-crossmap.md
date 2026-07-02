@@ -93,17 +93,17 @@
 | 16 | POST `/api/cses/channel/change/orient` | partial | UC-5.4 | ✅ |
 | 17 | POST `/api/cses/channel/change/purpose` | partial | UC-5.4 | ✅ |
 | 18 | POST `/api/cses/channel/change/top` | partial | UC-5.5 | ✅ |
-| 19 | POST `/api/cses/channel/add/manger` | partial | UC-6.2 | ✅（2026-06-28 `feat/im-ws-echo-fills` 补 `channel_member_role_updated` 广播·role=ADMIN）|
-| 20 | POST `/api/cses/channel/remove/manger` | partial | UC-6.2 | ✅（同·补 role 广播·role=普通）|
+| 19 | POST `/api/cses/channel/add/manger` | partial | UC-6.2 | ✅（L1 只证真实出站；`data-admin` 由 L2 广播回灌）|
+| 20 | POST `/api/cses/channel/remove/manger` | partial | UC-6.2 | ✅（同上·真实广播回灌，不走前端乐观刷）|
 | 21 | POST `/api/cses/channel/add/postPinned` | partial | UC-5.5 | ✅ |
 | 22 | POST `/api/cses/channel/remove/postPinned` | partial | UC-5.5 | ✅ |
 | 23 | POST `/api/cses/channel/load/notice` | covered | UC-5.4（公告栏回读·改 notice 后读）| ✅ |
 | 24 | POST `/api/cses/channel/load/postPinned` | covered | UC-5.5 | ✅ |
-| 25 | POST `/api/cses/channel/load/admin` | covered | UC-6.2（管理员列表读路径）| ✅ |
+| 25 | POST `/api/cses/channel/load/admin` | covered | UC-6.2（管理员列表读路径；仍以 L2 广播为权威）| ✅ |
 | 26 | POST `/api/cses/channel/query` | covered | UC-5.8 | ✅（2026-06-24 新增 UC）|
 | 27 | POST `/api/cses/channel/close` | covered | UC-5.3 | ✅ |
-| 28 | POST `/api/cses/channel/onlineStatus` | partial | UC-5.7 | ✅（读族·①② 双面 e2e 真跑全绿·已迁移返 data·go-served·③④ N/A；users/status/ids 2026-06-28 实测已接线可用→见域C#2 转 ✅）|
-| 29 | POST `/api/cses/channel/member/change/role` | partial | UC-6.2 | ✅ |
+| 28 | POST `/api/cses/channel/onlineStatus` | partial | UC-5.7 | ✅（读族·①② 双面 e2e 真跑全绿·已迁移返 data·go-served·③④ N/A；users/status/ids 已接线可用，HTTP 侧不再冒充后台阻塞）|
+| 29 | POST `/api/cses/channel/member/change/role` | partial | UC-6.2 | ✅（管理员角色变更仍以真实 second connection 观测）|
 | 30 | POST `/api/cses/channel/member/change/notify` | partial | UC-5.4（成员免打扰·5.4 列 member/change/notify）| ✅ |
 | 31 | POST `/api/cses/channel/member/change/nickname` | partial | UC-6.3 | ✅ |
 | 32 | POST `/api/cses/channel/member/change` | partial | UC-6.1 | ✅ |
@@ -195,7 +195,7 @@
 | 2 | `posts_update` | UC-1.5（撤回批帧）| `emit_post_batch_updated` | ✅ |
 | 3 | `post_update` | UC-1.5（在线撤回）· UC-1.8（quickReply）· UC-1.9（加急）· UC-3.3（模板已收到）| `emit_post_updated`（fat）| ✅ |
 | 4 | `post_read` | UC-3.1（会话已读）· UC-3.2（单条已读）| `emit_post_read`（fat）| ✅ |
-| 5 | `post_pin` | UC-5.5b（消息置顶）| `emit_post_updated` | ✅（UC-5.5b·① 出站 `channel/add/postPinned` 真绿·②③④ **2026-06-28 cses-im-server `feat/im-ws-echo-fills` 补 post_pin 广播帧**(sendPinSystemPost 写库后 publish·operation add/remove)→ echo 面解除 backend-down）|
+| 5 | `post_pin` | UC-5.5b（消息置顶）| `emit_post_updated` | ✅（UC-5.5b·① 出站 `channel/add/postPinned` 真绿·②③④ 真实 WS 广播已补齐）|
 | 6 | `post_schedule_created` | UC-1.10 | `emit_schedule_created` | ✅ |
 | 7 | `post_schedule_canceled` | UC-1.10 | `emit_schedule_canceled` | ✅ |
 | 8 | `increment_channel` | UC-4.1（hello）· UC-4.5（陌生 channel 自动注册）| `emit_channel_increment` | ✅ |

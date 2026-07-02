@@ -56,15 +56,15 @@
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
 |---|---|---|---|---|---|---|---|
 | [x] | 5.4 群属性修改（改群名）| `channel/change/displayName` | 真机 wire 实证 | `im:post:received`(channelUpdate 系统 post·非 emit_channel_update thin) | data-channel-display-name 回读 | `message`(系统 NOTICE post) | M |
-| [x] | 5.5 置顶（频道置顶四面全绿·消息置顶 5.5b ① 全绿·②③④⛔backend-down）| `channel/change/top`{channelId,top}✅ / 5.5b `channel/add/postPinned`{channelId,postId}✅ | `partials/6 UC-5.5` | `im:channel:update`(emit_channel_update·thin)✅ / 5.5b `emit_post_updated`(⛔backend-down) | data-channel-top✅ / 5.5b data-pinned(⛔backend-down) | `channel`(is_top)✅ / 5.5b `message`(pinned·⛔backend-down) | M |
+| [x] | 5.5 置顶（频道置顶四面全绿·消息置顶 5.5b ①②③④ 已补齐）| `channel/change/top`{channelId,top}✅ / 5.5b `channel/add/postPinned`{channelId,postId}✅ | `partials/6 UC-5.5` | `im:channel:update`(emit_channel_update·thin)✅ / 5.5b `emit_post_updated`(real echo) | data-channel-top✅ / 5.5b data-pinned✅ | `channel`(is_top)✅ / 5.5b `message`(pinned)✅ | M |
 | [~] | 5.6r 公告读族 acceptList/list/detail ✅①②全绿(读族·go-served·③④N/A) | `post/announcement/{acceptList,list,detail}`{postId/channelId/postIds[]}✅ | `partials/1 §28/§30/§31` | `read_relay::emit_read_result`(im:read:result) | N/A(读族·前端从 body 抽公告渲染) | N/A(读族只读) | M |
 | [~] | 5.6w 公告写族 save/read/delete ①全绿·②④⛔backend-down(post_update echo·cses-java) | `post/announcement/{save,read,delete}`{camelCase·delete 两字段同值数组}✅ | `partials/1 §26-29` | `emit_post_updated`(im:post:updated·fat 13 键·⛔backend-down) | N/A(写族非冻结 DOM 面) | `message`(batch_update·⛔backend-down) | M |
 | [~] | 5.7 在线状态 channel/onlineStatus ✅①②全绿(读族·go-served·③④N/A)·users/status/ids ⛔后端真阻塞 | `channel/onlineStatus`{channelIds[]}✅ | `partials/2 §28` | `read_relay::emit_read_result`(im:read:result) | N/A(读族·前端从 body 抽在线状态渲染) | N/A(读族只读) | M |
 | [x] | 5.3 关闭/退出群 | `im_channel_close`→`channel/close` | `真机curl真源 §6`{channelId}✅ | `emit_channel_closed`{channelId,deleteAt} | channel 行移除 | `channel` 软删 | M |
 | [x] | 6.3 改群昵称 | `channel/member/change/nickname` | `partials/6 UC-6.3` | `emit_member_nickname`{channelId,userId,nickName} | data-nickname | `channel_member` | M |
 | [x] | 6.4 成员快照/全量 | `channel/member/snapshot`/`channels/member/byIds` | `partials/6 UC-6.4` | `query::emit_read_result`(读族) | data-member-count | `channel_member` 自愈 | M |
-| [~] | 6.1 拉/踢人（S7 #56 壳退纯绑定·①✅·③④ echo-gated channel_member_update WS 不到达·见 NEED_CSES_IM_SERVER_FIX） | `channel/member/change`(join/leave) | `真机curl真源 §5`{channelId,joinUsers/leaveUsers} | `emit_channel_member_updated`{channel_id,channel}（冻结 ②）+ render-ready `im:channel:members` | data-members 回读(applyChannelMembers 纯绑定) | `channel_member` | M |
-| [~] | 6.2 设/撤管理员（①③ 实跑全绿·②④ 结构性 L2 #45·issue #29） | `channel/add/manger`{channelId,users[]}✅/`remove/manger` | `partials/6 UC-6.2`·§19/§20 | `emit_channel_member_updated`/`emit_channel_update`（②④ L2#45·WS 注释+role_updated no-op·须 channel_member_update 广播帧） | data-admin✅（乐观刷） | `channel_member`（L2#45） | M |
+| [x] | 6.1 拉/踢人（真实 member-change 回灌已跑通·不再依赖旧 fallback） | `channel/member/change`(join/leave) | `真机curl真源 §5`{channelId,joinUsers/leaveUsers} | `emit_channel_member_updated`{channel_id,channel} + render-ready `im:channel:members` | data-members 回读(applyChannelMembers 纯绑定) | `channel_member` | M |
+| [~] | 6.2 设/撤管理员（L1 只证真实出站；`data-admin` 仍是 L2-only） | `channel/add/manger`{channelId,users[]}✅/`remove/manger` | `partials/6 UC-6.2`·§19/§20 | `emit_channel_member_updated`/`emit_channel_update`（L2#45·真实广播回灌） | data-admin N/A（禁止乐观刷·等 L2 广播回灌） | `channel_member`（L2#45） | M |
 
 ## 阶段 6 · 杂项（书签/待办/同步/互动卡片/系统）
 | 勾 | UC | 触发 invoke → outbound | ① 出站真源 | ② 投影工厂 | ③ DOM data-* | ④ DB 表 | 难度 |
@@ -101,6 +101,6 @@
 > **绑定规则见项目根 `CLAUDE.md` §8 UC Rollout 纪律**（开局必读·会遵守）。本文件只做依赖序细粒度 + 勾选。
 
 ## 进度统计
-- **真绿 6**：1.1、1.2、1.5、1.9、1.8、5.1/5.2（建群/话题）。〔4.1 ①③绿·②④ yellow=server-data-gap〕
+- **真绿统计以 `docs/uc-rollout/all-uc-real-chain-status.md` 为准**：本文件只保留依赖序和执行勾选，不再手工维护过时总数。
 - 本清单管理：阶段 0–7 共 **31 UC**（含 🟡6、🌙1、阶段7 新增 4：5.8/11.1/11.2/12.1）+ L2 **4 UC**。⛔ 阻塞/gap 不管理。
 - **闭环模式**：接最简 UI → `run.sh -- --spec test/specs/uc-X.e2e.mjs`(seeded db) → reducer 断面 → 修(多为校正草拟契约/复用 corr-key posts[]、storage rows‖keys) → 复跑全绿 → 翻台账 + commit + tag + **本清单打钩**。
