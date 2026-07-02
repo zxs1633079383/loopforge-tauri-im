@@ -85,3 +85,13 @@ These specs should be upgraded before counting UI/UX done:
 - UC-6.1: now clicks member input + join button; keep it as MB regression gate.
 - UC-6.2: now clicks the real member admin button; keep it as MB regression gate and do not let the UI optimistic-flush `data-admin`.
 - UC-8.x vote/average: downstream operations require real `data-vote` / `data-average` or env `UC8_VOTE_ID` / `UC8_AVERAGE_ID`; no generated ids.
+
+## Visual Evidence Gate
+
+Every UI/UX closure batch must archive:
+
+- desktop screenshot at 1440x1000
+- mobile screenshot at 390x844
+- `screenshot-summary.md`
+
+The screenshots must preserve machine selectors and show the `pd.cses7.com/message`-style direction: dark top/rail, light message canvas, dense channel list, stable composer.
