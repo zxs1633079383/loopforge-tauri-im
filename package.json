@@ -10,7 +10,15 @@
     "tauri": "tauri",
     "e2e:app": "cargo build --manifest-path src-tauri/Cargo.toml && ./src-tauri/target/debug/loopforge-tauri-im",
     "e2e:run": "wdio run wdio.conf.mjs",
-    "e2e": "wait-on http://localhost:1420 http://127.0.0.1:4445/status && wdio run wdio.conf.mjs"
+    "e2e": "wait-on http://localhost:1420 http://127.0.0.1:4445/status && wdio run wdio.conf.mjs",
+    "check:static": "tsc -p tsconfig.app.json --noEmit && ng build",
+    "check:specs": "for f in test/specs/*.e2e.mjs; do node --check \"$f\" || exit 1; done",
+    "check:real-chain": "node scripts/scan-real-chain-violations.mjs",
+    "uc:list": "node scripts/uc-spec-list.mjs --list all",
+    "uc:list:l1": "node scripts/uc-spec-list.mjs --list l1",
+    "uc:list:l2": "node scripts/uc-spec-list.mjs --list l2",
+    "uc:loop:mb": "bash scripts/multi-end-loop.sh --area MB",
+    "uc:loop:all": "bash scripts/multi-end-loop.sh --all"
   },
   "private": true,
   "dependencies": {
