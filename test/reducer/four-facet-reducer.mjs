@@ -240,15 +240,20 @@ function actualProjection(bundle, preferEvent) {
  *  （防隐私·无 channel_id）→ 装饰器抽不出 corr_key → 该 storage 事件落 unkeyed 束·不进 ch 锚 target。
  *  故当 target 束内无匹配 table 的 storage hop 时，回退窗口内 uc_id 同 + table 同的 scan 事件
  *  （与 createOutbound/batchOutbound 的窗口 fallback 同模式·窗口隔离保证本 UC 内唯一）。 */
-function actualStorage(bundle, table, scanFallback) {
+function actualStorage(bundle, table, scanFallback, opts = {}) {
   const writes = bundle ? bundle.hops.filter((h) => h.facet === 'storage' && h.payload?.op) : [];
   // table 指定时只认 table 匹配的 storage hop；不匹配则不抢答（让位给 scanFallback）。
   // `?? writes[0]` 的 catch-all 仅在 table 未指定（通配）时启用——否则 target 束里偶现的
   // 无关 keyed 写（如切群触发的 batch_upsert channel_member）会把读族 expect(scan message)
   // 错配为 batch_upsert，导致环境漂移下假红（2026-06-25 UC-2.1 实测）。
-  let hit = table
-    ? writes.find((h) => h.payload?.table === table)
-    : (writes[0] ?? null);
+  const tableWrites = table ? writes.filter((h) => h.payload?.table === table) : writes;
+  // 同一 server post 束内可能同时包含「前置发送 echo」和「本 UC 更新」（UC-1.8 实测：
+  // received/batch_upsert 先到，quickReply updated/batch_update 后到）。优先按 expect.op 锁定；
+  // 没有 op 锚时取同表最后一跳，避免旧 echo 抢答当前 UC 的 storage 面。
+  let hit =
+    (opts.op ? [...tableWrites].reverse().find((h) => h.payload?.op === opts.op) : null) ??
+    (tableWrites.length > 0 ? tableWrites[tableWrites.length - 1] : null) ??
+    null;
   // 读族 Scan 回退：target 束无匹配 table 的 storage hop → 取窗口内同 uc + 同 table 的 scan 事件。
   if (!hit && Array.isArray(scanFallback) && scanFallback.length > 0) {
     hit = scanFallback.find((h) => !table || h.payload?.table === table) ?? scanFallback[0];
@@ -1311,7 +1316,10 @@ export function runFourFacet({ jsonl, expect, dom, ucId }) {
   const facets = {
     outbound: outboundFacet,
     projection: diffProjection(expect.projection ?? {}, target && actualProjection(target, expect.projection?.event)),
-    storage: diffStorage(expect.storage ?? {}, actualStorage(target, expect.storage?.table, scanFallback)),
+    storage: diffStorage(
+      expect.storage ?? {},
+      actualStorage(target, expect.storage?.table, scanFallback, { op: expect.storage?.op })
+    ),
     dom: diffDom(expect.dom ?? {}, dom ?? null),
   };
 

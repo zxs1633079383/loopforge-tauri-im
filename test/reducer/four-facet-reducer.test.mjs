@@ -247,6 +247,39 @@ function mutateLine(jsonl, predicate, mutate) {
   ok(rep.facets.storage.issues.some((i) => i.includes('Storage')), '④ 报出"断在...Storage 这跳"');
 }
 
+// ④ storage：同 sid bundle 里旧 echo batch_upsert 与本 UC batch_update 共存时，按 expect.op 锁当前 UC。
+// UC-1.8 真实链路回归：set_uc 切到 quickReply 后，前置发送 echo 的 received/batch_upsert 仍可能落入
+// UC-1.8 窗口；reducer 必须取 quickReply 对应的 batch_update，而不是同表第一条 batch_upsert。
+{
+  const jsonl = [
+    { run_id: 'r', uc_id: 'UC-1.8', corr_key: 'ch=c;tmp=t;sid=s;seq=37', facet: 'projection', hop: 'projection', seq: 1,
+      payload: { event: 'im:post:received', data: { msg_id: 's', reactions: null } } },
+    { run_id: 'r', uc_id: 'UC-1.8', corr_key: 'ch=c;tmp=t;sid=s', facet: 'storage', hop: 'storage', seq: 2,
+      payload: { id: 's', table: 'message', op: 'batch_upsert', rows: 1 } },
+    { run_id: 'r', uc_id: 'UC-1.8', corr_key: 'sid=s', facet: 'outbound', hop: 'http-req', seq: 3,
+      payload: { method: 'POST', url: 'http://x/api/cses/posts/quickReply', body: { postId: 's', userId: '444', emoji: '👍' } } },
+    { run_id: 'r', uc_id: 'UC-1.8', corr_key: 'sid=s', facet: 'storage', hop: 'storage', seq: 4,
+      payload: { id: 's', table: 'message', op: 'batch_update', keys: 1 } },
+    { run_id: 'r', uc_id: 'UC-1.8', corr_key: 'ch=c;tmp=t;sid=s;seq=38', facet: 'projection', hop: 'projection', seq: 5,
+      payload: { event: 'im:post:updated', data: { msg_id: 's', reactions: '👍' } } },
+  ].map((x) => JSON.stringify(x)).join('\n');
+  const exp = {
+    ucId: 'UC-1.8',
+    corrAnchor: { postId: 's' },
+    outbound: {
+      method: 'POST',
+      urlEndsWith: 'posts/quickReply',
+      bodyFields: { postId: 's', emoji: '👍' },
+    },
+    projection: { event: 'im:post:updated', dataKeys: ['msg_id', 'reactions'] },
+    storage: { op: 'batch_update', table: 'message', minRows: 1 },
+    dom: { dataAttrs: { 'msg-id': 's', reactions: '👍' } },
+  };
+  const rep = runFourFacet({ jsonl, expect: exp, dom: { 'msg-id': 's', reactions: '👍' } });
+  eq(rep.green, true, 'UC-1.8 storage 回归：同 sid 旧 batch_upsert 不污染 quickReply batch_update');
+  eq(rep.facets.storage.actual.op, 'batch_update', 'UC-1.8 storage 回归：actualStorage 取 batch_update');
+}
+
 // ③ DOM：tmp→server 覆写未发生（data-msg-id 仍 = tmp）→ dom 红。
 {
   const badDom = { ...DOM_GOOD, 'msg-id': 't-abc123' }; // 没覆写
