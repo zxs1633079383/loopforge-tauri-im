@@ -31,6 +31,10 @@ AREA=""
 CSES_LOG="${CSES_LOG:-/tmp/cses-im-server.log}"
 LOOPS=1
 SPECS=()
+ARCHIVE_READY=0
+FINALIZE_DONE=0
+CURRENT_STAGE="init"
+CURRENT_DETAIL=""
 
 usage() {
   sed -n '1,22p' "$0"
@@ -47,6 +51,38 @@ copy_if_exists() {
   local src="$1"
   local dst="$2"
   [ -f "$src" ] && cp "$src" "$dst" || true
+}
+
+clear_stale_run_artifacts() {
+  rm -f \
+    "$RUN_LOG_DIR/run-ng.log" \
+    "$RUN_LOG_DIR/run-app.log" \
+    "$RUN_LOG_DIR/run.jsonl" \
+    "$RUN_LOG_DIR/wdio-out.log" \
+    "$RUN_LOG_DIR/cses-health.json"
+}
+
+finalize_run() {
+  local exit_code="${1:-0}"
+  [ "$FINALIZE_DONE" = 0 ] || return 0
+  FINALIZE_DONE=1
+  [ "$ARCHIVE_READY" = 1 ] || return 0
+
+  mkdir -p "$ARCHIVE_DIR"
+  cat >"$ARCHIVE_DIR/run-status.txt" <<EOF
+exit_code=$exit_code
+stage=$CURRENT_STAGE
+detail=$CURRENT_DETAIL
+EOF
+
+  copy_if_exists "$RUN_LOG_DIR/run-ng.log" "$ARCHIVE_DIR/run-ng.log"
+  copy_if_exists "$RUN_LOG_DIR/run-app.log" "$ARCHIVE_DIR/run-app.log"
+  copy_if_exists "$RUN_LOG_DIR/run.jsonl" "$ARCHIVE_DIR/run.jsonl"
+  copy_if_exists "$RUN_LOG_DIR/wdio-out.log" "$ARCHIVE_DIR/wdio-out.log"
+  copy_if_exists "$RUN_LOG_DIR/cses-health.json" "$ARCHIVE_DIR/cses-health.json"
+  copy_if_exists "$CSES_LOG" "$ARCHIVE_DIR/cses-im-server.log"
+  (cd "$ROOT" && node scripts/summarize-run-report.mjs --archive "$ARCHIVE_DIR" --out "$ARCHIVE_DIR/summary.md") || true
+  echo "archive: $ARCHIVE_DIR"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -146,6 +182,10 @@ need_file "$ROOT/src-tauri/Cargo.toml"
 need_file "$HELIX_ROOT/Cargo.toml"
 need_file "$CSES_IM_ROOT"
 mkdir -p "$RUN_LOG_DIR"
+mkdir -p "$ARCHIVE_DIR"
+clear_stale_run_artifacts
+ARCHIVE_READY=1
+trap 'rc=$?; trap - EXIT; finalize_run "$rc"; exit "$rc"' EXIT
 
 echo "== multi-end roots =="
 echo "loopforge: $ROOT"
@@ -158,6 +198,8 @@ echo "== backend health =="
 if curl -sS -o "$RUN_LOG_DIR/cses-health.json" -w "%{http_code}" http://127.0.0.1:8066/api/cses/health | grep -q '^200$'; then
   echo "cses-im-server health OK"
 else
+  CURRENT_STAGE="backend-health"
+  CURRENT_DETAIL="http://127.0.0.1:8066/api/cses/health"
   echo "cses-im-server health failed; start it with:" >&2
   echo "cd $CSES_IM_ROOT && CSES_IM_LISTEN_ADDR=:8066 CSES_IM_LOG_FORMAT=json go run ./cmd/server > $CSES_LOG 2>&1" >&2
   exit 1
@@ -165,11 +207,12 @@ fi
 if [ ! -f "$CSES_LOG" ]; then
   echo "warning: $CSES_LOG is missing; Go server is healthy but runtime log is not redirected"
 fi
-mkdir -p "$ARCHIVE_DIR"
 
 for ((i = 1; i <= LOOPS; i++)); do
   echo
   echo "== loop ${i}/${LOOPS}: static gates =="
+  CURRENT_STAGE="static-gates"
+  CURRENT_DETAIL="loop ${i}/${LOOPS}"
   (cd "$ROOT" && ./node_modules/.bin/tsc -p tsconfig.app.json --noEmit)
   (cd "$ROOT" && ./node_modules/.bin/ng build)
   (cd "$ROOT" && git diff --check)
@@ -178,6 +221,8 @@ for ((i = 1; i <= LOOPS; i++)); do
     echo "no --spec provided; skipped live WDIO run"
   else
     for spec in "${SPECS[@]}"; do
+      CURRENT_STAGE="wdio"
+      CURRENT_DETAIL="$spec"
       need_file "$ROOT/$spec"
       echo
       echo "== loop ${i}/${LOOPS}: live WDIO ${spec} =="
@@ -188,6 +233,8 @@ for ((i = 1; i <= LOOPS; i++)); do
   if [ "$RUN_APIFOX" = 1 ]; then
     echo
     echo "== loop ${i}/${LOOPS}: Apifox HTTP suite =="
+    CURRENT_STAGE="apifox"
+    CURRENT_DETAIL="loop ${i}/${LOOPS}"
     if [ -z "${APIFOX_TOKEN:-}" ]; then
       echo "APIFOX_TOKEN is required for --apifox" >&2
       exit 2
@@ -204,19 +251,15 @@ for ((i = 1; i <= LOOPS; i++)); do
   if [ "$RUN_SCREENSHOT" = 1 ]; then
     echo
     echo "== loop ${i}/${LOOPS}: UI screenshots =="
+    CURRENT_STAGE="screenshot"
+    CURRENT_DETAIL="loop ${i}/${LOOPS}"
     need_file "$ROOT/scripts/capture-ui-screenshots.mjs"
     (cd "$ROOT" && node scripts/capture-ui-screenshots.mjs --out "$ARCHIVE_DIR")
   fi
 done
 
-copy_if_exists "$RUN_LOG_DIR/run-ng.log" "$ARCHIVE_DIR/run-ng.log"
-copy_if_exists "$RUN_LOG_DIR/run-app.log" "$ARCHIVE_DIR/run-app.log"
-copy_if_exists "$RUN_LOG_DIR/run.jsonl" "$ARCHIVE_DIR/run.jsonl"
-copy_if_exists "$RUN_LOG_DIR/wdio-out.log" "$ARCHIVE_DIR/wdio-out.log"
-copy_if_exists "$RUN_LOG_DIR/cses-health.json" "$ARCHIVE_DIR/cses-health.json"
-copy_if_exists "$CSES_LOG" "$ARCHIVE_DIR/cses-im-server.log"
-(cd "$ROOT" && node scripts/summarize-run-report.mjs --archive "$ARCHIVE_DIR" --out "$ARCHIVE_DIR/summary.md")
-echo "archive: $ARCHIVE_DIR"
+CURRENT_STAGE="complete"
+CURRENT_DETAIL="all requested gates passed"
 
 echo
 echo "== evidence tails =="
