@@ -15,7 +15,7 @@
 - **机械搬运·零契约漂移**：wire body 字节一致（暖栈实证 UC-6.1 出站 `{channelId, joinUsers:[{id:"445",role:"MEMBER",teamId:...}]}` 与真源 §5 + 整改前 ledger 记录逐字一致）；冻结 oracle（expect ①面 / projection-schema / 真机curl真源）零改。
 - **回归验证**：暖栈实跑 5 改 UC——5.1 ✅ 四面全绿 / 5.2 ✅ 四面全绿 / 6.1 ① 出站绿（②③④ 为整改前即有的 L2/backend-down partial·非本次引入）/ 6.2 ✅（①③ 绿·②④ L2 N/A）/ 11.1 ✅ 四面全绿。回归面 cses-java（JDWP suspend·7091/3391=000）业务广播链断 → post-echo 依赖型 spec（send-1/1.9/3.3/4.2）环境性红（同 #14/#42 根因·非代码回归）；go-mattermost 直发 echo 与读族 spec（1.10/2.1/2.3/5.4/5.8/6.4/10.3）全绿。
 
-**剩余项（不阻塞·低优）**：M6 前端 setManger 乐观 data-admin（随 L2 #45 转权威态）· L1/L2 unread badge +1 与 failed 本地迁移（文档化乐观例外·无持久化）。**A 类裁定从 false → 合规（薄壳纪律守住）**；下方 §2/§5 原始裁定保留作整改前快照。
+**剩余项（不阻塞·低优）**：M6 曾记录前端 setManger 的违规 `data-admin` 乐观写法，现已废弃并改为只认 L2 #45 权威回灌；L1/L2 unread badge +1 与 failed 本地迁移仍属文档化例外（无持久化）。**A 类裁定从 false → 合规（薄壳纪律守住）**；下方 §2/§5 原始裁定保留作整改前快照。
 
 ---
 
@@ -26,7 +26,7 @@
 **但不完全合规**，存在两类有界越线（均 medium/low，**无 critical/high 真业务渗入**）：
 
 - **A 类（壳·出站 HTTP body 成形外溢）**：create/member 一族 5 个 rollout 命令在壳内构造完整 camelCase 出站 HTTP wire body，并做 role=CREATOR/MEMBER/ADMIN 角色业务赋值 + endpoint 路由。根因是 helix-im 对应 command 降级为 args 直透（pass-through），把 body 成形责任推给壳——壳注释自承『body 形态责任在壳』。偏离根 §2『禁壳内构造出站 HTTP body』与 `src-tauri/CLAUDE.md` 薄壳纪律 2。
-- **B 类（前端·有界乐观/派生态）**：3 处文档化例外（setManger 乐观写 data-admin、unread badge +1 累加、发送态 failed 本地迁移）+ 2 处轻度派生（成员增量累积、readBits 回退合并）。属投影 L1 不到达时的乐观 UI / 派生计数，非前端自维护权威业务真值。
+- **B 类（前端·有界乐观/派生态）**：文档保留过 3 处历史例外，其中 setManger 的违规 `data-admin` 乐观写法现已废弃；另两处是 unread badge +1 累加、发送态 failed 本地迁移，加上 2 处轻度派生（成员增量累积、readBits 回退合并）。属投影 L1 不到达时的乐观 UI / 派生计数，非前端自维护权威业务真值。
 
 **一句话总评：PARTIAL — 核心边界守住（helix 零改 + 壳无落库/对账/cursor + 前端纯渲染投影），但 5 个建群/成员类命令把出站 HTTP body 成形 + 角色业务赋值漏到壳内（pass-through command 所致），前端有 3 处有界乐观例外；均无 critical/high 真业务渗入。**
 
@@ -43,7 +43,7 @@
 | M3 | `src-tauri/src/commands.rs:855-909` (im_team_upsert · UC-11.1) | 壳内拼 CreateChannelSpecifyOwner team 对象（嵌 Channel 全字段 + owner CREATOR + users[] + forceCreate）。 |
 | M4 | `src-tauri/src/commands.rs:1099-1148` (im_channel_member_change · UC-6.1) | 壳内拼 member/change wire body（channelId/joinUsers/leaveUsers，每成员 {id,teamId,role:"MEMBER"} + self 过滤），注释自承『body 形态责任在壳』。 |
 | M5 | `src-tauri/src/commands.rs:1168-1209` (im_channel_set_manger · UC-6.2) | 壳内做 role=set?ADMIN:MEMBER 角色业务判定 + 按 set 选 add/remove manger endpoint + 拼 users:[{id,name,role,teamId}] body。 |
-| M6 | `src/app/im/im-store.service.ts:544-556` (setManger) + `src/app/im/app.component.ts:1012-1016` (onChangeManger) | 前端乐观维护业务真值：设/撤管理员后壳乐观把成员行 data-admin 置目标态（投影 L1 不到达·权威态留 L2 #45）。 |
+| M6 | `src/app/im/im-store.service.ts:544-556` (setManger) + `src/app/im/app.component.ts:1012-1016` (onChangeManger) | 历史违规快照：前端曾乐观把成员行 `data-admin` 置目标态；该写法现已废弃，权威态仅认 L2 #45 广播回灌。 |
 
 ### Low（5 条）
 
