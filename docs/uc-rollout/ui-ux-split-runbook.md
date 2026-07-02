@@ -47,6 +47,16 @@ Use standalone Angular components. Keep the root component as orchestration only
 6. Extract AX. Done; read-result rendering remains rooted in `ImStoreService`.
 7. Visual reskin to match `http://pd.cses7.com/message/pages/message/index.html`. Done as global CSS only; semantic DOM unchanged.
 
+## Task 6 Area Evidence
+
+| Area | Command | Result | Archive | Notes |
+|---|---|---|---|---|
+| CL | `bash scripts/multi-end-loop.sh --area CL` | green | `/tmp/loopforge/runs/20260702-205658` | `uc-5.1` / `uc-5.4` / `uc-5.5` all passed in one area batch. |
+| ML | `bash scripts/multi-end-loop.sh --area ML` | green | `/tmp/loopforge/runs/20260702-205744` | `uc-send-1` / `uc-1.5` / `uc-2.3` all passed in one area batch. |
+| CP | `bash scripts/multi-end-loop.sh --area CP` | green | `/tmp/loopforge/runs/20260702-210012` | First attempt exposed `uc-1.2` spec drift with real composer draft input; after updating `uc-1.2.e2e.mjs` to type into `compose-input`, rerun passed `uc-send-1` / `uc-1.2` / `uc-1.10` / `uc-1.10-cancel`. |
+| AX | `bash scripts/multi-end-loop.sh --area AX` | blocked | `/tmp/loopforge/runs/20260702-210107` | `uc-9.x` and `uc-2.4` passed, but `uc-10.1` failed because `posts/queryTodoList` + `im:todo:updated` landed in `__quiescence__`, while DOM todo rows were already present; this is a self-driven evidence-window/harness issue, not a presentational selector failure. |
+| MB | `bash scripts/multi-end-loop.sh --area MB` | green | `/tmp/loopforge/runs/20260702-210208` | `uc-6.1` / `uc-6.2` / `uc-6.3` / `uc-6.4` all passed in one area batch; `uc-6.2` remains L1 outbound-only by design. |
+
 ## Verification Gate Per Phase
 
 Run all cheap checks:
@@ -84,6 +94,7 @@ These specs should be upgraded before counting UI/UX done:
 - UC-1.10: schedule and cancel should both click composer buttons and verify schedule badge via WS/projection.
 - UC-6.1: now clicks member input + join button; keep it as MB regression gate.
 - UC-6.2: now clicks the real member admin button; keep it as MB regression gate and do not let the UI optimistic-flush `data-admin`.
+- UC-10.1: current spec expects hello self-driven `queryTodoList` hops to stay inside the named UC window, but Task 6 evidence at `/tmp/loopforge/runs/20260702-210107` shows outbound/projection landed under `__quiescence__` while DOM todo rows were already rendered. Fix this with a harness/bootstrap-window change, not a UI component patch.
 - UC-8.x vote/average: downstream operations require real `data-vote` / `data-average` or env `UC8_VOTE_ID` / `UC8_AVERAGE_ID`; no generated ids.
 
 ## Visual Evidence Gate

@@ -18,9 +18,8 @@
 //   - debug-only invoke `set_uc` / `im_send` 已注册（spec §5/§7）
 //   - run.jsonl 落点经 env HELIX_RUN_JSONL 暴露（W1 LogSink.to_file 路径）
 //
-// 注：UC-1.2 发DOCUMENT消息的UI触发件（document editor + send-document-btn）当前（Phase1）尚不存在。
-// spec 针对「意图中的 data-* 契约」编写（选择器按设计规范命名）。现在跑会红（找不到元素），
-// Phase2 接线后转绿 —— 这是正常的，spec 本身就是契约的一部分，约束了未来 UI 实现应该暴露的接口。
+// 现状：DOCUMENT 发送复用 composer draft 输入框 + [data-testid=send-document-btn]，
+// 真路径必须是「填 draft -> 点文档按钮 -> store.sendDocument(channelId, draft)」。
 
 import { browser, $, expect } from '@wdio/globals';
 import { readFileSync } from 'node:fs';
@@ -78,10 +77,7 @@ const readRow = (tmp) =>
 describe('UC-1.2 · 发送DOCUMENT消息 round-trip（四面契约）', () => {
   // Bug-2 修：temporaryId 由 store.sendDocument() 生成（点发送按钮触发真乐观流），e2e 从 DOM 读取
   //   store 写出的 data-temporary-id 作 corr_key 锚——不再固定注入 TMP 绕过乐观语义。
-  const SNAPSHOT = JSON.stringify({
-    root: { type: 'root', children: [{ type: 'p', children: [{ type: 'text', text: `doc-${Math.random().toString(36).slice(2, 8)}` }] }] },
-    version: 1
-  });
+  const DOC_TEXT = `doc-${Date.now()}`;
   let CHANNEL_ID;
 
   before(async () => {
@@ -111,7 +107,9 @@ describe('UC-1.2 · 发送DOCUMENT消息 round-trip（四面契约）', () => {
     // —— ③ DOM 主驱动：触发document send按钮 ——
     // Bug-2 修：不再固定注入 im_send。点 [data-testid=send-document-btn] → store.sendDocument()
     //   生成 temporaryId + invoke im_send；sending 行由 helix `im:post:sending` 投影驱动（壳纯渲染，不 JS 合成）。
-    // 注：Phase1 document编辑器UI尚不存在，此 selector 是「意图契约」。
+    const composeInput = await $('[data-testid="compose-input"]');
+    await composeInput.setValue(DOC_TEXT);
+
     const sendDocBtn = await $('[data-testid="send-document-btn"]');
     await sendDocBtn.click();
 
