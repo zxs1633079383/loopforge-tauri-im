@@ -62,6 +62,13 @@ clear_stale_run_artifacts() {
     "$RUN_LOG_DIR/cses-health.json"
 }
 
+clear_stale_apifox_archive_artifacts() {
+  rm -f \
+    "$ARCHIVE_DIR/apifox-status.json" \
+    "$ARCHIVE_DIR/apifox-run.log" \
+    "$ARCHIVE_DIR/apifox-create.log"
+}
+
 finalize_run() {
   local exit_code="${1:-0}"
   [ "$FINALIZE_DONE" = 0 ] || return 0
@@ -209,6 +216,7 @@ if [ ! -f "$CSES_LOG" ]; then
 fi
 
 for ((i = 1; i <= LOOPS; i++)); do
+  clear_stale_apifox_archive_artifacts
   echo
   echo "== loop ${i}/${LOOPS}: static gates =="
   CURRENT_STAGE="static-gates"
