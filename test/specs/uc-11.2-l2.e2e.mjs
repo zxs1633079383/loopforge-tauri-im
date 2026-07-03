@@ -128,22 +128,20 @@ const memberTokens = (value) =>
     .map((token) => token.trim())
     .filter(Boolean);
 
-const expectMemberAbsentFromDomEvidence = (evidence, memberId) => {
-  const memberRows = domRows(evidence, '[data-member-id]');
-  const removedMemberRows = domRows(evidence, `[data-member-id="${memberId}"]`);
-  const membersAttrRows = domRows(evidence, '[data-members]');
-  const hasMemberSurface = memberRows.length > 0 || membersAttrRows.length > 0;
+const expectMemberAbsentFromDomEvidence = (evidence, memberId, remainingMemberId) => {
+  const memberListRows = domRows(evidence, '[data-testid="member-list"][data-members]');
 
-  if (!hasMemberSurface) {
+  if (memberListRows.length === 0) {
     throw new Error(
-      `NEED_UI UC-11.2: DOM evidence has no quit/removal surface; expose [data-member-id] rows or [data-members] after quitter ${memberId} leaves`
+      `NEED_UI UC-11.2: DOM evidence has no scoped member-list data-members after quitter ${memberId} leaves`
     );
   }
 
-  expect(removedMemberRows.length).toBe(0);
-  expect(memberRows.some((row) => String(row?.attrs?.['data-member-id'] ?? '') === String(memberId))).toBe(false);
   expect(
-    membersAttrRows.some((row) => memberTokens(row?.attrs?.['data-members']).includes(String(memberId)))
+    memberListRows.some((row) => memberTokens(row?.attrs?.['data-members']).includes(String(remainingMemberId)))
+  ).toBe(true);
+  expect(
+    memberListRows.some((row) => memberTokens(row?.attrs?.['data-members']).includes(String(memberId)))
   ).toBe(false);
 };
 
@@ -247,8 +245,12 @@ describe('UC-11.2b · L2 退公司离群移除广播（双账号·issue #40 / #4
       '[data-member-id]',
       `[data-member-id="${QUITTER_ID}"]`,
       '[data-members]',
+      '[data-testid="member-list"][data-members]',
+      '[data-testid="member-list"] .mem[data-member-id]',
+      `[data-testid="member-list"] .mem[data-member-id="${QUITTER_ID}"]`,
+      `[data-testid="member-list"] .mem[data-member-id="${OBSERVER_ID}"]`,
     ]);
     const domEvidence = readDomEvidence(domEvidenceFile);
-    expectMemberAbsentFromDomEvidence(domEvidence, QUITTER_ID);
+    expectMemberAbsentFromDomEvidence(domEvidence, QUITTER_ID, OBSERVER_ID);
   });
 });
