@@ -31,10 +31,18 @@ fn req_payload(req: &HttpRequest) -> serde_json::Value {
 impl<H: HttpRequester> HttpRequester for Recording<H> {
     async fn request(&self, req: HttpRequest) -> Result<HttpResponse, PortError> {
         // facet ① 出站命令体：所有模式都 tee。
-        self.ctx.log(Facet::Outbound, Hop::HttpReq, req_payload(&req));
+        self.ctx
+            .log(Facet::Outbound, Hop::HttpReq, req_payload(&req));
         let key = req_key(&req);
+        let mode = self.ctx.mode();
 
-        match self.ctx.mode() {
+        if mode != Mode::Replay {
+            if let Some(suffix) = self.ctx.take_http_failpoint_for(&req.url) {
+                return Err(PortError::Http(format!("loopforge failpoint: {suffix}")));
+            }
+        }
+
+        match mode {
             Mode::Replay => {
                 let resp = self.ctx.with_tape(|t| t.next_http(&key));
                 match resp {

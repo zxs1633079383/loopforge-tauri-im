@@ -61,6 +61,12 @@ wait_http "http://localhost:$FRONTEND_PORT" "前端(ng serve)" 180
 # 故重置必须在 app 启动前（spec 的 before-hook 太晚·cursor 已灌入内存）。
 # 幂等可重复：每轮 run 都重置（上轮 hello 已把 cursor 推回 current）。
 BOOTSTRAP_UC=""
+FAIL_HTTP_ONCE_URL_SUFFIX=""
+if printf '%s\n' "${WDIO_ARGS[@]+"${WDIO_ARGS[@]}"}" | grep -q 'uc-1.4'; then
+  FAIL_HTTP_ONCE_URL_SUFFIX="posts/create"
+  info "UC-1.4：启用一次性 HTTP failpoint（LOOPFORGE_FAIL_HTTP_ONCE_URL_SUFFIX=${FAIL_HTTP_ONCE_URL_SUFFIX}）"
+fi
+
 if printf '%s\n' "${WDIO_ARGS[@]+"${WDIO_ARGS[@]}"}" | grep -q 'uc-4.1'; then
   info "UC-4.1：起 app 前重置 cursor 到落后态（seed-behind-cursor·决策 A·C003/C004）"
   bash "$REPO_ROOT/scripts/seed-behind-cursor.sh" || die "UC-4.1 cursor 重置失败（seed-behind-cursor）" 1
@@ -93,6 +99,7 @@ info "起 app：cargo run（src-tauri，debug，${MODE_ENV_VAR}=${MODE}，webdri
     "LOOPFORGE_EVIDENCE_DIR=$LOOPFORGE_EVIDENCE_DIR" \
     ${HELIX_DEVICE_ID:+"HELIX_DEVICE_ID=$HELIX_DEVICE_ID"} \
     ${HELIX_HTTP_MAX_INFLIGHT:+"HELIX_HTTP_MAX_INFLIGHT=$HELIX_HTTP_MAX_INFLIGHT"} \
+    ${FAIL_HTTP_ONCE_URL_SUFFIX:+"LOOPFORGE_FAIL_HTTP_ONCE_URL_SUFFIX=$FAIL_HTTP_ONCE_URL_SUFFIX"} \
     ${BOOTSTRAP_UC:+"LOOPFORGE_BOOTSTRAP_UC=$BOOTSTRAP_UC"} \
     nohup cargo run --manifest-path src-tauri/Cargo.toml >"$APP_LOG" 2>&1 & )
 

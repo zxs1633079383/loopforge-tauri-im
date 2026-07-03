@@ -22,12 +22,22 @@ pub const QUIESCENCE_UC: &str = "__quiescence__";
 /// 其余 UC 不设此 env → 仍默认 `__quiescence__`（不污染发送族窗口语义）。
 pub const BOOTSTRAP_UC_ENV: &str = "LOOPFORGE_BOOTSTRAP_UC";
 
+/// 一次性 HTTP 失败注入的 URL suffix 环境变量名。
+pub const HTTP_FAIL_ONCE_URL_SUFFIX_ENV: &str = "LOOPFORGE_FAIL_HTTP_ONCE_URL_SUFFIX";
+
 /// 读 bootstrap UC（env `LOOPFORGE_BOOTSTRAP_UC`，缺省 [`QUIESCENCE_UC`]）。
 fn bootstrap_uc() -> String {
     std::env::var(BOOTSTRAP_UC_ENV)
         .ok()
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| QUIESCENCE_UC.to_string())
+}
+
+fn http_fail_once_url_suffix() -> Option<String> {
+    std::env::var(HTTP_FAIL_ONCE_URL_SUFFIX_ENV)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 #[derive(Clone)]
@@ -41,6 +51,7 @@ struct CtxInner {
     mode: Mode,
     log: LogSink,
     tape: Mutex<Tape>,
+    http_fail_once_url_suffix: Mutex<Option<String>>,
 }
 
 impl InstrumentCtx {
@@ -52,6 +63,7 @@ impl InstrumentCtx {
                 mode,
                 log,
                 tape: Mutex::new(tape),
+                http_fail_once_url_suffix: Mutex::new(http_fail_once_url_suffix()),
             }),
         }
     }
@@ -72,6 +84,19 @@ impl InstrumentCtx {
 
     pub fn uc(&self) -> String {
         self.inner.uc.lock().expect("uc mutex poisoned").clone()
+    }
+
+    /// 取一次性 HTTP failpoint：URL 以配置 suffix 结尾时消费并返回该 suffix。
+    pub fn take_http_failpoint_for(&self, url: &str) -> Option<String> {
+        let mut suffix = self
+            .inner
+            .http_fail_once_url_suffix
+            .lock()
+            .expect("http failpoint mutex poisoned");
+        let matched = suffix.as_ref().filter(|s| url.ends_with(s.as_str()))?;
+        let matched = matched.clone();
+        *suffix = None;
+        Some(matched)
     }
 
     /// 锁 tape 做一次同步操作（**调用方禁止在返回值上跨 await 持锁**）。
@@ -145,7 +170,10 @@ mod tests {
     fn log_ipc_in_emits_facet_and_payload() {
         // P0b ⓪ 装饰器单测：log_ipc_in 落 facet=ipc-in / hop=ipc-in / payload={command,args}。
         let rows = capture(|ctx| {
-            ctx.log_ipc_in("im_send", json!({"channelId": "c1", "temporaryId": "t9", "text": "hi"}));
+            ctx.log_ipc_in(
+                "im_send",
+                json!({"channelId": "c1", "temporaryId": "t9", "text": "hi"}),
+            );
         });
         assert_eq!(rows.len(), 1);
         let ev = &rows[0];
@@ -161,7 +189,10 @@ mod tests {
     #[test]
     fn log_inbound_emits_facet_and_payload() {
         let rows = capture(|ctx| {
-            ctx.log_inbound("im_send_message", json!({"channel_id": "c1", "temporary_id": "t9"}));
+            ctx.log_inbound(
+                "im_send_message",
+                json!({"channel_id": "c1", "temporary_id": "t9"}),
+            );
         });
         assert_eq!(rows.len(), 1);
         let ev = &rows[0];

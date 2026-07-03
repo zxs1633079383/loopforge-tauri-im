@@ -2,17 +2,20 @@
 //! 用 fake port（不连真 go），executor 用 futures::block_on（不引 tokio）。
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::executor::block_on;
 
-use helix_core::ports::{Clock, IdSource, Transport};
+use helix_core::effect::{HttpRequest, HttpResponse};
+use helix_core::ports::{Clock, HttpRequester, IdSource, Transport};
 use helix_core::PortError;
 
-use helix_driver_instrument::{InstrumentCtx, LogSink, Mode, Recording, Tape};
+use helix_driver_instrument::{
+    InstrumentCtx, LogSink, Mode, Recording, Tape, HTTP_FAIL_ONCE_URL_SUFFIX_ENV,
+};
 
 // —— fake Transport：recv 吐脚本帧，send 记账 ——
 struct FakeTransport {
@@ -48,6 +51,33 @@ impl Transport for FakeTransport {
     }
 }
 
+// —— fake HTTP：计数 + 固定响应，证明 failpoint 是否触碰 inner ——
+struct FakeHttp {
+    calls: Arc<AtomicUsize>,
+}
+impl FakeHttp {
+    fn new() -> (Self, Arc<AtomicUsize>) {
+        let calls = Arc::new(AtomicUsize::new(0));
+        (
+            Self {
+                calls: calls.clone(),
+            },
+            calls,
+        )
+    }
+}
+#[async_trait]
+impl HttpRequester for FakeHttp {
+    async fn request(&self, req: HttpRequest) -> Result<HttpResponse, PortError> {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
+        Ok(HttpResponse {
+            status: 200,
+            headers: vec![("x-call".to_string(), call.to_string())],
+            body: Bytes::from(format!("ok:{}", req.url)),
+        })
+    }
+}
+
 // —— fake Clock / IdSource：步进，证明 Replay 忽略 inner 用 tape ——
 #[derive(Clone)]
 struct StepClock(Arc<AtomicU64>);
@@ -68,6 +98,90 @@ impl IdSource for StepId {
 
 const POST_FRAME: &[u8] = br#"{"action":"post","channelId":"c1","eventSeq":40114}"#;
 const SEND_BODY: &[u8] = br#"{"temporaryId":"t1","channelId":"c1"}"#;
+const HTTP_FAIL_SUFFIX: &str = "posts/create";
+
+static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+fn http_req(url: &str) -> HttpRequest {
+    HttpRequest {
+        method: "POST".to_string(),
+        url: url.to_string(),
+        headers: Vec::new(),
+        body: Some(Bytes::from_static(SEND_BODY)),
+    }
+}
+
+#[test]
+fn http_failpoint_once_matching_url_and_replay_ignores_env() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    std::env::set_var(HTTP_FAIL_ONCE_URL_SUFFIX_ENV, HTTP_FAIL_SUFFIX);
+
+    let (log, _buf) = LogSink::in_memory();
+    let ctx = InstrumentCtx::new("run-http-failpoint", Mode::Live, log, Tape::new());
+    std::env::remove_var(HTTP_FAIL_ONCE_URL_SUFFIX_ENV);
+    let (fake, calls) = FakeHttp::new();
+    let rec = Recording::new(fake, ctx);
+
+    block_on(async {
+        let nonmatching = rec
+            .request(http_req("/api/v4/channels/create"))
+            .await
+            .expect("nonmatching URL should pass through");
+        assert_eq!(nonmatching.status, 200);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        let first_matching = rec
+            .request(http_req("/api/v4/posts/create"))
+            .await
+            .expect_err("first matching URL should fail once");
+        match first_matching {
+            PortError::Http(msg) => assert_eq!(msg, "loopforge failpoint: posts/create"),
+            other => panic!("expected HTTP failpoint error, got {other:?}"),
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "failpoint must not touch the inner HTTP requester"
+        );
+
+        let second_matching = rec
+            .request(http_req("/api/v4/posts/create"))
+            .await
+            .expect("second matching URL should pass after failpoint is consumed");
+        assert_eq!(second_matching.status, 200);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    });
+
+    std::env::set_var(HTTP_FAIL_ONCE_URL_SUFFIX_ENV, HTTP_FAIL_SUFFIX);
+    let mut tape = Tape::new();
+    tape.record_http(
+        "POST /api/v4/posts/create".to_string(),
+        &HttpResponse {
+            status: 202,
+            headers: Vec::new(),
+            body: Bytes::from_static(b"replayed"),
+        },
+    );
+    let (log2, _buf2) = LogSink::in_memory();
+    let ctx2 = InstrumentCtx::new("run-http-replay", Mode::Replay, log2, tape);
+    std::env::remove_var(HTTP_FAIL_ONCE_URL_SUFFIX_ENV);
+    let (fake2, calls2) = FakeHttp::new();
+    let rep = Recording::new(fake2, ctx2);
+
+    block_on(async {
+        let replayed = rep
+            .request(http_req("/api/v4/posts/create"))
+            .await
+            .expect("replay mode must ignore HTTP failpoint env");
+        assert_eq!(replayed.status, 202);
+        assert_eq!(replayed.body, Bytes::from_static(b"replayed"));
+        assert_eq!(
+            calls2.load(Ordering::SeqCst),
+            0,
+            "replay must use tape without touching inner HTTP"
+        );
+    });
+}
 
 #[test]
 fn record_then_replay_transport() {
@@ -81,7 +195,10 @@ fn record_then_replay_transport() {
     block_on(async {
         rec.connect().await.unwrap();
         rec.send(Bytes::from_static(SEND_BODY)).await.unwrap();
-        assert_eq!(rec.recv().await.unwrap().unwrap(), Bytes::from_static(POST_FRAME));
+        assert_eq!(
+            rec.recv().await.unwrap().unwrap(),
+            Bytes::from_static(POST_FRAME)
+        );
         assert!(rec.recv().await.unwrap().is_none()); // 流结束
     });
 
@@ -91,8 +208,12 @@ fn record_then_replay_transport() {
 
     // 日志：facet ① 出站 + ws-recv + corr_key 抽到。
     let lines = buf.lines();
-    assert!(lines.iter().any(|l| l.contains("\"facet\":\"outbound\"") && l.contains("\"hop\":\"ws-send\"")));
-    assert!(lines.iter().any(|l| l.contains("\"facet\":\"ws-recv\"") && l.contains("ch=c1;seq=40114")));
+    assert!(lines
+        .iter()
+        .any(|l| l.contains("\"facet\":\"outbound\"") && l.contains("\"hop\":\"ws-send\"")));
+    assert!(lines
+        .iter()
+        .any(|l| l.contains("\"facet\":\"ws-recv\"") && l.contains("ch=c1;seq=40114")));
     assert!(lines.iter().all(|l| l.contains("UC-send-1")));
 
     // —— 把 tape 存盘再 load，进 Replay ——
@@ -110,8 +231,11 @@ fn record_then_replay_transport() {
     block_on(async {
         rep.connect().await.unwrap();
         rep.send(Bytes::from_static(SEND_BODY)).await.unwrap(); // 回放不真发
-        // 入站从 tape 供，不是从（空的）fake2。
-        assert_eq!(rep.recv().await.unwrap().unwrap(), Bytes::from_static(POST_FRAME));
+                                                                // 入站从 tape 供，不是从（空的）fake2。
+        assert_eq!(
+            rep.recv().await.unwrap().unwrap(),
+            Bytes::from_static(POST_FRAME)
+        );
         assert!(rep.recv().await.unwrap().is_none());
     });
 
@@ -119,7 +243,9 @@ fn record_then_replay_transport() {
     assert_eq!(sent2.lock().unwrap().len(), 0);
     // facet ① 出站在回放期仍 tee（可断言）。
     let lines2 = buf2.lines();
-    assert!(lines2.iter().any(|l| l.contains("\"facet\":\"outbound\"") && l.contains("tmp=t1")));
+    assert!(lines2
+        .iter()
+        .any(|l| l.contains("\"facet\":\"outbound\"") && l.contains("tmp=t1")));
 
     let _ = std::fs::remove_file(&path);
 }
