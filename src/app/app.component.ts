@@ -581,7 +581,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   /**
    * UC-5.6w 公告·保存（写族 WS post_update echo）：store.announcementSave（invoke im_announcement_save →
-   * 出站 post/announcement/save·camelCase Post·壳后端补 userId）。type=TEXT，message 使用用户动作触发时生成的真实请求正文。
+   * 出站 post/announcement/save·camelCase Post·壳后端补 userId）。type=ANNOUNCEMENT，message 使用用户动作触发时生成的真实请求正文。
    * server echo（im:post:updated）⛔ 当前阻于后端 WS 业务广播链(切 cses-im-server 后待复验)·① 出站经 cses-im-server 可真跑。无活动频道 → 不发。
    * e2e 走 bridge 直 invoke 注入真实 channelId/type/message 覆盖此便捷路径。
    */
@@ -591,7 +591,7 @@ export class AppComponent implements OnInit, OnDestroy {
     const message = this.draft.trim();
     if (!message) return;
     this.draft = "";
-    void this.store.announcementSave(channelId, "TEXT", message);
+    void this.store.announcementSave(channelId, "ANNOUNCEMENT", message);
   }
 
   /** UC-4.2 按需 sync：触发引擎重连 → 重检 per-channel needSync gap → 对落后频道自驱

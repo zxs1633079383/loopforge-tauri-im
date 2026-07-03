@@ -471,8 +471,7 @@ export class ImStoreService {
    *
    * 与 send() 的唯一区别——**不生成新 temporaryId**，复用失败行原 tmp：
    *  - 出站 body temporaryId 重复 → server upsert（同 temporary_id 覆盖原失败行，不产生重复消息）。
-   *  - 乐观把失败行从 failed 拨回 sending（DOM 状态流 failed→sending→sent）。
-   *  - pendingText 复填（瘦投影 im:post:sending 不带 text，sending 行渲染需要）。
+   *  - failed→sending 状态由 helix `im:post:sending` 投影 patch 原失败行（壳不乐观拨状态）。
    *  - echo im:post:received 按同 temporaryId 找行覆写 → status=sent + data-msg-id=server_id。
    *
    * invoke 失败：生产 Tauri 路径不合成 failed；失败态等 helix 投影，非 Tauri 调试回拨 failed。
@@ -484,10 +483,6 @@ export class ImStoreService {
   ): Promise<void> {
     const trimmed = text.trim();
     if (!trimmed || !temporaryId || !channelId) return;
-
-    // 乐观：失败行拨回 sending（DOM failed→sending）。瘦投影不带 text → pendingText 复填。
-    this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "sending" }));
-    this.pendingText.set(temporaryId, trimmed);
 
     try {
       await this.bridge.invoke<void>("im_send", {
@@ -2578,12 +2573,24 @@ export class ImStoreService {
   /**
    * 乐观上屏（helix im:post:sending render-ready 投影驱动·S6·issue #55·C013 纯渲染壳）：插入 sending 行。
    * text/type/sendStatus/readBits 全由 helix render-ready 吐成品 → 壳 **1:1 绑定**（不再取本地
-   * pendingText/pendingType·瘦投影时代「壳造乐观」的债已消除）。重复 temporary_id（重发去抖）→ 跳过不重插。
+   * pendingText/pendingType·瘦投影时代「壳造乐观」的债已消除）。重复 temporary_id（重发）→ patch 原行，
+   * 让 failed→sending 也由 helix 投影驱动。
    */
   private applyPostSending(d: PostSendingData): void {
-    const temporaryId = d.temporary_id ?? "";
+    const temporaryId = d.temporary_id ?? d.temporaryId ?? "";
     if (!temporaryId) return;
-    if (this._rows().some((r) => r.temporaryId === temporaryId)) return;
+    if (this._rows().some((r) => r.temporaryId === temporaryId)) {
+      this.patchByTemp(temporaryId, (r) => ({
+        ...r,
+        msgId: d.msgId ?? r.msgId ?? temporaryId,
+        channelId: d.channelId ?? d.channel_id ?? r.channelId,
+        sendStatus: this.toSendStatus(d.sendStatus),
+        readBits: d.readBits ?? r.readBits,
+        text: d.text ?? r.text,
+        type: d.type ?? r.type,
+      }));
+      return;
+    }
 
     const row: MessageRow = {
       msgId: d.msgId ?? temporaryId,

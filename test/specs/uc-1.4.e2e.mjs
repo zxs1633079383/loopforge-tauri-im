@@ -195,7 +195,7 @@ describe('UC-1.4 · 重发失败消息（四面契约）', () => {
         timeout: 10000,
         interval: 150,
         timeoutMsg:
-          '未出现真实 failed 行（断在 failpoint→helix im:post:send-failed→DOM；若 helix 未 pin 到 a285f23 属 Task 7 前置）',
+          '未出现真实 failed 行（断在 failpoint→helix im:post:send-failed→DOM；若 helix 未 pin 到 a285f23 属 Task 5 前置）',
       }
     );
     const failed = await findFailedRowByText(TEXT);
