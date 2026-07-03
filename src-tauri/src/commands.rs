@@ -12,10 +12,324 @@ use tauri::State;
 
 use crate::state::AppState;
 
+#[cfg(feature = "webdriver")]
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+#[cfg(feature = "webdriver")]
+use helix_core::effect::HttpRequest;
+#[cfg(feature = "webdriver")]
+use helix_core::ports::HttpRequester;
+#[cfg(feature = "webdriver")]
+use helix_driver_host::{HostNetworkConfig, SharedHttpClient};
+#[cfg(feature = "webdriver")]
+use helix_driver_instrument::{Facet, Hop};
+
 /// 把 JSON 值打包成 `Tick::Command`（payload = JSON bytes，由 helix-im ACL-1 解析）。
 fn command(name: &'static str, payload: serde_json::Value) -> Tick {
     let bytes = serde_json::to_vec(&payload).unwrap_or_default();
     Tick::Command(AppCommand::new(name, Bytes::from(bytes)))
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImIdentityDto {
+    user_id: String,
+    team_id: String,
+}
+
+/// 当前主窗口身份（dev-local 默认 444）。前端只读展示/兜底作者名，不在壳内改登录态。
+#[tauri::command]
+pub fn im_identity(state: State<'_, AppState>) -> ImIdentityDto {
+    ImIdentityDto {
+        user_id: state.identity.user_id.clone(),
+        team_id: state.identity.team_id.clone(),
+    }
+}
+
+#[cfg(feature = "webdriver")]
+fn l2_temp_id() -> String {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    format!("l2debug{millis}")
+}
+
+#[cfg(feature = "webdriver")]
+fn l2_actor(actor_user_id: Option<String>) -> String {
+    match actor_user_id.as_deref().map(str::trim) {
+        Some("444") => "444".to_string(),
+        Some("678") => "678".to_string(),
+        _ => "678".to_string(),
+    }
+}
+
+#[cfg(feature = "webdriver")]
+fn l2_api_base_dir(api_base: &str) -> String {
+    let trimmed = api_base.trim();
+    if trimmed.ends_with('/') {
+        trimmed.to_string()
+    } else {
+        format!("{trimmed}/")
+    }
+}
+
+#[cfg(feature = "webdriver")]
+async fn l2_post(
+    actor_user_id: &str,
+    path: &str,
+    body: serde_json::Value,
+) -> Result<String, String> {
+    let (_profile, cfg) = crate::config::load()?;
+    let client = SharedHttpClient::new(
+        HostNetworkConfig::new(l2_api_base_dir(&cfg.api_base), cfg.ws_url.clone())
+            .with_timeout(Duration::from_secs(12))
+            .with_user_agent("LoopForge-L2-Debug"),
+    )
+    .map_err(|e| format!("im_l2: HTTP client init failed: {e}"))?;
+    let headers = client.headers();
+    headers
+        .set_header_sync("cookieId", actor_user_id)
+        .map_err(|e| format!("im_l2: cookieId header failed: {e}"))?;
+    headers
+        .set_header_sync("companyId", &cfg.company_id)
+        .map_err(|e| format!("im_l2: companyId header failed: {e}"))?;
+    for (name, value) in [
+        ("appType", "bct"),
+        ("device", "IOS"),
+        ("language", "zh"),
+        ("content-type", "application/json"),
+    ] {
+        headers
+            .set_header_sync(name, value)
+            .map_err(|e| format!("im_l2: {name} header failed: {e}"))?;
+    }
+
+    let req = HttpRequest {
+        method: "POST".to_string(),
+        url: path.to_string(),
+        headers: Vec::new(),
+        body: Some(Bytes::from(
+            serde_json::to_vec(&body).map_err(|e| format!("im_l2: encode body failed: {e}"))?,
+        )),
+    };
+    let resp = client
+        .request(req)
+        .await
+        .map_err(|e| format!("im_l2: POST {path} failed: {e}"))?;
+    let text = String::from_utf8_lossy(&resp.body).into_owned();
+    if !(200..300).contains(&resp.status) {
+        return Err(format!("im_l2: POST {path} HTTP {}: {text}", resp.status));
+    }
+    Ok(text)
+}
+
+#[cfg(feature = "webdriver")]
+fn l2_mentions(mention_user_id: Option<String>) -> Vec<String> {
+    mention_user_id
+        .filter(|v| !v.trim().is_empty())
+        .map(|v| vec![v])
+        .unwrap_or_default()
+}
+
+/// L2 debug: 以指定调试用户发消息，主窗口仍保持 444，靠后端 WS echo 验证多端联调。
+#[cfg(feature = "webdriver")]
+#[tauri::command]
+pub async fn im_l2_send(
+    state: State<'_, AppState>,
+    channel_id: String,
+    text: String,
+    mention_user_id: Option<String>,
+    actor_user_id: Option<String>,
+) -> Result<String, String> {
+    let ch = channel_id.trim();
+    let msg = text.trim();
+    if ch.is_empty() {
+        return Err("im_l2_send: channelId 为空".into());
+    }
+    if msg.is_empty() {
+        return Err("im_l2_send: text 为空".into());
+    }
+    let actor = l2_actor(actor_user_id);
+    let tmp = l2_temp_id();
+    let mentions = l2_mentions(mention_user_id);
+    let team_id = state.identity.team_id.clone();
+    let body = serde_json::json!({
+        "viewers": ["all"],
+        "message": msg,
+        "mentions": mentions,
+        "temporaryId": tmp,
+        "type": "TEXT",
+        "simpleMessage": msg,
+        "channelId": ch,
+        "userId": actor,
+        "teamId": team_id.clone(),
+        "userSnapshot": {
+            "userId": actor,
+            "teamId": team_id,
+            "userName": actor,
+        },
+        "id": "",
+        "props": {},
+        "topicId": "",
+        "revoke": false,
+    });
+    let mention_log = body
+        .get("mentions")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!([]));
+    state.ctx.log_ipc_in(
+        "im_l2_send",
+        serde_json::json!({
+            "channelId": ch,
+            "text": msg,
+            "mentionUserId": mention_log,
+            "actorUserId": actor,
+            "temporaryId": tmp,
+        }),
+    );
+    state.ctx.log(
+        Facet::Outbound,
+        Hop::HttpReq,
+        serde_json::json!({
+            "command": "im_l2_send",
+            "url": "posts/create",
+            "cookieId": actor,
+            "body": body.clone(),
+        }),
+    );
+    let result = l2_post(&actor, "posts/create", body).await;
+    match &result {
+        Ok(text) => state.ctx.log(
+            Facet::WsRecv,
+            Hop::HttpResp,
+            serde_json::json!({
+                "command": "im_l2_send",
+                "status": "ok",
+                "actorUserId": actor,
+                "channelId": ch,
+                "temporaryId": tmp,
+                "body": serde_json::from_str::<serde_json::Value>(text)
+                    .unwrap_or_else(|_| serde_json::json!(text)),
+            }),
+        ),
+        Err(error) => state.ctx.log(
+            Facet::WsRecv,
+            Hop::HttpResp,
+            serde_json::json!({
+                "command": "im_l2_send",
+                "status": "error",
+                "actorUserId": actor,
+                "channelId": ch,
+                "temporaryId": tmp,
+                "error": error,
+            }),
+        ),
+    }
+    result
+}
+
+/// L2 debug: 以指定调试用户标整个会话已读（channels/view）。
+#[cfg(feature = "webdriver")]
+#[tauri::command]
+pub async fn im_l2_read_channel(
+    channel_id: String,
+    actor_user_id: Option<String>,
+) -> Result<String, String> {
+    let ch = channel_id.trim();
+    if ch.is_empty() {
+        return Err("im_l2_read_channel: channelId 为空".into());
+    }
+    let actor = l2_actor(actor_user_id);
+    l2_post(
+        &actor,
+        "channels/view",
+        serde_json::json!({ "channels": [{ "id": ch }] }),
+    )
+    .await
+}
+
+/// L2 debug: 以指定调试用户标单条消息已读。
+#[cfg(feature = "webdriver")]
+#[tauri::command]
+pub async fn im_l2_read_post(
+    channel_id: String,
+    post_id: String,
+    actor_user_id: Option<String>,
+) -> Result<String, String> {
+    let ch = channel_id.trim();
+    let post = post_id.trim();
+    if ch.is_empty() || post.is_empty() {
+        return Err("im_l2_read_post: channelId/postId 为空".into());
+    }
+    let actor = l2_actor(actor_user_id);
+    l2_post(
+        &actor,
+        "post/read",
+        serde_json::json!({ "channelId": ch, "posts": [post] }),
+    )
+    .await
+}
+
+/// L2 debug: 以指定调试用户对一条消息发起加急，默认目标为主窗口当前 userId（444）。
+#[cfg(feature = "webdriver")]
+#[tauri::command]
+pub async fn im_l2_urgent_post(
+    state: State<'_, AppState>,
+    channel_id: String,
+    post_id: String,
+    target_ids: Option<Vec<String>>,
+    message: Option<String>,
+    actor_user_id: Option<String>,
+) -> Result<String, String> {
+    let ch = channel_id.trim();
+    let post = post_id.trim();
+    if ch.is_empty() || post.is_empty() {
+        return Err("im_l2_urgent_post: channelId/postId 为空".into());
+    }
+    let targets = target_ids
+        .unwrap_or_else(|| vec![state.identity.user_id.clone()])
+        .into_iter()
+        .filter(|v| !v.trim().is_empty())
+        .collect::<Vec<_>>();
+    if targets.is_empty() {
+        return Err("im_l2_urgent_post: targetIds 为空".into());
+    }
+    let mut body = serde_json::json!({
+        "channelId": ch,
+        "postId": post,
+        "targetIds": targets,
+    });
+    if let Some(msg) = message.filter(|v| !v.trim().is_empty()) {
+        body["message"] = serde_json::json!(msg);
+    }
+    let actor = l2_actor(actor_user_id);
+    l2_post(&actor, "posts/urgentPost", body).await
+}
+
+#[cfg(all(test, feature = "webdriver"))]
+mod tests {
+    use super::{l2_actor, l2_api_base_dir};
+
+    #[test]
+    fn l2_actor_accepts_known_debug_users_and_defaults_to_678() {
+        assert_eq!(l2_actor(None), "678");
+        assert_eq!(l2_actor(Some("444".to_string())), "444");
+        assert_eq!(l2_actor(Some("678".to_string())), "678");
+        assert_eq!(l2_actor(Some("999".to_string())), "678");
+    }
+
+    #[test]
+    fn l2_api_base_keeps_api_cses_as_directory() {
+        assert_eq!(
+            l2_api_base_dir("http://localhost:8066/api/cses"),
+            "http://localhost:8066/api/cses/"
+        );
+        assert_eq!(
+            l2_api_base_dir("http://localhost:8066/api/cses/"),
+            "http://localhost:8066/api/cses/"
+        );
+    }
 }
 
 /// UC-send-1 出站发送：前端生成 `temporaryId` 乐观上屏后调本命令。

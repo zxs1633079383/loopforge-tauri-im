@@ -55,6 +55,33 @@ export interface MemberRow {
 export interface BookmarkRow {
   /** data-bookmark-id */
   bookmarkId: string;
+  /** 行文本内容（读族响应 post.message/text 透传；无则空串） */
+  message: string;
+}
+
+/** 公告行（AX announcement-panel · UC-5.6r）。data-announcement-id 直映读族公告响应。 */
+export interface AnnouncementRow {
+  announcementId: string;
+  postId: string;
+  message: string;
+}
+
+/** 模块行（AX module-panel · UC-10.3）。data-module-id 直映 modules/getAll 响应。 */
+export interface ModuleRow {
+  moduleId: string;
+  name: string;
+}
+
+/** 条件查频道结果行（AX channel-query-panel · UC-5.8）。 */
+export interface QueryChannelRow {
+  channelId: string;
+  displayName: string;
+}
+
+/** 在线状态行（MB online-status-panel · UC-5.7）。 */
+export interface OnlineStatusRow {
+  channelId: string;
+  onlineCount: number;
 }
 
 /** 待办行（AX todo-panel · UC-10.1）。data-todo-id 直映 todo::emit_todo_updated items。 */

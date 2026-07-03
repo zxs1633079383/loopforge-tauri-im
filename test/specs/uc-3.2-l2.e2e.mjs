@@ -22,8 +22,9 @@
 //   A 未收 im:post:read（msg_id==MSG_ID）→ ②④ 红（非 tautology）。
 
 import { browser, expect } from '@wdio/globals';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { captureDomEvidence } from '../helpers/dom-evidence.mjs';
 import { runFourFacet } from '../reducer/four-facet-reducer.mjs';
 
 const EXPECT = JSON.parse(
@@ -68,10 +69,28 @@ const invokeBridge = (cmd, args) =>
 // 快照当前 CL 区频道 id 集（建群后比对取新建 ch）。
 const snapshotChannelIds = () =>
   browser.execute(() =>
-    Array.from(document.querySelectorAll('[data-channel-id]'))
+    Array.from(document.querySelectorAll('[data-testid="channel-list"] [data-channel-id]'))
       .map((el) => el.getAttribute('data-channel-id'))
       .filter((id) => !!id)
   );
+
+const selectChannelInUi = async (channelId) => {
+  const row = await $(`[data-testid="channel-list"] [data-channel-id="${channelId}"]`);
+  await row.waitForExist({ timeout: 15000 });
+  await row.click();
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (id) => document.querySelector('main.im')?.getAttribute('data-active-channel') === id,
+        channelId
+      ),
+    {
+      timeout: 15000,
+      interval: 150,
+      timeoutMsg: `频道 ${channelId} 未在 UI 中激活`,
+    }
+  );
+};
 
 const readMessageRow = (msgId) =>
   browser.execute((mid) => {
@@ -86,6 +105,30 @@ const readMessageRow = (msgId) =>
       _msgId: mid,
     };
   }, msgId);
+
+const readDomEvidence = (file) => {
+  expect(existsSync(file)).toBe(true);
+  return JSON.parse(readFileSync(file, 'utf8'));
+};
+
+const expectDomRows = (evidence, selector) => {
+  const rows = evidence?.selectors?.[selector] ?? [];
+  expect(Array.isArray(rows)).toBe(true);
+  expect(rows.length).toBeGreaterThan(0);
+  return rows;
+};
+
+const expectDomAttr = (evidence, selector, attr, expected) => {
+  const rows = expectDomRows(evidence, selector);
+  expect(rows.some((row) => String(row?.attrs?.[attr] ?? '') === String(expected))).toBe(true);
+  return rows;
+};
+
+const expectDomAttrNonEmpty = (evidence, selector, attr) => {
+  const rows = expectDomRows(evidence, selector);
+  expect(rows.some((row) => String(row?.attrs?.[attr] ?? '').length > 0)).toBe(true);
+  return rows;
+};
 
 // 以 B=678 身份 POST post/read 标 A 的单条消息已读（child_process 跑 l2-act.sh·cookieId 桥）。
 function readAsB(channelId, postId) {
@@ -126,8 +169,8 @@ describe('UC-3.2 L2 · 单条消息已读双账号（#14 / #47）', () => {
     const afterIds = await snapshotChannelIds();
     CHANNEL_ID = afterIds.find((id) => !beforeIds.has(id));
     expect(CHANNEL_ID).toBeTruthy();
-    // 选中新频道·让其消息渲染到 ML 区（A 发的消息须在本地 DB + DOM 才有 ③④ 落点）。
-    await invokeBridge('im_query_messages_by_channel', { channelId: CHANNEL_ID });
+    // 真实点击选中新频道·让其消息渲染到 ML 区（A 发的消息须在本地 DB + DOM 才有 ③④ 落点）。
+    await selectChannelInUi(CHANNEL_ID);
     console.log(`[UC-3.2-L2 就绪] A=444 新建共享频道 channelId=${CHANNEL_ID}（拉 678 为成员）`);
   });
 
@@ -205,6 +248,20 @@ describe('UC-3.2 L2 · 单条消息已读双账号（#14 / #47）', () => {
     console.log(
       `[UC-3.2-L2 DOM] msgId=${MSG_ID} readBits=${readRow?.['read-bits']} eventSeq=${readRow?.['event-seq']}`
     );
+    const domEvidenceFile = await captureDomEvidence(browser, 'uc-3.2-l2-read-observer', [
+      '[data-testid="status-bar"]',
+      '[data-channel-id]',
+      `[data-channel-id="${CHANNEL_ID}"]`,
+      '[data-unread]',
+      '[data-read-bits]',
+      '[data-msg-id]',
+      `[data-msg-id="${MSG_ID}"]`,
+    ]);
+    const domEvidence = readDomEvidence(domEvidenceFile);
+    expectDomRows(domEvidence, '[data-read-bits]');
+    expectDomAttr(domEvidence, `[data-channel-id="${CHANNEL_ID}"]`, 'data-channel-id', CHANNEL_ID);
+    expectDomAttr(domEvidence, `[data-msg-id="${MSG_ID}"]`, 'data-msg-id', MSG_ID);
+    expectDomAttrNonEmpty(domEvidence, `[data-msg-id="${MSG_ID}"]`, 'data-read-bits');
 
     // —— 关 UC 窗口 ——
     await invokeBridge('set_uc', { uc: '__quiescence__' });

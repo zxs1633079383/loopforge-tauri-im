@@ -53,12 +53,19 @@ copy_if_exists() {
   [ -f "$src" ] && cp "$src" "$dst" || true
 }
 
+copy_dir_if_exists() {
+  local src="$1"
+  local dst="$2"
+  [ -d "$src" ] && cp -R "$src" "$dst" || true
+}
+
 clear_stale_run_artifacts() {
   rm -f \
     "$RUN_LOG_DIR/run-ng.log" \
     "$RUN_LOG_DIR/run-app.log" \
     "$RUN_LOG_DIR/run.jsonl" \
     "$RUN_LOG_DIR/wdio-out.log"
+  rm -rf "$RUN_LOG_DIR/evidence"
 }
 
 safe_spec_slug() {
@@ -92,6 +99,7 @@ EOF
   copy_if_exists "$RUN_LOG_DIR/wdio-out.log" "$spec_dir/wdio-out.log"
   copy_if_exists "$RUN_LOG_DIR/cses-health.json" "$spec_dir/cses-health.json"
   copy_if_exists "$CSES_LOG" "$spec_dir/cses-im-server.log"
+  copy_dir_if_exists "$RUN_LOG_DIR/evidence" "$spec_dir/evidence"
   (cd "$ROOT" && node scripts/summarize-run-report.mjs --archive "$spec_dir" --out "$spec_dir/summary.md") || true
 }
 
@@ -133,6 +141,7 @@ EOF
   copy_if_exists "$RUN_LOG_DIR/wdio-out.log" "$ARCHIVE_DIR/wdio-out.log"
   copy_if_exists "$RUN_LOG_DIR/cses-health.json" "$ARCHIVE_DIR/cses-health.json"
   copy_if_exists "$CSES_LOG" "$ARCHIVE_DIR/cses-im-server.log"
+  copy_dir_if_exists "$RUN_LOG_DIR/evidence" "$ARCHIVE_DIR/evidence"
   (cd "$ROOT" && node scripts/summarize-run-report.mjs --archive "$ARCHIVE_DIR" --out "$ARCHIVE_DIR/summary.md") || true
   echo "archive: $ARCHIVE_DIR"
 }

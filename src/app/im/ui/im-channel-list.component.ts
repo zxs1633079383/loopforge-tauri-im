@@ -43,6 +43,12 @@ export type ChannelChangeField = "displayName" | "notice" | "top";
             <span class="ch__preview">{{ c.lastMessage || c.notice || "" }}</span>
           </span>
           <span class="ch__meta">
+            @if (c.mention) {
+              <span class="ch__badge ch__badge--mention">@</span>
+            }
+            @if (c.urgent) {
+              <span class="ch__badge ch__badge--urgent">急</span>
+            }
             @if (c.unread) {
               <span class="ch__badge">{{ c.unread }}</span>
             }
@@ -114,6 +120,10 @@ export type ChannelChangeField = "displayName" | "notice" | "top";
       }
     </aside>
   `,
+  styles: [`
+    .ch__badge--mention { background: #4857e2; color: #fff; }
+    .ch__badge--urgent { background: #f97316; color: #fff; }
+  `],
 })
 export class ImChannelListComponent {
   @Input() channels: readonly ChannelRow[] = [];

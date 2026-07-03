@@ -33,8 +33,34 @@ const EXPECT = JSON.parse(
 const RUN_JSONL =
   process.env.HELIX_RUN_JSONL ?? new URL('../../src-tauri/run.jsonl', import.meta.url).pathname;
 
+const invokeBridge = (cmd, args) =>
+  browser.executeAsync(
+    (c, a, done) => {
+      // @ts-ignore — 薄壳注入
+      if (!window.__lf?.invoke) {
+        done({ ok: false, error: 'no __lf bridge' });
+        return;
+      }
+      window.__lf
+        .invoke(c, a)
+        .then((r) => done({ ok: true, result: r === undefined ? null : r }))
+        .catch((e) => done({ ok: false, error: String(e?.message ?? e) }));
+    },
+    cmd,
+    args
+  );
+
 describe('UC-10.1 · 待办列表（内核自驱·三面契约 ①②③·④ N/A）', () => {
+  after(async () => {
+    await invokeBridge('set_uc', { uc: '__quiescence__' });
+  });
+
   before(async () => {
+    // 归因 marker：尽早把 still-in-flight 的 self-driven todo read-result 认领到 UC-10.1。
+    // run.sh / harness reload-app --uc 已覆盖 boot-before-WDIO 场景；这里覆盖 WDIO attach 后才触发的慢链路。
+    const marker = await invokeBridge('set_uc', { uc: 'UC-10.1' });
+    expect(marker.ok).toBe(true);
+
     // 就绪 probe：等 data-ready=true（increment_channel_end 收齐 + inflight0 + cursor 稳）。
     // todo 自驱发生在 hello 收尾（global increment-end）→ ready 置位时 queryTodoList 已发起/回报。
     await browser.waitUntil(

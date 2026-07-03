@@ -138,8 +138,96 @@ async function waitReadResult(reqId, endpoint) {
   );
 }
 
+function readReadResultBody(reqId) {
+  let body;
+  const jsonl = readFileSync(RUN_JSONL, 'utf8');
+  for (const line of jsonl.split('\n')) {
+    if (!line.trim()) continue;
+    let ev;
+    try {
+      ev = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (
+      ev.facet === 'projection' &&
+      ev.hop === 'projection' &&
+      ev.payload?.event === 'im:read:result' &&
+      (ev.payload?.data?.req_id ?? ev.payload?.data?.reqId) === reqId
+    ) {
+      body = ev.payload?.data?.body;
+    }
+  }
+  return body;
+}
+
+function bodyItems(body, { singleObjectGuard } = {}) {
+  let value = body;
+  for (let i = 0; i < 2; i++) {
+    if (value && typeof value === 'object' && !Array.isArray(value) && 'data' in value) {
+      value = value.data;
+    }
+  }
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== 'object') return [];
+  for (const key of ['items', 'list', 'rows', 'postList', 'posts', 'announcements', 'records']) {
+    if (Array.isArray(value[key])) return value[key];
+  }
+  if (singleObjectGuard?.(value)) return [value];
+  return [];
+}
+
+function pickString(row, keys) {
+  if (!row || typeof row !== 'object') return '';
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return '';
+}
+
+function isAnnouncementItem(row) {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+  if (pickString(row, ['announcementId', 'postId'])) return true;
+  if (!pickString(row, ['id'])) return false;
+  return [
+    'message',
+    'text',
+    'content',
+    'channelId',
+    'type',
+    'createAt',
+    'createdAt',
+    'updateAt',
+    'updatedAt',
+  ].some((key) => key in row);
+}
+
+async function expectAttrRowsFromBody(reqId, attr, keys, options = {}) {
+  const ids = bodyItems(readReadResultBody(reqId), options)
+    .map((row) => pickString(row, keys))
+    .filter(Boolean);
+  if (ids.length === 0) {
+    const count = await browser.execute((a) => document.querySelectorAll(`[${a}]`).length, attr);
+    expect(count).toBe(0);
+    return;
+  }
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (a, id) =>
+          Array.from(document.querySelectorAll(`[${a}]`)).some(
+            (el) => el.getAttribute(a) === id
+          ),
+        attr,
+        ids[0]
+      ),
+    { timeout: 10000, interval: 150, timeoutMsg: `${attr}=${ids[0]} 未渲染` }
+  );
+}
+
 /** 新鲜 reqId（会话内唯一·锚本次 invoke）。 */
-const freshReqId = () => `req-${Math.random().toString(36).slice(2, 12)}`;
+const freshReqId = (prefix = 'req') => `${prefix}-${Math.random().toString(36).slice(2, 12)}`;
 
 describe('UC-5.6r · 公告读族 acceptList/list/detail（读族 request-response·断面 ①②）', () => {
   let CHANNEL_ID;
@@ -165,7 +253,7 @@ describe('UC-5.6r · 公告读族 acceptList/list/detail（读族 request-respon
   it('① acceptList：post/announcement/acceptList {postId} + 投影 im:read:result {req_id, body}', async () => {
     await invokeBridge('set_uc', { uc: 'UC-5.6r-acceptList' });
 
-    const reqId = freshReqId();
+    const reqId = freshReqId('announcement-accept-list');
     const r = await invokeBridge('im_announcement_accept_list', { postId: MSG_ID, reqId });
     expect(r.ok).toBe(true);
 
@@ -186,11 +274,12 @@ describe('UC-5.6r · 公告读族 acceptList/list/detail（读族 request-respon
   it('① list：post/announcement/list {channelId} + 投影 im:read:result {req_id, body}', async () => {
     await invokeBridge('set_uc', { uc: 'UC-5.6r-list' });
 
-    const reqId = freshReqId();
+    const reqId = freshReqId('announcement-list');
     const r = await invokeBridge('im_announcement_list', { channelId: CHANNEL_ID, reqId });
     expect(r.ok).toBe(true);
 
     await waitReadResult(reqId, 'list');
+    await expectAttrRowsFromBody(reqId, 'data-announcement-id', ['announcementId', 'id', 'postId']);
     await invokeBridge('set_uc', { uc: '__quiescence__' });
 
     const jsonl = readFileSync(RUN_JSONL, 'utf8');
@@ -207,11 +296,17 @@ describe('UC-5.6r · 公告读族 acceptList/list/detail（读族 request-respon
   it('① detail：post/announcement/detail {postIds:[]} + 投影 im:read:result {req_id, body}', async () => {
     await invokeBridge('set_uc', { uc: 'UC-5.6r-detail' });
 
-    const reqId = freshReqId();
+    const reqId = freshReqId('announcement-list');
     const r = await invokeBridge('im_announcement_detail', { postIds: [MSG_ID], reqId });
     expect(r.ok).toBe(true);
 
     await waitReadResult(reqId, 'detail');
+    await expectAttrRowsFromBody(
+      reqId,
+      'data-announcement-id',
+      ['announcementId', 'id', 'postId'],
+      { singleObjectGuard: isAnnouncementItem }
+    );
     await invokeBridge('set_uc', { uc: '__quiescence__' });
 
     const jsonl = readFileSync(RUN_JSONL, 'utf8');

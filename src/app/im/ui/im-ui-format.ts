@@ -21,10 +21,11 @@ export function avatarInitial(userId?: string): string {
   return s ? s[0].toUpperCase() : "消";
 }
 
-export function authorName(userId?: string): string {
+export function authorName(userId?: string, currentUserId = "444"): string {
   const s = (userId || "").trim();
-  if (!s) return "姜乐乐（我）";
-  return s.length > 10 ? s.slice(0, 8) + "..." : s;
+  const fallback = (currentUserId || "444").trim() || "444";
+  const name = s || fallback;
+  return name.length > 10 ? name.slice(0, 8) + "..." : name;
 }
 
 export function shortTime(createAt?: number): string {

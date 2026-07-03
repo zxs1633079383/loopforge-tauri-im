@@ -42,7 +42,7 @@ pub mod tape;
 pub mod transport;
 pub mod util;
 
-pub use ctx::InstrumentCtx;
+pub use ctx::{InstrumentCtx, HTTP_FAIL_ONCE_URL_SUFFIX_ENV};
 pub use event::{Facet, Hop, HopEvent};
 pub use log_sink::LogSink;
 pub use mode::Mode;

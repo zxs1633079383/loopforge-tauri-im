@@ -20,6 +20,8 @@
 import { browser, expect } from '@wdio/globals';
 import { existsSync, rmSync, readFileSync } from 'node:fs';
 import { spawn, execFileSync } from 'node:child_process';
+import { captureDomEvidence } from '../helpers/dom-evidence.mjs';
+import { captureObserverEvidence } from '../helpers/l2-evidence.mjs';
 
 const L2_ACT = new URL('../../scripts/l2-act.sh', import.meta.url).pathname;
 const QUITTER_ID = '777'; // 退出者（独立账号·非暖栈 444）
@@ -88,7 +90,7 @@ const invokeBridge = (cmd, args) =>
 
 const snapshotChannelIds = () =>
   browser.execute(() =>
-    Array.from(document.querySelectorAll('[data-channel-id]'))
+    Array.from(document.querySelectorAll('[data-testid="channel-list"] [data-channel-id]'))
       .map((el) => el.getAttribute('data-channel-id')).filter((id) => !!id)
   );
 
@@ -102,6 +104,94 @@ const readObserveFrames = () => {
   return frames;
 };
 
+const readDomEvidence = (file) => {
+  expect(existsSync(file)).toBe(true);
+  return JSON.parse(readFileSync(file, 'utf8'));
+};
+
+const expectDomRows = (evidence, selector) => {
+  const rows = evidence?.selectors?.[selector] ?? [];
+  expect(Array.isArray(rows)).toBe(true);
+  expect(rows.length).toBeGreaterThan(0);
+  return rows;
+};
+
+const domRows = (evidence, selector) => {
+  const rows = evidence?.selectors?.[selector] ?? [];
+  expect(Array.isArray(rows)).toBe(true);
+  return rows;
+};
+
+const memberTokens = (value) =>
+  String(value ?? '')
+    .split(/[,\s]+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+const memberListTokens = () =>
+  browser.execute(() => {
+    const attr = document.querySelector('[data-testid="member-list"]')?.getAttribute('data-members') ?? '';
+    return String(attr).split(/[,\s]+/).map((token) => token.trim()).filter(Boolean);
+  });
+
+const selectChannelInUi = async (channelId) => {
+  const row = await $(`[data-testid="channel-list"] [data-channel-id="${channelId}"]`);
+  await row.waitForExist({ timeout: 15000, timeoutMsg: `频道行未渲染: ${channelId}` });
+  await row.click();
+  await browser.waitUntil(
+    async () => (await browser.execute(() => document.querySelector('main.im')?.getAttribute('data-active-channel'))) === channelId,
+    { timeout: 10000, interval: 150, timeoutMsg: `UI 未切到目标频道: ${channelId}` }
+  );
+};
+
+const refreshMembersViaUi = async (expectedMemberIds) => {
+  const btn = await $('[data-testid="load-members-btn"]');
+  await btn.waitForClickable({ timeout: 10000, timeoutMsg: '成员加载按钮不可点击' });
+  await btn.click();
+  await browser.waitUntil(
+    async () => {
+      const tokens = await memberListTokens();
+      return expectedMemberIds.every((id) => tokens.includes(String(id)));
+    },
+    {
+      timeout: 15000,
+      interval: 200,
+      timeoutMsg: `成员面板未加载期望成员: ${expectedMemberIds.join(',')}`,
+    }
+  );
+};
+
+const waitMemberGoneViaUi = async (memberId, remainingMemberId) => {
+  await browser.waitUntil(
+    async () => {
+      const tokens = await memberListTokens();
+      return tokens.includes(String(remainingMemberId)) && !tokens.includes(String(memberId));
+    },
+    {
+      timeout: 15000,
+      interval: 200,
+      timeoutMsg: `成员面板未收敛: ${memberId} 仍存在或 ${remainingMemberId} 缺失`,
+    }
+  );
+};
+
+const expectMemberAbsentFromDomEvidence = (evidence, memberId, remainingMemberId) => {
+  const memberListRows = domRows(evidence, '[data-testid="member-list"][data-members]');
+
+  if (memberListRows.length === 0) {
+    throw new Error(
+      `NEED_UI UC-11.2: DOM evidence has no scoped member-list data-members after quitter ${memberId} leaves`
+    );
+  }
+
+  expect(
+    memberListRows.some((row) => memberTokens(row?.attrs?.['data-members']).includes(String(remainingMemberId)))
+  ).toBe(true);
+  expect(
+    memberListRows.some((row) => memberTokens(row?.attrs?.['data-members']).includes(String(memberId)))
+  ).toBe(false);
+};
+
 // 退出者 777 退 team（l2-act quit·cookieId 桥·DELETE teams/member/quit）。
 function quitAsQuitter() {
   return execFileSync('bash', [L2_ACT, 'quit'], {
@@ -111,6 +201,7 @@ function quitAsQuitter() {
 
 describe('UC-11.2b · L2 退公司离群移除广播（双账号·issue #40 / #48）', () => {
   let observeProc;
+  let TARGET_CHANNEL_ID;
 
   before(async () => {
     try { if (existsSync(OBSERVE_OUT)) rmSync(OBSERVE_OUT); } catch { /* ignore */ }
@@ -148,6 +239,10 @@ describe('UC-11.2b · L2 退公司离群移除广播（双账号·issue #40 / #4
       async () => (await snapshotChannelIds()).some((id) => !beforeIds.has(id)),
       { timeout: 20000, interval: 200, timeoutMsg: '建群无新行' }
     );
+    TARGET_CHANNEL_ID = (await snapshotChannelIds()).find((id) => !beforeIds.has(id));
+    expect(TARGET_CHANNEL_ID).toBeTruthy();
+    await selectChannelInUi(TARGET_CHANNEL_ID);
+    await refreshMembersViaUi([QUITTER_ID, OBSERVER_ID]);
     console.log(`[UC-11.2b] setup 完成（777+888 纳入 team·888 observe 连上）`);
   });
 
@@ -178,5 +273,35 @@ describe('UC-11.2b · L2 退公司离群移除广播（双账号·issue #40 / #4
     console.log(`[UC-11.2b L2] B=888 留存成员 quit 后新增 quit_company：${baseline}→${total}（退公司离群广播到达留存成员）`);
     // 守可证伪：quit 后新增 ≥1（本次 777 quit 真触发广播到留存成员 888·非 stale·非空）。
     expect(total).toBeGreaterThan(baseline);
+    await refreshMembersViaUi([OBSERVER_ID]);
+    await waitMemberGoneViaUi(QUITTER_ID, OBSERVER_ID);
+    const newQuitFrames = readObserveFrames().filter((f) => f.action === 'quit_company').slice(baseline);
+    captureObserverEvidence('uc-11.2-l2-quit-observer', {
+      observerKind: 'raw-ws',
+      observerUserId: OBSERVER_ID,
+      actorUserId: QUITTER_ID,
+      channelId: TARGET_CHANNEL_ID,
+      action: 'quit_company',
+      assertions: {
+        baseline,
+        total,
+        newFrameCount: newQuitFrames.length,
+      },
+      frames: newQuitFrames,
+    });
+    const domEvidenceFile = await captureDomEvidence(browser, 'uc-11.2-l2-quit-actor-dom', [
+      '[data-testid="status-bar"]',
+      '[data-testid="channel-list"] [data-channel-id]',
+      `[data-testid="channel-list"] [data-channel-id="${TARGET_CHANNEL_ID}"]`,
+      '[data-member-id]',
+      `[data-member-id="${QUITTER_ID}"]`,
+      '[data-members]',
+      '[data-testid="member-list"][data-members]',
+      '[data-testid="member-list"] .mem[data-member-id]',
+      `[data-testid="member-list"] .mem[data-member-id="${QUITTER_ID}"]`,
+      `[data-testid="member-list"] .mem[data-member-id="${OBSERVER_ID}"]`,
+    ]);
+    const domEvidence = readDomEvidence(domEvidenceFile);
+    expectMemberAbsentFromDomEvidence(domEvidence, QUITTER_ID, OBSERVER_ID);
   });
 });

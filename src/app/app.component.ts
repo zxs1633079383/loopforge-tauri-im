@@ -57,8 +57,15 @@ import { ImStatusBarComponent } from "./im/ui/im-status-bar.component";
       <app-im-status-bar
         [ready]="store.ready()"
         [activeChannel]="store.activeChannel()"
+        [currentUserId]="store.currentUserId()"
+        [senderUserId]="store.senderUserId()"
         (healthClick)="onHealth()"
         (readChannelClick)="onReadChannel()"
+        (senderUserIdChange)="store.setSenderUserId($event)"
+        (l2SendClick)="onL2Send()"
+        (l2MentionClick)="onL2Mention()"
+        (l2ReadClick)="onL2Read()"
+        (l2UrgentClick)="onL2Urgent()"
       />
 
       <div class="im__body">
@@ -85,6 +92,7 @@ import { ImStatusBarComponent } from "./im/ui/im-status-bar.component";
         <app-im-message-list
           [rows]="store.rows()"
           [activeChannel]="store.activeChannel()"
+          [currentUserId]="store.currentUserId()"
           (loadOlderClick)="onLoadOlder()"
           (revokeClick)="onRevoke($event)"
           (postReadClick)="onPostRead($event)"
@@ -137,6 +145,7 @@ import { ImStatusBarComponent } from "./im/ui/im-status-bar.component";
 
       <app-im-composer
         [activeChannel]="store.activeChannel()"
+        [senderUserId]="store.senderUserId()"
         [(draft)]="draft"
         (sendClick)="onSend()"
         (sendDocumentClick)="onSendDocument()"
@@ -149,12 +158,10 @@ import { ImStatusBarComponent } from "./im/ui/im-status-bar.component";
   `,
   styles: [
     `
-      /* pd.cses7 消息页风格 reskin：暗顶栏/侧栏 + 浅色会话列表/消息流，保留语义 DOM 锚点。 */
       .im {
         --top: #2c2a3a; --rail: #413f50; --surface: #ffffff; --panel: #ffffff;
-        --canvas: #F5F7FB; --hover: #F1F3F6; --active: #E6E8ED; --pinned: #F4F6F9;
-        --bubble: #ffffff;
-        --txt: #1f2430; --txt-2: #5b6472; --txt-3: #8a94a3; --muted: #a6afbc;
+        --canvas: #F5F7FB; --hover: #F1F3F6; --active: #E6E8ED;
+        --txt: #1f2430; --txt-2: #5b6472; --txt-3: #8a94a3;
         --accent: #4857e2; --cyan: #00baa0; --green: #22a06b; --red: #ef4444;
         --yellow: #f6a623; --divider: #e5e8ef;
         display: flex; flex-direction: column; height: 100vh;
@@ -242,19 +249,22 @@ import { ImStatusBarComponent } from "./im/ui/im-status-bar.component";
         display: inline-flex; align-items: center; justify-content: center;
         background: #ff4059; color: #fff; font-size: 11px; font-weight: 700;
       }
-      /* ops 浮层：绝对定位移出常规流（行收紧到只剩名/文本）·默认 opacity:0·hover 浮现。
-         仍 pointer-events:auto + 不 display/visibility-hide → WebdriverIO 按 testid 仍可点。
-         （若 uc-2.3 因遮挡掉绿则回退常规流·见提交说明） */
       .ch__ops, .mem__ops, .msg__ops {
         position: absolute; opacity: 0; transition: opacity 0.1s;
         display: flex; flex-wrap: wrap; align-items: center; gap: 3px;
         background: #fff; border: 1px solid var(--divider); border-radius: 6px; padding: 4px;
         box-shadow: 0 8px 26px rgba(31, 36, 48, 0.12); z-index: 3;
       }
+      .ch__ops {
+        left: 6px; overflow: hidden; pointer-events: none;
+      }
       .ch__ops, .mem__ops {
         right: 6px; top: 50%; transform: translateY(-50%); flex-wrap: nowrap;
       }
       .msg__ops { right: 12px; top: 2px; max-width: 60%; justify-content: flex-end; }
+      .ch:hover .ch__ops {
+        pointer-events: all;
+      }
       .ch:hover .ch__ops, .mem:hover .mem__ops, .msg:hover .msg__ops {
         opacity: 1; z-index: 6;
       }
@@ -265,7 +275,7 @@ import { ImStatusBarComponent } from "./im/ui/im-status-bar.component";
       .msg:hover { background: rgba(255, 255, 255, 0.55); }
       .msg__text {
         flex: 1; width: fit-content; max-width: min(620px, 76%);
-        padding: 10px 14px; border-radius: 10px; background: var(--bubble);
+        padding: 10px 14px; border-radius: 10px; background: #fff;
         color: var(--txt); font-size: 15px; line-height: 1.45;
         box-shadow: 0 1px 2px rgba(31, 36, 48, 0.04);
       }
@@ -387,9 +397,10 @@ export class AppComponent implements OnInit, OnDestroy {
   onSend(): void {
     const channelId = this.store.activeChannel();
     if (!channelId) return; // 未锚定真实频道（increment 未流入）→ 不发
-    const text = this.draft;
+    const text = this.draft.trim();
+    if (!text) return;
     this.draft = "";
-    void this.store.send(channelId, text);
+    void this.store.sendAsSelected(channelId, text);
   }
 
   onSendDocument(): void {
@@ -413,6 +424,40 @@ export class AppComponent implements OnInit, OnDestroy {
     this.onUrgentPost(row);
   }
 
+  onL2Send(): void {
+    const channelId = this.store.activeChannel();
+    if (!channelId) return;
+    const text = this.draft.trim() || `678 调试消息 ${Date.now()}`;
+    this.draft = "";
+    void this.store.sendAsSelected(channelId, text);
+  }
+
+  onL2Mention(): void {
+    const channelId = this.store.activeChannel();
+    if (!channelId) return;
+    const target = this.store.currentUserId();
+    const text = this.draft.trim() || `@${target} 678 多端调试 ${Date.now()}`;
+    this.draft = "";
+    void this.store.sendAsSelected(channelId, text, target);
+  }
+
+  onL2Read(): void {
+    const channelId = this.store.activeChannel();
+    if (!channelId) return;
+    void this.store.readChannelAsSelected(channelId);
+  }
+
+  onL2Urgent(): void {
+    const channelId = this.store.activeChannel();
+    if (!channelId) return;
+    const rows = this.store
+      .rows()
+      .filter((m) => m.channelId === channelId && !!m.msgId);
+    const row = rows[rows.length - 1];
+    if (!row?.msgId) return;
+    void this.store.urgentPostAsSelected(channelId, row.msgId, [this.store.currentUserId()]);
+  }
+
   /** UC-1.9 加急（消息行）：rootId=消息所在群 channelId·postId=消息 server id →
    *  store.urgentPost（targetIds 取成员区已加载成员·壳不臆造）。e2e 走 bridge 直 invoke
    *  注入真实 targetIds 覆盖此 UI 便捷路径。 */
@@ -422,7 +467,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (!channelId || !postId) return; // 无频道 / 无 server id（未对账消息）→ 不发
     const targetIds = this.store.members().map((m) => m.memberId).filter(Boolean);
     if (targetIds.length === 0) return; // 无目标成员（后端 Validate 拒空）
-    void this.store.urgentPost(channelId, postId, targetIds);
+    void this.store.urgentPostAsSelected(channelId, postId, targetIds);
   }
 
   /** UC-1.9 确认收到加急（消息行·阶段②）：postId=消息 server id + channelId →
@@ -464,7 +509,7 @@ export class AppComponent implements OnInit, OnDestroy {
   onReadChannel(): void {
     const channelId = this.store.activeChannel();
     if (!channelId) return; // 无活动会话 → 不发
-    void this.store.readChannel(channelId);
+    void this.store.readChannelAsSelected(channelId);
   }
 
   /** UC-12.1 健康探针：store.checkHealth（invoke im_health → 出站 GET /api/cses/health·无请求体·
@@ -536,7 +581,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   /**
    * UC-5.6w 公告·保存（写族 WS post_update echo）：store.announcementSave（invoke im_announcement_save →
-   * 出站 post/announcement/save·camelCase Post·壳后端补 userId）。type=TEXT，message 使用用户动作触发时生成的真实请求正文。
+   * 出站 post/announcement/save·camelCase Post·壳后端补 userId）。type=ANNOUNCEMENT，message 使用用户动作触发时生成的真实请求正文。
    * server echo（im:post:updated）⛔ 当前阻于后端 WS 业务广播链(切 cses-im-server 后待复验)·① 出站经 cses-im-server 可真跑。无活动频道 → 不发。
    * e2e 走 bridge 直 invoke 注入真实 channelId/type/message 覆盖此便捷路径。
    */
@@ -546,7 +591,7 @@ export class AppComponent implements OnInit, OnDestroy {
     const message = this.draft.trim();
     if (!message) return;
     this.draft = "";
-    void this.store.announcementSave(channelId, "TEXT", message);
+    void this.store.announcementSave(channelId, "ANNOUNCEMENT", message);
   }
 
   /** UC-4.2 按需 sync：触发引擎重连 → 重检 per-channel needSync gap → 对落后频道自驱
@@ -577,6 +622,7 @@ export class AppComponent implements OnInit, OnDestroy {
   onSelectChannel(channelId: string): void {
     if (!channelId) return;
     void this.store.queryMessages(channelId);
+    void this.store.readChannelAsSelected(channelId);
   }
 
   /**

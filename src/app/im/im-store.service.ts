@@ -1,10 +1,14 @@
 import { Injectable, computed, inject, signal } from "@angular/core";
 import { TauriBridgeService } from "./tauri-bridge.service";
 import {
+  AnnouncementRow,
   BookmarkRow,
   ChannelRow,
   MemberRow,
   MessageRow,
+  ModuleRow,
+  OnlineStatusRow,
+  QueryChannelRow,
   ReplyRow,
   SendStatus,
   TodoRow,
@@ -35,6 +39,8 @@ import {
   MessagesQueryResultData,
   OLDER_LOADED_CHANNEL,
   OlderLoadedData,
+  POST_SEND_FAILED_CHANNEL,
+  PostSendFailedData,
   POST_SENDING_CHANNEL,
   PostSendingData,
   READ_RESULT_CHANNEL,
@@ -44,6 +50,8 @@ import {
   TODO_UPDATED_CHANNEL,
   TodoUpdatedData,
 } from "./projection.types";
+
+export type SenderUserId = "444" | "678";
 
 /**
  * IM 薄壳状态机 —— **纯渲染**：listen im:__bus__ → 按投影渲染，零业务逻辑（铁律）。
@@ -77,7 +85,9 @@ export class ImStoreService {
     const target = this._locateTarget();
     const rows = this._rows();
     if (!target) return rows;
-    return rows.map((r) => (r.msgId === target ? { ...r, highlighted: true } : r));
+    return rows.map((r) =>
+      r.msgId === target ? { ...r, highlighted: true } : r,
+    );
   });
 
   /** 就绪标志（W1 probe im:ready 后置 true → 渲染 data-ready，供 e2e before 轮询） */
@@ -87,6 +97,14 @@ export class ImStoreService {
   /** 活动频道：stream 里第一个真实频道胜出（含 increment）→ 锚定，供发送/data-active-channel。 */
   private readonly _activeChannel = signal<string>("");
   readonly activeChannel = computed(() => this._activeChannel());
+
+  /** 当前主窗口身份（dev-local=444）。只读展示/兜底用，不在前端改登录态。 */
+  private readonly _currentUserId = signal("");
+  readonly currentUserId = computed(() => this._currentUserId() || "444");
+
+  /** 右上角调试发送者：只影响发送/已读/加急的出站 actor，不改变主窗口观察身份。 */
+  private readonly _senderUserId = signal<SenderUserId>("444");
+  readonly senderUserId = computed(() => this._senderUserId());
 
   // ——— 骨架区域信号（issue #46 · CL/MB/AX 语义区容器占位 · 各 UC issue 逐个填 apply 分支）———
   // 当前全空列表，模板渲染空容器（覆盖所有 UC 渲染容器）。壳纯渲染：data-* 直映投影，不在 JS 合成。
@@ -119,6 +137,27 @@ export class ImStoreService {
   private readonly _bookmarks = signal<BookmarkRow[]>([]);
   readonly bookmarks = computed(() => this._bookmarks());
 
+  /** 公告列表（AX announcement-panel · UC-5.6r）。 */
+  private readonly _announcements = signal<AnnouncementRow[]>([]);
+  readonly announcements = computed(() => this._announcements());
+
+  /** 模块列表（AX module-panel · UC-10.3）。 */
+  private readonly _modules = signal<ModuleRow[]>([]);
+  readonly modules = computed(() => this._modules());
+
+  /** 条件查频道结果（AX channel-query-panel · UC-5.8）。 */
+  private readonly _queryChannels = signal<QueryChannelRow[]>([]);
+  readonly queryChannelRows = computed(() => this._queryChannels());
+
+  /** 在线状态（MB online-status-panel · UC-5.7）。 */
+  private readonly _onlineStatuses = signal<OnlineStatusRow[]>([]);
+  readonly onlineStatuses = computed(() => this._onlineStatuses());
+
+  private readonly _onlineMembers = signal<
+    Array<{ channelId: string; memberId: string; online: boolean }>
+  >([]);
+  readonly onlineMembers = computed(() => this._onlineMembers());
+
   /** 待办列表（AX todo-panel · UC-10.1）。空占位。 */
   private readonly _todos = signal<TodoRow[]>([]);
   readonly todos = computed(() => this._todos());
@@ -129,6 +168,7 @@ export class ImStoreService {
 
   private unlisten: (() => void) | null = null;
   private readyTimer: ReturnType<typeof setTimeout> | null = null;
+  private dialogRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** 本地暂存：temporaryId → 发送文本（瘦投影 im:post:sending 不带 text，渲染 sending 行需要）。 */
   private readonly pendingText = new Map<string, string>();
@@ -152,9 +192,8 @@ export class ImStoreService {
   /** 订阅单总线 + 启动就绪 probe 轮询。组件 ngOnInit 调一次。 */
   async start(): Promise<void> {
     if (this.unlisten) return;
-    this.unlisten = await this.bridge.listen<BusEnvelope>(
-      "im:__bus__",
-      (env) => this.onBus(env),
+    this.unlisten = await this.bridge.listen<BusEnvelope>("im:__bus__", (env) =>
+      this.onBus(env),
     );
     // 就绪 probe：W1 契约 = 轮询 invoke('im_ready') -> bool（非 bus 事件）。
     // increment_end 收齐 + inflight0 + cursor 稳 后返 true → 置 data-ready，供 e2e before 轮询。
@@ -162,6 +201,7 @@ export class ImStoreService {
     // 会话列表 bootstrap：主动拉一次本地 dialogList → 设 activeChannel（send 族 UC 决定性发送目标）。
     // 早于就绪 probe 触发（probe 等增量静默 ~1.5s+），回报到时 activeChannel 已就位。
     this.bootstrapDialogList();
+    this.loadIdentity();
   }
 
   /** 拉一次本地会话列表（im_query_dialog_list → im:channels:projection 回报设 activeChannel）。
@@ -172,12 +212,44 @@ export class ImStoreService {
     });
   }
 
+  refreshDialogList(): void {
+    this.bootstrapDialogList();
+  }
+
+  private scheduleDialogListRefresh(): void {
+    if (this.dialogRefreshTimer) return;
+    this.dialogRefreshTimer = setTimeout(() => {
+      this.dialogRefreshTimer = null;
+      this.refreshDialogList();
+    }, 120);
+  }
+
+  private loadIdentity(): void {
+    this.bridge
+      .invoke<{ userId?: string }>("im_identity")
+      .then((identity) => {
+        const id = (identity.userId || "").trim();
+        if (id) this._currentUserId.set(id);
+      })
+      .catch(() => {
+        // 非 Tauri / 命令缺失 → 保持 dev-local fallback 444。
+      });
+  }
+
+  setSenderUserId(userId: SenderUserId): void {
+    this._senderUserId.set(userId);
+  }
+
   stop(): void {
     this.unlisten?.();
     this.unlisten = null;
     if (this.readyTimer) {
       clearTimeout(this.readyTimer);
       this.readyTimer = null;
+    }
+    if (this.dialogRefreshTimer) {
+      clearTimeout(this.dialogRefreshTimer);
+      this.dialogRefreshTimer = null;
     }
   }
 
@@ -215,7 +287,7 @@ export class ImStoreService {
    * 发送：生成 temporaryId → 暂存 pendingText → invoke('im_send')。
    *
    * **不在 JS 合成乐观行**——sending 行由 helix `im:post:sending` 投影驱动（壳纯渲染）。
-   * invoke 失败（含非 Tauri 环境）→ 若 sending 行已由投影插入则标 failed，并清 pendingText。
+   * invoke 失败：生产 Tauri 路径不合成 failed；失败态等 helix `im:post:send-failed` 投影。
    */
   async send(channelId: string, text: string): Promise<void> {
     const trimmed = text.trim();
@@ -232,21 +304,142 @@ export class ImStoreService {
         temporaryId,
       });
     } catch {
-      // 出站失败（非 Tauri dev 环境也会走这里）→ 标 failed（若投影已插行）+ 清暂存。
+      // 出站失败 → 生产失败态由 helix 投影驱动；此处只清本地暂存。
       this.markSendFailed(temporaryId);
     }
   }
 
+  async sendAsSelected(
+    channelId: string,
+    text: string,
+    mentionUserId?: string,
+  ): Promise<void> {
+    if (this.senderUserId() === "678") {
+      return this.l2Send(channelId, text, mentionUserId, "678");
+    }
+    if (mentionUserId) {
+      return this.l2Send(channelId, text, mentionUserId, "444");
+    }
+    return this.send(channelId, text);
+  }
+
+  async l2Send(
+    channelId: string,
+    text: string,
+    mentionUserId?: string,
+    actorUserId: SenderUserId = "678",
+  ): Promise<void> {
+    const ch = channelId.trim();
+    const msg = text.trim();
+    if (!ch || !msg) return;
+    try {
+      await this.bridge.invoke<string>("im_l2_send", {
+        channelId: ch,
+        text: msg,
+        mentionUserId,
+        actorUserId,
+      });
+      this.scheduleDialogListRefresh();
+    } catch {
+      // debug-only 命令缺失或出站失败 → UI 不造假，等真实投影。
+    }
+  }
+
+  async l2ReadChannel(
+    channelId: string,
+    actorUserId: SenderUserId = "678",
+  ): Promise<void> {
+    const ch = channelId.trim();
+    if (!ch) return;
+    try {
+      await this.bridge.invoke<string>("im_l2_read_channel", {
+        channelId: ch,
+        actorUserId,
+      });
+      this.scheduleDialogListRefresh();
+    } catch {
+      // debug-only 命令缺失或出站失败 → 静默。
+    }
+  }
+
+  async l2ReadPost(
+    channelId: string,
+    postId: string,
+    actorUserId: SenderUserId = "678",
+  ): Promise<void> {
+    const ch = channelId.trim();
+    const post = postId.trim();
+    if (!ch || !post) return;
+    try {
+      await this.bridge.invoke<string>("im_l2_read_post", {
+        channelId: ch,
+        postId: post,
+        actorUserId,
+      });
+    } catch {
+      // debug-only 命令缺失或出站失败 → 静默。
+    }
+  }
+
+  async l2UrgentPost(
+    channelId: string,
+    postId: string,
+    targetIds?: string[],
+    message = "678 加急调试",
+    actorUserId: SenderUserId = "678",
+  ): Promise<void> {
+    const ch = channelId.trim();
+    const post = postId.trim();
+    if (!ch || !post) return;
+    try {
+      await this.bridge.invoke<string>("im_l2_urgent_post", {
+        channelId: ch,
+        postId: post,
+        targetIds,
+        message,
+        actorUserId,
+      });
+      this.scheduleDialogListRefresh();
+    } catch {
+      // debug-only 命令缺失或出站失败 → 静默。
+    }
+  }
+
+  async readChannelAsSelected(channelId: string): Promise<void> {
+    if (this.senderUserId() === "678") {
+      return this.l2ReadChannel(channelId, "678");
+    }
+    return this.readChannel(channelId);
+  }
+
+  async urgentPostAsSelected(
+    channelId: string,
+    postId: string,
+    targetIds: string[],
+    message?: string,
+  ): Promise<void> {
+    if (this.senderUserId() === "678") {
+      return this.l2UrgentPost(channelId, postId, targetIds, message, "678");
+    }
+    return this.urgentPost(channelId, postId, targetIds, message);
+  }
+
   /**
-   * 把乐观行标 failed（生产路径：send/sendDocument invoke 抛错时调用）。
+   * invoke 失败后的本地清理。
    *
-   * 单一真源——真实 invoke 抛错后的 DOM 终态由本方法兑现（patchByTemp 标 failed + 清 pendingText）。
-   * 行内已存 text（applyPostSending 取 pendingText 落进行）→ resend 复用 row.text 重走 posts/create，
-   * 故此处清 pendingText（与原 send catch 行为一致），不影响重发。
+   * 生产 Tauri 路径不得从 catch 合成 failed；失败态只能来自 helix `im:post:send-failed`
+   * 投影。非 Tauri 浏览器调试没有 helix bus，若已有人为放入 sending 行则回拨 failed，避免样式调试卡死。
    */
   markSendFailed(temporaryId: string): void {
-    this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "failed" }));
+    this.clearPendingSendDraft(temporaryId);
+    if (!this.bridge.isTauri()) {
+      this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "failed" }));
+    }
+  }
+
+  private clearPendingSendDraft(temporaryId: string): void {
     this.pendingText.delete(temporaryId);
+    this.pendingType.delete(temporaryId);
   }
 
   /**
@@ -269,9 +462,7 @@ export class ImStoreService {
         msgType: "DOCUMENT",
       });
     } catch {
-      this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "failed" }));
-      this.pendingText.delete(temporaryId);
-      this.pendingType.delete(temporaryId);
+      this.markSendFailed(temporaryId);
     }
   }
 
@@ -280,19 +471,18 @@ export class ImStoreService {
    *
    * 与 send() 的唯一区别——**不生成新 temporaryId**，复用失败行原 tmp：
    *  - 出站 body temporaryId 重复 → server upsert（同 temporary_id 覆盖原失败行，不产生重复消息）。
-   *  - 乐观把失败行从 failed 拨回 sending（DOM 状态流 failed→sending→sent）。
-   *  - pendingText 复填（瘦投影 im:post:sending 不带 text，sending 行渲染需要）。
+   *  - failed→sending 状态由 helix `im:post:sending` 投影 patch 原失败行（壳不乐观拨状态）。
    *  - echo im:post:received 按同 temporaryId 找行覆写 → status=sent + data-msg-id=server_id。
    *
-   * invoke 失败（含非 Tauri 环境）→ 行重新标 failed（可再次重发）+ 清暂存。
+   * invoke 失败：生产 Tauri 路径不合成 failed；失败态等 helix 投影，非 Tauri 调试回拨 failed。
    */
-  async resend(temporaryId: string, channelId: string, text: string): Promise<void> {
+  async resend(
+    temporaryId: string,
+    channelId: string,
+    text: string,
+  ): Promise<void> {
     const trimmed = text.trim();
     if (!trimmed || !temporaryId || !channelId) return;
-
-    // 乐观：失败行拨回 sending（DOM failed→sending）。瘦投影不带 text → pendingText 复填。
-    this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "sending" }));
-    this.pendingText.set(temporaryId, trimmed);
 
     try {
       await this.bridge.invoke<void>("im_send", {
@@ -301,9 +491,8 @@ export class ImStoreService {
         temporaryId, // 复用原 tmp → upsert，不生成新 id
       });
     } catch {
-      // 出站失败 → 重新标 failed（可再次重发）+ 清暂存。
-      this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "failed" }));
-      this.pendingText.delete(temporaryId);
+      // 出站失败 → 生产失败态由 helix 投影驱动；此处只清本地暂存。
+      this.markSendFailed(temporaryId);
     }
   }
 
@@ -407,7 +596,10 @@ export class ImStoreService {
    * 群行属性由 helix `im:channel:update`（thin·{channel_id}）信号触发回读 channel 行 → CL 区
    * data-channel-display-name 更新（壳纯渲染·无乐观合成）。非 Tauri / 命令缺失 → 静默。
    */
-  async changeChannelDisplayName(channelId: string, displayName: string): Promise<void> {
+  async changeChannelDisplayName(
+    channelId: string,
+    displayName: string,
+  ): Promise<void> {
     const ch = channelId.trim();
     const name = displayName.trim();
     if (!ch || !name) return;
@@ -430,7 +622,10 @@ export class ImStoreService {
    * 群行属性由 helix `im:channel:update`（thin）信号触发回读 → CL 区 data-channel-notice 更新。
    * 非 Tauri / 命令缺失 → 静默。
    */
-  async changeChannelNotice(channelId: string, noticeText: string): Promise<void> {
+  async changeChannelNotice(
+    channelId: string,
+    noticeText: string,
+  ): Promise<void> {
     const ch = channelId.trim();
     if (!ch) return;
     try {
@@ -816,7 +1011,8 @@ export class ImStoreService {
       if (r.channelId !== ch) continue;
       if (typeof r.createAt !== "number") continue;
       if (!r.msgId) continue;
-      if (oldest === null || r.createAt < (oldest.createAt as number)) oldest = r;
+      if (oldest === null || r.createAt < (oldest.createAt as number))
+        oldest = r;
     }
     if (!oldest) return; // 无可翻页锚（无已加载历史 / 无 createAt）→ 不发
     try {
@@ -949,7 +1145,7 @@ export class ImStoreService {
     channelIds: string[],
     reqId?: string,
   ): Promise<string> {
-    const rid = (reqId ?? this.genReqId()).trim();
+    const rid = (reqId ?? this.genReqId("online-status")).trim();
     const ids = channelIds.filter((c) => !!c && c.trim());
     if (ids.length === 0) return rid;
     try {
@@ -1040,7 +1236,7 @@ export class ImStoreService {
     offset = 0,
     reqId?: string,
   ): Promise<string> {
-    const rid = (reqId ?? this.genReqId()).trim();
+    const rid = (reqId ?? this.genReqId("channel-query")).trim();
     try {
       await this.bridge.invoke<void>("im_channel_query", {
         condition,
@@ -1087,7 +1283,7 @@ export class ImStoreService {
    * 等回灌关联。本 UC 验收仅 ①② 面（出站空 body + im:read:result 投影透传）。
    */
   async getAllModules(reqId?: string): Promise<string> {
-    const rid = (reqId ?? this.genReqId()).trim();
+    const rid = (reqId ?? this.genReqId("modules-get-all")).trim();
     try {
       await this.bridge.invoke<void>("im_modules_get_all", { reqId: rid });
     } catch {
@@ -1106,8 +1302,11 @@ export class ImStoreService {
    * read_relay::emit_read_result 透传回灌 im:read:result{req_id, body}。壳只供 postId（公告 server id）
    * + reqId（前端 bridge 生成·回灌关联·非 wire 字段·helix read_req_id 抠出）。返 reqId 供 e2e 关联。
    */
-  async announcementAcceptList(postId: string, reqId?: string): Promise<string> {
-    const rid = (reqId ?? this.genReqId()).trim();
+  async announcementAcceptList(
+    postId: string,
+    reqId?: string,
+  ): Promise<string> {
+    const rid = (reqId ?? this.genReqId("announcement-accept-list")).trim();
     const post = postId.trim();
     if (!post) return rid;
     try {
@@ -1132,7 +1331,7 @@ export class ImStoreService {
     postId?: string,
     reqId?: string,
   ): Promise<string> {
-    const rid = (reqId ?? this.genReqId()).trim();
+    const rid = (reqId ?? this.genReqId("announcement-list")).trim();
     const ch = channelId.trim();
     if (!ch) return rid;
     const args: Record<string, unknown> = { channelId: ch, reqId: rid };
@@ -1152,7 +1351,7 @@ export class ImStoreService {
    * 回灌 im:read:result{req_id, body}。壳只供 postIds（公告 server id 数组）+ reqId。返 reqId 供 e2e 关联。
    */
   async announcementDetail(postIds: string[], reqId?: string): Promise<string> {
-    const rid = (reqId ?? this.genReqId()).trim();
+    const rid = (reqId ?? this.genReqId("announcement-list")).trim();
     const ids = postIds.filter((p) => !!p && p.trim());
     if (ids.length === 0) return rid;
     try {
@@ -1224,7 +1423,9 @@ export class ImStoreService {
     const ids = postIds.filter((p) => !!p && p.trim());
     if (ids.length === 0) return;
     try {
-      await this.bridge.invoke<void>("im_announcement_delete", { postIds: ids });
+      await this.bridge.invoke<void>("im_announcement_delete", {
+        postIds: ids,
+      });
     } catch {
       // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（公告删除靠 server WS post_update 回声驱动·无乐观合成）。
     }
@@ -1320,7 +1521,7 @@ export class ImStoreService {
     offset?: number,
     reqId?: string,
   ): Promise<string> {
-    const rid = (reqId ?? this.genReqId()).trim();
+    const rid = (reqId ?? this.genReqId("bookmark-load")).trim();
     const ch = channelId.trim();
     if (!ch) return rid;
     const args: Record<string, unknown> = { channelId: ch, reqId: rid };
@@ -1359,7 +1560,11 @@ export class ImStoreService {
    * UC-8.x 投票·提交（写族）：invoke('im_vote_do', {id, indexes, postId?}）。
    * id=投票卡 id·indexes=选项序号字符串数组·postId 可选（真源 partials/6 §vote）。
    */
-  async submitVote(id: string, indexes: string[], postId?: string): Promise<void> {
+  async submitVote(
+    id: string,
+    indexes: string[],
+    postId?: string,
+  ): Promise<void> {
     const vid = id.trim();
     if (!vid) return;
     const args: Record<string, unknown> = { id: vid, indexes };
@@ -1436,7 +1641,11 @@ export class ImStoreService {
    * UC-8.x 平均分·提交评分（写族）：invoke('im_average_attend', {id, score, postId?}）。
    * id=平均分卡 id·score=数值评分·postId 可选（真源 partials/6 §average/attend）。
    */
-  async attendAverage(id: string, score: number, postId?: string): Promise<void> {
+  async attendAverage(
+    id: string,
+    score: number,
+    postId?: string,
+  ): Promise<void> {
     const vid = id.trim();
     if (!vid) return;
     const args: Record<string, unknown> = { id: vid, score };
@@ -1458,7 +1667,10 @@ export class ImStoreService {
     const vid = id.trim();
     if (!vid) return rid;
     try {
-      await this.bridge.invoke<void>("im_average_read", { id: vid, reqId: rid });
+      await this.bridge.invoke<void>("im_average_read", {
+        id: vid,
+        reqId: rid,
+      });
     } catch {
       // 出站失败 → 静默（平均分详情靠 im:read:result 投影驱动·无乐观合成）。
     }
@@ -1495,8 +1707,8 @@ export class ImStoreService {
   }
 
   /** 读族关联 id（req_id）生成器（非 wire 字段·仅前端 bridge↔回灌关联用·z-base-32 短 id）。 */
-  private genReqId(): string {
-    return `req-${Math.random().toString(36).slice(2, 12)}`;
+  private genReqId(prefix = "req"): string {
+    return `${prefix}-${Math.random().toString(36).slice(2, 12)}`;
   }
 
   /**
@@ -1570,7 +1782,9 @@ export class ImStoreService {
       return;
     }
     if (channel === CHANNEL_INCREMENT_CHANNEL) {
-      this.applyChannelIncrement(env.payload?.data as ChannelIncrementData | undefined);
+      this.applyChannelIncrement(
+        env.payload?.data as ChannelIncrementData | undefined,
+      );
       return;
     }
     if (channel === CHANNEL_UPDATE_CHANNEL) {
@@ -1580,14 +1794,18 @@ export class ImStoreService {
     // UC-5.1 建群：im:channel:created（{channel_id, channel}）→ upsert CL 区新频道行
     // （data-channel-id 直映·壳纯渲染只持 channelId）。先于 message-row 分支（channel-row 信号）。
     if (channel === CHANNEL_CREATED_CHANNEL) {
-      this.applyChannelCreated(env.payload?.data as ChannelCreatedData | undefined);
+      this.applyChannelCreated(
+        env.payload?.data as ChannelCreatedData | undefined,
+      );
       return;
     }
     // UC-5.3 关闭/退出群：im:channel:closed（{channelId, deleteAt}·WS channel_close 透传·独立
     // broadcast 推送·非批次结束 thin）→ 把该频道行从 CL 区移除（data-channel-id 消失·壳纯渲染只
     // 消费投影删行·不在 JS 臆造软删态）。先于 message-row 分支（channel-row 信号·非 fat 集）。
     if (channel === CHANNEL_CLOSED_CHANNEL) {
-      this.applyChannelClosed(env.payload?.data as ChannelClosedData | undefined);
+      this.applyChannelClosed(
+        env.payload?.data as ChannelClosedData | undefined,
+      );
       return;
     }
     // UC-1.10 定时消息：im:channel:schedule-created（{channelId, hasSchedulePost}·WS post_schedule_created
@@ -1625,15 +1843,19 @@ export class ImStoreService {
     // nickName（data-nickname 回读·壳纯渲染透传投影 nickName·不在 JS 合成）；成员行缺则 upsert
     // （投影驱动成员入列·data-member-id=userId）。先于 message-row 分支（member-row 信号·非 fat 集）。
     if (channel === MEMBER_NICKNAME_CHANNEL) {
-      this.applyMemberNickname(env.payload?.data as MemberNicknameData | undefined);
+      this.applyMemberNickname(
+        env.payload?.data as MemberNicknameData | undefined,
+      );
       return;
     }
     // UC-6.1/6.4 成员族 render-ready：im:channel:members（{channelId, members, leaves}·helix 已把
-    // role→admin + 四源/byIds 解析下沉·S7 issue #56）→ 壳纯绑定 applyChannelMembers（keyed upsert +
-    // leaves 删行·零 extract/role 判/合并）。冻结的 member-updated{channel_id,channel} / read:result
+    // role→admin + 四源/byIds 解析下沉·S7 issue #56）→ 壳纯绑定 applyChannelMembers（当前成员集绑定 +
+    // leaves 兜底过滤·零 extract/role 判/合并）。冻结的 member-updated{channel_id,channel} / read:result
     // {req_id,body} 二投影仅供 ② 契约面裁定·壳不再据其派生成员。先于 message-row 分支（member-row 信号）。
     if (channel === CHANNEL_MEMBERS_CHANNEL) {
-      this.applyChannelMembers(env.payload?.data as ChannelMembersData | undefined);
+      this.applyChannelMembers(
+        env.payload?.data as ChannelMembersData | undefined,
+      );
       return;
     }
 
@@ -1660,7 +1882,9 @@ export class ImStoreService {
     // reply-drawer（data-reply-id 直映·壳纯绑定）。S8（issue #57·C013）：helix 抽好 postId·额外 emit·
     // 壳零 extract。先于 captureActiveChannel/message-row 分支（reply 投影无顶层 channel_id）。
     if (channel === CHANNEL_REPLIES_CHANNEL) {
-      this.applyChannelReplies(env.payload?.data as ChannelRepliesData | undefined);
+      this.applyChannelReplies(
+        env.payload?.data as ChannelRepliesData | undefined,
+      );
       return;
     }
 
@@ -1678,7 +1902,9 @@ export class ImStoreService {
     // 回声·invoke im_query_messages_by_channel 后 Scan 回报即 emit 本投影。先于 message-row fat 分支
     // （query_result 外层 2 键·非 message_item_data fat 集·messages 元素是 snake DB 行）。
     if (channel === MESSAGES_QUERY_RESULT_CHANNEL) {
-      this.applyMessagesQueryResult(env.payload?.data as MessagesQueryResultData | undefined);
+      this.applyMessagesQueryResult(
+        env.payload?.data as MessagesQueryResultData | undefined,
+      );
       return;
     }
 
@@ -1701,6 +1927,12 @@ export class ImStoreService {
       if (data && typeof data === "object") this.applyPostSending(data);
       return;
     }
+    if (channel === POST_SEND_FAILED_CHANNEL) {
+      this.applyPostSendFailed(
+        env.payload?.data as PostSendFailedData | undefined,
+      );
+      return;
+    }
 
     // message-row 类 channel 的 message_item_data fat 集 → echo 覆写。
     if (!MESSAGE_ROW_CHANNELS.has(channel)) return;
@@ -1715,6 +1947,7 @@ export class ImStoreService {
     // 仍读频道行属性·UC-10.2 读消息行系统标·加法式不回退）。
     this.applyChannelUpdatePost(data);
     this.applyMessageItem(data);
+    this.scheduleDialogListRefresh();
   }
 
   /**
@@ -1769,7 +2002,8 @@ export class ImStoreService {
         urgent: this.bool(row["urgent"]),
       });
     }
-    if (!this._activeChannel() && ids.length > 0) this._activeChannel.set(ids[0]);
+    if (!this._activeChannel() && ids.length > 0)
+      this._activeChannel.set(ids[0]);
   }
 
   /** 投影字段纯展示取值（非 string → undefined·行不带该属性·零业务整形·C013(b)）。 */
@@ -1815,23 +2049,239 @@ export class ImStoreService {
    */
   private applyReadResult(data: ReadResultData | undefined): void {
     if (!data || typeof data !== "object") return;
+    const reqId = typeof data.req_id === "string" ? data.req_id : "";
     // UC-6.4 成员快照回灌：S7（issue #56·C013）后成员渲染走 helix render-ready im:channel:members
     // （helix port_reply 解析 byIds body 额外 emit·壳 applyChannelMembers 纯绑定）。本读族回报仅 ② 契约面
     // （im:read:result{req_id,body}·UC-6.4 frozen）——壳不再解析 body（消灭 applyMembersSnapshot extract +
     // role→admin 禁区）。认领命中即 drop（防 byIds body{status,data} 误入下方 health/reply 透传分支）。
-    if (typeof data.req_id === "string" && this.pendingMemberReqs.has(data.req_id)) {
-      this.pendingMemberReqs.delete(data.req_id);
+    if (
+      reqId !== "" &&
+      this.pendingMemberReqs.has(reqId)
+    ) {
+      this.pendingMemberReqs.delete(reqId);
       return;
     }
     if (data.error !== undefined) {
       return; // 失败回灌：回复抽屉清空由 im:channel:replies(replyIds:[]) 收口（S8·不在本分支）
     }
+    if (reqId.startsWith("bookmark-load-")) {
+      this.applyBookmarkLoad(data.body);
+      return;
+    }
+    if (reqId.startsWith("announcement-list-")) {
+      this.applyAnnouncementList(data.body);
+      return;
+    }
+    if (reqId.startsWith("modules-get-all-")) {
+      this.applyModules(data.body);
+      return;
+    }
+    if (reqId.startsWith("channel-query-")) {
+      this.applyChannelQuery(data.body);
+      return;
+    }
+    if (reqId.startsWith("online-status-")) {
+      this.applyOnlineStatus(data.body);
+      return;
+    }
     // UC-12.1 健康探针回灌：body=裸 `{status:"OK"}`（健康端点不走业务信封）→ 设 _health（data-health
     // 直映 H 区指示件·1:1 绑定后端权威 status·非合成）。纯渲染透传 body.status。
     const body = data.body;
-    if (body && typeof body === "object" && typeof (body as { status?: unknown }).status === "string") {
+    if (
+      body &&
+      typeof body === "object" &&
+      typeof (body as { status?: unknown }).status === "string"
+    ) {
       this._health.set((body as { status: string }).status);
     }
+  }
+
+  private applyBookmarkLoad(body: unknown): void {
+    this._bookmarks.set(
+      this.bodyItems(body)
+        .map((item) => {
+          const bookmarkId = this.pickString(item, [
+            "bookmarkId",
+            "postId",
+            "id",
+            "msgId",
+          ]);
+          if (!bookmarkId) return null;
+          return {
+            bookmarkId,
+            message: this.pickString(item, ["message", "text", "content"]),
+          };
+        })
+        .filter((row): row is BookmarkRow => row !== null),
+    );
+  }
+
+  private applyAnnouncementList(body: unknown): void {
+    this._announcements.set(
+      this.bodyItems(body, (item) => this.isAnnouncementItem(item))
+        .map((item) => {
+          const announcementId = this.pickString(item, [
+            "announcementId",
+            "id",
+            "postId",
+          ]);
+          const postId = this.pickString(item, ["postId", "id"]);
+          if (!announcementId) return null;
+          return {
+            announcementId,
+            postId,
+            message: this.pickString(item, ["message", "text", "content"]),
+          };
+        })
+        .filter((row): row is AnnouncementRow => row !== null),
+    );
+  }
+
+  private applyModules(body: unknown): void {
+    this._modules.set(
+      this.bodyItems(body)
+        .map((item) => {
+          const moduleId = this.pickString(item, ["moduleId", "id"]);
+          if (!moduleId) return null;
+          return {
+            moduleId,
+            name: this.pickString(item, ["name", "label"]),
+          };
+        })
+        .filter((row): row is ModuleRow => row !== null),
+    );
+  }
+
+  private applyChannelQuery(body: unknown): void {
+    this._queryChannels.set(
+      this.bodyItems(body)
+        .map((item) => {
+          const channelId = this.pickString(item, ["channelId", "id"]);
+          if (!channelId) return null;
+          return {
+            channelId,
+            displayName: this.pickString(item, ["displayName", "name"]),
+          };
+        })
+        .filter((row): row is QueryChannelRow => row !== null),
+    );
+  }
+
+  private applyOnlineStatus(body: unknown): void {
+    const statuses: OnlineStatusRow[] = [];
+    const onlineMembers: Array<{
+      channelId: string;
+      memberId: string;
+      online: boolean;
+    }> = [];
+    for (const item of this.bodyItems(body)) {
+      const channelId = this.pickString(item, ["channelId", "id"]);
+      if (!channelId) continue;
+      const members = Array.isArray(item["members"]) ? item["members"] : [];
+      const onlineCount =
+        this.pickNumber(item, ["onlineCount", "count"]) ??
+        members.filter((member) => this.isOnlineMember(member)).length;
+      statuses.push({ channelId, onlineCount });
+      for (const member of members) {
+        const memberId = this.pickString(member, ["userId", "memberId", "id"]);
+        if (!memberId) continue;
+        onlineMembers.push({
+          channelId,
+          memberId,
+          online: this.isOnlineMember(member),
+        });
+      }
+    }
+    this._onlineStatuses.set(statuses);
+    this._onlineMembers.set(onlineMembers);
+  }
+
+  private bodyItems(
+    body: unknown,
+    singleObjectGuard?: (item: Record<string, unknown>) => boolean,
+  ): Array<Record<string, unknown>> {
+    let value = body;
+    for (let i = 0; i < 2; i++) {
+      if (
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        "data" in value
+      ) {
+        value = (value as Record<string, unknown>)["data"];
+      }
+    }
+    if (Array.isArray(value)) return this.objectItems(value);
+    if (!value || typeof value !== "object") return [];
+    const record = value as Record<string, unknown>;
+    for (const key of [
+      "items",
+      "list",
+      "rows",
+      "postList",
+      "posts",
+      "announcements",
+      "channels",
+      "modules",
+      "records",
+      "content",
+    ]) {
+      const nested = record[key];
+      if (Array.isArray(nested)) return this.objectItems(nested);
+    }
+    if (singleObjectGuard?.(record)) return [record];
+    return [];
+  }
+
+  private objectItems(items: unknown[]): Array<Record<string, unknown>> {
+    return items.filter(
+      (item): item is Record<string, unknown> =>
+        !!item && typeof item === "object" && !Array.isArray(item),
+    );
+  }
+
+  private isAnnouncementItem(item: Record<string, unknown>): boolean {
+    if (this.pickString(item, ["announcementId", "postId"])) return true;
+    if (!this.pickString(item, ["id"])) return false;
+    return [
+      "message",
+      "text",
+      "content",
+      "channelId",
+      "type",
+      "createAt",
+      "createdAt",
+      "updateAt",
+      "updatedAt",
+    ].some((key) => key in item);
+  }
+
+  private pickString(
+    item: Record<string, unknown>,
+    keys: string[],
+  ): string {
+    for (const key of keys) {
+      const value = item[key];
+      if (typeof value === "string" && value.trim()) return value;
+    }
+    return "";
+  }
+
+  private pickNumber(
+    item: Record<string, unknown>,
+    keys: string[],
+  ): number | undefined {
+    for (const key of keys) {
+      const value = item[key];
+      if (typeof value === "number" && Number.isFinite(value)) return value;
+    }
+    return undefined;
+  }
+
+  private isOnlineMember(item: unknown): boolean {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    const record = item as Record<string, unknown>;
+    return record["online"] === true || record["status"] === "online";
   }
 
   /**
@@ -1856,30 +2306,28 @@ export class ImStoreService {
    * UC-6.1/6.4 成员族 render-ready 纯绑定（im:channel:members·issue #56 S7·C013 第二北极星）。
    *
    * helix 已把 role→admin 业务规则 + 四源/byIds 解析重组下沉（render_ready_members）→ 本壳**纯绑定**：
-   * 按 `memberId` keyed upsert（直接赋 helix 给的 nickname/admin 成品·不 extract / 不判 role / 不合并四源）
-   * + `leaves` 删 MB 区成员行（拉踢人离场）。双源同形态：① 拉/踢人 WS（members=应在册·leaves=离场）
+   * MB 区当前成员集 = `members` 终态行 - `leaves` 兜底过滤（直接赋 helix 给的 nickname/admin 成品·不
+   * extract / 不判 role / 不合并四源）。双源同形态：① 拉/踢人 WS（members=应在册·leaves=离场）
    * ② byIds 成员快照（载族自愈·members=快照·leaves 空）。data 缺 → noop（守边界零信任·不清旧名册）。
-   * 与 S6 applyMessageItem/upsertHistoryRow 同款（O(1) keyed bind·非 tmp→server 对账合并）。
+   * O(n) 绑定当前投影成员集，n=频道成员数；冷路径，可读性优先。
    */
   private applyChannelMembers(data: ChannelMembersData | undefined): void {
     if (!data || typeof data !== "object") return;
     const members = Array.isArray(data.members) ? data.members : [];
     const leaves = new Set(Array.isArray(data.leaves) ? data.leaves : []);
-    this._members.update((rows) => {
-      const byId = new Map(rows.map((m) => [m.memberId, m] as const));
-      for (const m of members) {
-        if (!m || typeof m.memberId !== "string" || !m.memberId) continue;
-        byId.set(m.memberId, {
-          memberId: m.memberId,
-          nickname: m.nickname || undefined,
-          admin: m.admin || undefined,
-        });
-      }
-      for (const id of leaves) byId.delete(id);
-      return [...byId.values()];
-    });
+    const next = members
+      .filter((m) => m && typeof m.memberId === "string" && m.memberId && !leaves.has(m.memberId))
+      .map((m) => ({
+        memberId: m.memberId,
+        nickname: m.nickname || undefined,
+        admin: m.admin || undefined,
+      }));
+    this._members.set(next);
     this._membersAttr.set(
-      this._members().map((m) => m.memberId).sort().join(","),
+      next
+        .map((m) => m.memberId)
+        .sort()
+        .join(","),
     );
   }
 
@@ -1895,7 +2343,13 @@ export class ImStoreService {
     const items = Array.isArray(data.items) ? data.items : [];
     this._todos.set(
       items
-        .filter((it) => it && typeof it === "object" && typeof it.todoId === "string" && it.todoId !== "")
+        .filter(
+          (it) =>
+            it &&
+            typeof it === "object" &&
+            typeof it.todoId === "string" &&
+            it.todoId !== "",
+        )
         .map((it) => ({
           todoId: it.todoId as string,
           todoType: it.todoType,
@@ -1943,7 +2397,9 @@ export class ImStoreService {
     const channelId =
       (typeof data.channelId === "string" && data.channelId) || "";
     if (!channelId) return;
-    this._channels.update((rows) => rows.filter((c) => c.channelId !== channelId));
+    this._channels.update((rows) =>
+      rows.filter((c) => c.channelId !== channelId),
+    );
     if (this._activeChannel() === channelId) this._activeChannel.set("");
   }
 
@@ -1999,8 +2455,7 @@ export class ImStoreService {
    */
   private applyMemberNickname(data: MemberNicknameData | undefined): void {
     if (!data || typeof data !== "object") return;
-    const userId =
-      (typeof data.userId === "string" && data.userId) || "";
+    const userId = (typeof data.userId === "string" && data.userId) || "";
     if (!userId) return; // 无定点成员 → noop（与 helix WS handler 三键缺一 noop 一致）
     const nickName = typeof data.nickName === "string" ? data.nickName : "";
     let found = false;
@@ -2061,7 +2516,8 @@ export class ImStoreService {
       (typeof d["channelId"] === "string" && (d["channelId"] as string)) ||
       "";
     if (!channelId) return true; // 是 channelUpdate 帧（已认领·不进消息列表）·但无频道锚 → 不刷
-    const field = typeof pr["field"] === "string" ? (pr["field"] as string) : "";
+    const field =
+      typeof pr["field"] === "string" ? (pr["field"] as string) : "";
     const content =
       typeof pr["content"] === "string" ? (pr["content"] as string) : undefined;
     if (field === "displayName") {
@@ -2112,12 +2568,24 @@ export class ImStoreService {
   /**
    * 乐观上屏（helix im:post:sending render-ready 投影驱动·S6·issue #55·C013 纯渲染壳）：插入 sending 行。
    * text/type/sendStatus/readBits 全由 helix render-ready 吐成品 → 壳 **1:1 绑定**（不再取本地
-   * pendingText/pendingType·瘦投影时代「壳造乐观」的债已消除）。重复 temporary_id（重发去抖）→ 跳过不重插。
+   * pendingText/pendingType·瘦投影时代「壳造乐观」的债已消除）。重复 temporary_id（重发）→ patch 原行，
+   * 让 failed→sending 也由 helix 投影驱动。
    */
   private applyPostSending(d: PostSendingData): void {
-    const temporaryId = d.temporary_id ?? "";
+    const temporaryId = d.temporary_id ?? d.temporaryId ?? "";
     if (!temporaryId) return;
-    if (this._rows().some((r) => r.temporaryId === temporaryId)) return;
+    if (this._rows().some((r) => r.temporaryId === temporaryId)) {
+      this.patchByTemp(temporaryId, (r) => ({
+        ...r,
+        msgId: d.msgId ?? r.msgId ?? temporaryId,
+        channelId: d.channelId ?? d.channel_id ?? r.channelId,
+        sendStatus: this.toSendStatus(d.sendStatus),
+        readBits: d.readBits ?? r.readBits,
+        text: d.text ?? r.text,
+        type: d.type ?? r.type,
+      }));
+      return;
+    }
 
     const row: MessageRow = {
       msgId: d.msgId ?? temporaryId,
@@ -2132,6 +2600,16 @@ export class ImStoreService {
     this._rows.update((rows) => [...rows, row]);
     // O(1) 定位锚登记（echo 据此找乐观行·issue #53·替代 findIndex 全表扫）。
     this.rememberRowAnchors(row);
+  }
+
+  /** im:post:send-failed：helix 真实 HTTP 失败路径吐出的 row patch，壳按 temporaryId 直绑 sendStatus。 */
+  private applyPostSendFailed(d: PostSendFailedData | undefined): void {
+    if (!d || typeof d !== "object" || !d.temporaryId) return;
+    this.patchByTemp(d.temporaryId, (r) => ({
+      ...r,
+      sendStatus: d.sendStatus,
+    }));
+    this.clearPendingSendDraft(d.temporaryId);
   }
 
   /**
@@ -2172,7 +2650,10 @@ export class ImStoreService {
     const temporaryId = d.temporaryId ?? "";
     const serverId = d.msg_id ?? "";
     const eventSeq = typeof d.event_seq === "number" ? d.event_seq : null;
-    const readBits = d.readBits === undefined || d.readBits === null ? null : this.toReadBits(d.readBits);
+    const readBits =
+      d.readBits === undefined || d.readBits === null
+        ? null
+        : this.toReadBits(d.readBits);
     const echoCh = d.channelId ?? d.channel_id ?? "";
 
     // O(1) 锚定位：带 ch → 严格 (tmp,ch)；不带 ch → 纯 tmp；无 tmp → server id。
@@ -2205,11 +2686,16 @@ export class ImStoreService {
                 // reactions：helix 预解串直绑（patch 只增不清·null echo 不抹既有 reactions）。
                 reactions: d.reactions ?? r.reactions,
                 // templateReceived：helix 判定直绑（命中置位·非模板 echo 不抹既有态）。
-                templateReceived: d.templateReceived ? true : r.templateReceived,
+                templateReceived: d.templateReceived
+                  ? true
+                  : r.templateReceived,
                 // systemNotice：helix 判定直绑（命中置位·非系统 echo 不抹既有态）。
                 systemNotice: d.systemNotice ? true : r.systemNotice,
                 // pinned：post_pin 明确 boolean 时更新；普通消息事件 pinned=null 时不抹既有态。
-                pinned: typeof d.pinned === "boolean" ? (d.pinned || undefined) : r.pinned,
+                pinned:
+                  typeof d.pinned === "boolean"
+                    ? d.pinned || undefined
+                    : r.pinned,
               }
             : r,
         ),
@@ -2244,7 +2730,7 @@ export class ImStoreService {
       reactions: d.reactions ?? undefined,
       templateReceived: d.templateReceived || undefined,
       systemNotice: d.systemNotice || undefined,
-      pinned: typeof d.pinned === "boolean" ? (d.pinned || undefined) : undefined,
+      pinned: typeof d.pinned === "boolean" ? d.pinned || undefined : undefined,
     };
     this._rows.update((rows) => [...rows, row]);
     this.rememberRowAnchors(row);
@@ -2267,11 +2753,14 @@ export class ImStoreService {
     const createAtRaw = d["createAt"];
     return {
       msgId,
-      temporaryId: (typeof d["temporaryId"] === "string" && d["temporaryId"]) || "",
+      temporaryId:
+        (typeof d["temporaryId"] === "string" && d["temporaryId"]) || "",
       channelId: (typeof d["channelId"] === "string" && d["channelId"]) || "",
       eventSeq: null, // 读族无 event_seq 列（render-ready 吐 null·渲染空串）
       sendStatus: this.toSendStatus(
-        typeof d["sendStatus"] === "string" ? (d["sendStatus"] as string) : undefined,
+        typeof d["sendStatus"] === "string"
+          ? (d["sendStatus"] as string)
+          : undefined,
       ),
       readBits: (typeof d["readBits"] === "string" && d["readBits"]) || "",
       text: (typeof d["text"] === "string" && d["text"]) || "",
@@ -2281,7 +2770,9 @@ export class ImStoreService {
         typeof createAtRaw === "number" && Number.isFinite(createAtRaw)
           ? (createAtRaw as number)
           : undefined,
-      userId: (typeof d["userId"] === "string" && (d["userId"] as string)) || undefined,
+      userId:
+        (typeof d["userId"] === "string" && (d["userId"] as string)) ||
+        undefined,
     };
   }
 
@@ -2293,7 +2784,11 @@ export class ImStoreService {
   private upsertHistoryRow(row: MessageRow, prepend: boolean): void {
     const serverId = row.msgId !== row.temporaryId ? row.msgId : "";
     const keys = row.temporaryId
-      ? [`t:${row.temporaryId}|${row.channelId}`, `t:${row.temporaryId}|`, `s:${row.msgId}`]
+      ? [
+          `t:${row.temporaryId}|${row.channelId}`,
+          `t:${row.temporaryId}|`,
+          `s:${row.msgId}`,
+        ]
       : [`s:${row.msgId}`];
     const targetMsgId = this.locateRowMsgId(keys);
     if (targetMsgId !== null) {

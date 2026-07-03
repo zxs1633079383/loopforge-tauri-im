@@ -847,13 +847,15 @@ export function runFourFacetSelfDriven({ jsonl, expect, dom, ucId }) {
 
   const exp = expect.outbound ?? {};
   const urlEnds = exp.urlEndsWith;
+  const inUcWindow = (e) => uc === undefined || e.uc_id === uc;
 
   // ① 出站：UC 窗口内按 endpoint（urlEndsWith）找 outbound http-req（窗口隔离保证唯一·多于一个取
-  // 最后一条——同窗口同 endpoint 重发取最新·一般唯一）。
+  // 最后一条——同窗口同 endpoint 重发取最新·一般唯一）。UC-10.1 必须由 run.sh/harness 的
+  // LOOPFORGE_BOOTSTRAP_UC 或 spec set_uc 显式认领；落在 __quiescence__ 的 todo hop 不可回捞。
   const httpHops = events
     .filter(
       (e) =>
-        (uc === undefined || e.uc_id === uc) &&
+        inUcWindow(e) &&
         e.facet === 'outbound' &&
         e.hop === 'http-req' &&
         (!urlEnds || urlEnds === '*' || String(e.payload?.url ?? '').endsWith(urlEnds))
@@ -866,7 +868,7 @@ export function runFourFacetSelfDriven({ jsonl, expect, dom, ucId }) {
   const pexp = expect.projection ?? {};
   const projHops = events.filter(
     (e) =>
-      (uc === undefined || e.uc_id === uc) &&
+      inUcWindow(e) &&
       e.facet === 'projection' &&
       e.hop === 'projection' &&
       (e.payload?.event ?? e.payload?.channel) === pexp.event
@@ -1410,6 +1412,45 @@ export function diffPureShellInvariant(ipcArgs, inboundArgs, injectedKeys = []) 
   return issues;
 }
 
+function eventDims(ev) {
+  const fromKey = ev?.corr_key ? parseKey(ev.corr_key) : {};
+  return mergeDims(fromKey, extractDims(ev?.payload));
+}
+
+function anchorDims(expect) {
+  const raw = expect?.corrAnchor ?? {};
+  /** @type {{ch?:string,tmp?:string,sid?:string,seq?:string}} */
+  const dims = {};
+  for (const dim of ['ch', 'tmp', 'sid', 'seq']) {
+    const value = raw[dim];
+    if (typeof value === 'string' && value.length > 0 && value !== '*') dims[dim] = value;
+  }
+  return dims;
+}
+
+function dimsEmpty(dims) {
+  return Object.keys(dims ?? {}).length === 0;
+}
+
+function pickPureShellPair(events, inWin, expect) {
+  const target = anchorDims(expect);
+  const ipcs = events.filter((e) => {
+    if (!inWin(e) || e.facet !== 'ipc-in') return false;
+    if (dimsEmpty(target)) return true;
+    return sameEvent(eventDims(e), target);
+  });
+  for (const ipc of ipcs) {
+    const ipcDims = eventDims(ipc);
+    const inb = events.find((e) => {
+      if (!inWin(e) || e.facet !== 'inbound') return false;
+      if (typeof ipc.seq === 'number' && typeof e.seq === 'number' && e.seq < ipc.seq) return false;
+      return sameEvent(eventDims(e), ipcDims);
+    });
+    if (inb) return { ipc, inb };
+  }
+  return { ipc: ipcs[0], inb: null };
+}
+
 /**
  * ⓪ 纯壳不变量面：UC 窗口内找 IpcIn + Inbound tee，比对 args（IpcIn≡Inbound）。
  *
@@ -1429,13 +1470,14 @@ export function checkPureShellInvariant({ jsonl, expect, ucId }) {
     return facetReport('pure-shell', [], { optional: true });
   const { events } = parseJsonl(jsonl);
   const inWin = (e) => uc === undefined || e.uc_id === uc;
-  const ipc = events.find((e) => inWin(e) && e.facet === 'ipc-in');
-  const inb = events.find((e) => inWin(e) && e.facet === 'inbound');
+  const { ipc, inb } = pickPureShellPair(events, inWin, expect);
   if (!ipc)
     return facetFail('pure-shell', '无 IpcIn tee（断在 invoke 埋点·壳透传纯度不可证）', { expect: ps });
   if (!inb)
-    return facetFail('pure-shell', '无 Inbound tee（断在 command-dispatch 埋点·壳透传纯度不可证）', {
+    return facetFail('pure-shell', '无匹配 Inbound tee（断在 command-dispatch 埋点或 corr_key 归束·壳透传纯度不可证）', {
       expect: ps,
+      ipcCommand: ipc.payload?.command,
+      ipcDims: eventDims(ipc),
     });
   const issues = diffPureShellInvariant(ipc.payload?.args, inb.payload?.args, ps.injectedKeys);
   return facetReport('pure-shell', issues, {
