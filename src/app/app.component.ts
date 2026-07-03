@@ -151,10 +151,11 @@ import { ImStatusBarComponent } from "./im/ui/im-status-bar.component";
     `
       /* pd.cses7 消息页风格 reskin：暗顶栏/侧栏 + 浅色会话列表/消息流，保留语义 DOM 锚点。 */
       .im {
-        --top: #292637; --rail: #312e42; --surface: #ffffff; --panel: #f5f6fa;
-        --canvas: #f1f4f8; --hover: #f3f5f8; --active: #e6e9ef; --bubble: #ffffff;
+        --top: #2c2a3a; --rail: #413f50; --surface: #ffffff; --panel: #ffffff;
+        --canvas: #F5F7FB; --hover: #F1F3F6; --active: #E6E8ED; --pinned: #F4F6F9;
+        --bubble: #ffffff;
         --txt: #1f2430; --txt-2: #5b6472; --txt-3: #8a94a3; --muted: #a6afbc;
-        --accent: #4d5cf2; --cyan: #16c7c8; --green: #22a06b; --red: #ef4444;
+        --accent: #4857e2; --cyan: #00baa0; --green: #22a06b; --red: #ef4444;
         --yellow: #f6a623; --divider: #e5e8ef;
         display: flex; flex-direction: column; height: 100vh;
         background: var(--canvas); color: var(--txt);
@@ -162,7 +163,8 @@ import { ImStatusBarComponent } from "./im/ui/im-status-bar.component";
         font-size: 14px; letter-spacing: 0;
       }
       app-im-server-rail, app-im-channel-list, app-im-message-list, app-im-member-panel,
-      app-im-aux-panel, app-im-composer { display: contents; }
+      app-im-member-panel-header, app-im-member-actions, app-im-member-row,
+      app-im-member-empty, app-im-aux-panel, app-im-composer { display: contents; }
       .im__hd {
         display: flex; gap: 12px; align-items: center;
         min-height: 56px; padding: 0 16px; background: var(--top); color: #fff;
@@ -176,18 +178,44 @@ import { ImStatusBarComponent } from "./im/ui/im-status-bar.component";
       .im__col::-webkit-scrollbar { width: 8px; }
       .im__col::-webkit-scrollbar-thumb { background: #c8ced8; border-radius: 4px; }
       .im__channels {
-        width: 330px; background: var(--surface); padding: 12px 18px;
+        width: clamp(240px, 30vw, 330px); background: var(--surface); padding: 12px 18px;
         border-right: 1px solid var(--divider);
       }
       .im__members {
-        width: 184px; background: var(--panel); padding: 12px;
+        width: 224px; background: var(--panel); padding: 14px 12px;
         border-left: 1px solid var(--divider);
+        box-shadow: -8px 0 24px rgba(31, 36, 48, 0.06);
       }
       .im__list { flex: 1; background: var(--canvas); padding: 10px 0 88px; }
       .im__col-hd {
         display: flex; gap: 4px; align-items: center; flex-wrap: wrap;
         font-size: 18px; font-weight: 700; color: var(--txt); padding: 0 0 12px; margin-bottom: 4px;
       }
+      .mem-panel__head {
+        display: flex; align-items: center; justify-content: space-between; gap: 8px;
+        padding: 0 0 10px; margin-bottom: 8px;
+        border-bottom: 1px solid var(--divider);
+      }
+      .mem-panel__title {
+        display: flex; align-items: baseline; gap: 6px;
+        min-width: 0; color: var(--txt); font-size: 16px; font-weight: 700;
+      }
+      .mem-panel__count {
+        color: var(--accent); font-size: 12px; font-weight: 700;
+      }
+      .mem-panel__actions {
+        display: grid; grid-template-columns: 1fr auto auto; gap: 6px;
+        align-items: center; margin-bottom: 10px;
+        padding: 8px; border-radius: 8px; background: #F5F7FB;
+      }
+      .mem-panel__member-input { width: 100%; min-width: 0; }
+      .mem-empty {
+        display: flex; flex-direction: column; gap: 4px; align-items: center;
+        padding: 18px 8px; color: var(--txt-3); text-align: center;
+        border: 1px dashed #d8dde7; border-radius: 8px; background: #FAFBFE;
+      }
+      .mem-empty__title { color: var(--txt-2); font-size: 13px; font-weight: 700; }
+      .mem-empty__hint { font-size: 12px; line-height: 1.4; }
       .ch, .mem {
         position: relative; display: flex; align-items: center; gap: 10px;
         padding: 10px 8px; margin: 0; border-radius: 6px; cursor: pointer;
@@ -258,7 +286,7 @@ import { ImStatusBarComponent } from "./im/ui/im-status-bar.component";
         background: transparent; border: none; font-size: 13px; cursor: pointer;
       }
       .im__compose {
-        position: fixed; left: 450px; right: 208px; bottom: 20px;
+        position: fixed; left: clamp(324px, calc(72px + 30vw), 402px); right: 248px; bottom: 20px;
         display: flex; gap: 8px; padding: 10px 14px; flex-wrap: wrap;
         align-items: center; background: var(--surface); border: 1px solid var(--divider);
         border-radius: 14px; box-shadow: 0 10px 30px rgba(31, 36, 48, 0.10);
@@ -330,7 +358,7 @@ import { ImStatusBarComponent } from "./im/ui/im-status-bar.component";
       .mem__crown { color: var(--yellow); font-size: 13px; flex: none; }
       @media (max-width: 920px) {
         .im__channels { width: 250px; }
-        .im__members { width: 170px; }
+        .im__members { width: 184px; }
         .im__compose { left: 84px; right: 12px; bottom: 12px; }
       }
     `,

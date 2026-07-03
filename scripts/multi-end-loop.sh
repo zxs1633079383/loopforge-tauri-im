@@ -103,6 +103,17 @@ clear_stale_apifox_archive_artifacts() {
   rm -rf "$ARCHIVE_DIR/apifox-reports"
 }
 
+redact_apifox_archive_secrets() {
+  [ -d "$ARCHIVE_DIR" ] || return 0
+  find "$ARCHIVE_DIR" -type f \( \
+    -name 'apifox-*.log' -o \
+    -name 'apifox-*.json' -o \
+    -name 'apifox-report*.json' \
+  \) -print0 | while IFS= read -r -d '' file; do
+    perl -0pi -e 's/afxp_[A-Za-z0-9]+/[REDACTED_APIFOX_TOKEN]/g; s/("accessToken"\s*:\s*")[^"]+(")/$1[REDACTED_APIFOX_TOKEN]$2/g' "$file"
+  done
+}
+
 finalize_run() {
   local exit_code="${1:-0}"
   [ "$FINALIZE_DONE" = 0 ] || return 0
@@ -256,7 +267,7 @@ for ((i = 1; i <= LOOPS; i++)); do
   CURRENT_STAGE="static-gates"
   CURRENT_DETAIL="loop ${i}/${LOOPS}"
   (cd "$ROOT" && ./node_modules/.bin/tsc -p tsconfig.app.json --noEmit)
-  (cd "$ROOT" && ./node_modules/.bin/ng build)
+  (cd "$ROOT" && CI=1 NG_BUILD_MAX_WORKERS=1 NG_BUILD_PARALLEL_TS=0 ./node_modules/.bin/ng build)
   (cd "$ROOT" && git diff --check)
 
   if [ "${#SPECS[@]}" -eq 0 ]; then
@@ -300,6 +311,7 @@ for ((i = 1; i <= LOOPS; i++)); do
 	    mkdir -p "$ARCHIVE_DIR/apifox-reports"
 	    APIFOX_CMD="$APIFOX_CMD --reporters cli,json --out-dir '$ARCHIVE_DIR/apifox-reports' --out-file apifox-report"
 	    (cd "$ROOT" && bash -lc "$APIFOX_CMD" | tee "$ARCHIVE_DIR/apifox-run.log")
+	    redact_apifox_archive_secrets
 	    (cd "$ROOT" && node scripts/summarize-run-report.mjs --archive "$ARCHIVE_DIR" --write-apifox-status "$ARCHIVE_DIR/apifox-status.json")
 	  fi
 
