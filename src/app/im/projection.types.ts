@@ -89,6 +89,20 @@ export interface PostSendingData {
 export const POST_SENDING_CHANNEL = "im:post:sending";
 
 /**
+ * im:post:send-failed 发送失败补丁（projection-schema §1·Task 3）。
+ * 真实 HTTP PortError 由 helix 立即落库 `send_status='unsend'` 后 emit；壳按 temporaryId patch
+ * 既有乐观行，只直绑 sendStatus，不从错误字符串推断失败态。
+ */
+export const POST_SEND_FAILED_CHANNEL = "im:post:send-failed";
+
+/** im:post:send-failed data 形态（{channelId, temporaryId, sendStatus:"failed"}）。 */
+export interface PostSendFailedData {
+  channelId: string;
+  temporaryId: string;
+  sendStatus: "failed";
+}
+
+/**
  * 会话列表投影 channel —— helix `im_query_dialog_list` Scan 回报（query.rs emit_dialog_list_result）。
  * data 形态 = `{ dialogList: [{ id, display_name, unread_count, last_post_at, ... }] }`（channel 表行）。
  * 壳就绪后拉一次，取首行 `id` 设 activeChannel（send 族 UC 决定性发送目标）。

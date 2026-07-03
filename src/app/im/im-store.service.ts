@@ -35,6 +35,8 @@ import {
   MessagesQueryResultData,
   OLDER_LOADED_CHANNEL,
   OlderLoadedData,
+  POST_SEND_FAILED_CHANNEL,
+  PostSendFailedData,
   POST_SENDING_CHANNEL,
   PostSendingData,
   READ_RESULT_CHANNEL,
@@ -77,7 +79,9 @@ export class ImStoreService {
     const target = this._locateTarget();
     const rows = this._rows();
     if (!target) return rows;
-    return rows.map((r) => (r.msgId === target ? { ...r, highlighted: true } : r));
+    return rows.map((r) =>
+      r.msgId === target ? { ...r, highlighted: true } : r,
+    );
   });
 
   /** 就绪标志（W1 probe im:ready 后置 true → 渲染 data-ready，供 e2e before 轮询） */
@@ -157,9 +161,8 @@ export class ImStoreService {
   /** 订阅单总线 + 启动就绪 probe 轮询。组件 ngOnInit 调一次。 */
   async start(): Promise<void> {
     if (this.unlisten) return;
-    this.unlisten = await this.bridge.listen<BusEnvelope>(
-      "im:__bus__",
-      (env) => this.onBus(env),
+    this.unlisten = await this.bridge.listen<BusEnvelope>("im:__bus__", (env) =>
+      this.onBus(env),
     );
     // 就绪 probe：W1 契约 = 轮询 invoke('im_ready') -> bool（非 bus 事件）。
     // increment_end 收齐 + inflight0 + cursor 稳 后返 true → 置 data-ready，供 e2e before 轮询。
@@ -249,7 +252,7 @@ export class ImStoreService {
    * 发送：生成 temporaryId → 暂存 pendingText → invoke('im_send')。
    *
    * **不在 JS 合成乐观行**——sending 行由 helix `im:post:sending` 投影驱动（壳纯渲染）。
-   * invoke 失败（含非 Tauri 环境）→ 若 sending 行已由投影插入则标 failed，并清 pendingText。
+   * invoke 失败：生产 Tauri 路径不合成 failed；失败态等 helix `im:post:send-failed` 投影。
    */
   async send(channelId: string, text: string): Promise<void> {
     const trimmed = text.trim();
@@ -266,12 +269,16 @@ export class ImStoreService {
         temporaryId,
       });
     } catch {
-      // 出站失败（非 Tauri dev 环境也会走这里）→ 标 failed（若投影已插行）+ 清暂存。
+      // 出站失败 → 生产失败态由 helix 投影驱动；此处只清本地暂存。
       this.markSendFailed(temporaryId);
     }
   }
 
-  async l2Send(channelId: string, text: string, mentionUserId?: string): Promise<void> {
+  async l2Send(
+    channelId: string,
+    text: string,
+    mentionUserId?: string,
+  ): Promise<void> {
     const ch = channelId.trim();
     const msg = text.trim();
     if (!ch || !msg) return;
@@ -303,13 +310,20 @@ export class ImStoreService {
     const post = postId.trim();
     if (!ch || !post) return;
     try {
-      await this.bridge.invoke<string>("im_l2_read_post", { channelId: ch, postId: post });
+      await this.bridge.invoke<string>("im_l2_read_post", {
+        channelId: ch,
+        postId: post,
+      });
     } catch {
       // debug-only 命令缺失或出站失败 → 静默。
     }
   }
 
-  async l2UrgentPost(channelId: string, postId: string, targetIds?: string[]): Promise<void> {
+  async l2UrgentPost(
+    channelId: string,
+    postId: string,
+    targetIds?: string[],
+  ): Promise<void> {
     const ch = channelId.trim();
     const post = postId.trim();
     if (!ch || !post) return;
@@ -327,15 +341,21 @@ export class ImStoreService {
   }
 
   /**
-   * 把乐观行标 failed（生产路径：send/sendDocument invoke 抛错时调用）。
+   * invoke 失败后的本地清理。
    *
-   * 单一真源——真实 invoke 抛错后的 DOM 终态由本方法兑现（patchByTemp 标 failed + 清 pendingText）。
-   * 行内已存 text（applyPostSending 取 pendingText 落进行）→ resend 复用 row.text 重走 posts/create，
-   * 故此处清 pendingText（与原 send catch 行为一致），不影响重发。
+   * 生产 Tauri 路径不得从 catch 合成 failed；失败态只能来自 helix `im:post:send-failed`
+   * 投影。非 Tauri 浏览器调试没有 helix bus，若已有人为放入 sending 行则回拨 failed，避免样式调试卡死。
    */
   markSendFailed(temporaryId: string): void {
-    this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "failed" }));
+    this.clearPendingSendDraft(temporaryId);
+    if (!this.bridge.isTauri()) {
+      this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "failed" }));
+    }
+  }
+
+  private clearPendingSendDraft(temporaryId: string): void {
     this.pendingText.delete(temporaryId);
+    this.pendingType.delete(temporaryId);
   }
 
   /**
@@ -358,9 +378,7 @@ export class ImStoreService {
         msgType: "DOCUMENT",
       });
     } catch {
-      this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "failed" }));
-      this.pendingText.delete(temporaryId);
-      this.pendingType.delete(temporaryId);
+      this.markSendFailed(temporaryId);
     }
   }
 
@@ -373,9 +391,13 @@ export class ImStoreService {
    *  - pendingText 复填（瘦投影 im:post:sending 不带 text，sending 行渲染需要）。
    *  - echo im:post:received 按同 temporaryId 找行覆写 → status=sent + data-msg-id=server_id。
    *
-   * invoke 失败（含非 Tauri 环境）→ 行重新标 failed（可再次重发）+ 清暂存。
+   * invoke 失败：生产 Tauri 路径不合成 failed；失败态等 helix 投影，非 Tauri 调试回拨 failed。
    */
-  async resend(temporaryId: string, channelId: string, text: string): Promise<void> {
+  async resend(
+    temporaryId: string,
+    channelId: string,
+    text: string,
+  ): Promise<void> {
     const trimmed = text.trim();
     if (!trimmed || !temporaryId || !channelId) return;
 
@@ -390,9 +412,8 @@ export class ImStoreService {
         temporaryId, // 复用原 tmp → upsert，不生成新 id
       });
     } catch {
-      // 出站失败 → 重新标 failed（可再次重发）+ 清暂存。
-      this.patchByTemp(temporaryId, (r) => ({ ...r, sendStatus: "failed" }));
-      this.pendingText.delete(temporaryId);
+      // 出站失败 → 生产失败态由 helix 投影驱动；此处只清本地暂存。
+      this.markSendFailed(temporaryId);
     }
   }
 
@@ -496,7 +517,10 @@ export class ImStoreService {
    * 群行属性由 helix `im:channel:update`（thin·{channel_id}）信号触发回读 channel 行 → CL 区
    * data-channel-display-name 更新（壳纯渲染·无乐观合成）。非 Tauri / 命令缺失 → 静默。
    */
-  async changeChannelDisplayName(channelId: string, displayName: string): Promise<void> {
+  async changeChannelDisplayName(
+    channelId: string,
+    displayName: string,
+  ): Promise<void> {
     const ch = channelId.trim();
     const name = displayName.trim();
     if (!ch || !name) return;
@@ -519,7 +543,10 @@ export class ImStoreService {
    * 群行属性由 helix `im:channel:update`（thin）信号触发回读 → CL 区 data-channel-notice 更新。
    * 非 Tauri / 命令缺失 → 静默。
    */
-  async changeChannelNotice(channelId: string, noticeText: string): Promise<void> {
+  async changeChannelNotice(
+    channelId: string,
+    noticeText: string,
+  ): Promise<void> {
     const ch = channelId.trim();
     if (!ch) return;
     try {
@@ -905,7 +932,8 @@ export class ImStoreService {
       if (r.channelId !== ch) continue;
       if (typeof r.createAt !== "number") continue;
       if (!r.msgId) continue;
-      if (oldest === null || r.createAt < (oldest.createAt as number)) oldest = r;
+      if (oldest === null || r.createAt < (oldest.createAt as number))
+        oldest = r;
     }
     if (!oldest) return; // 无可翻页锚（无已加载历史 / 无 createAt）→ 不发
     try {
@@ -1195,7 +1223,10 @@ export class ImStoreService {
    * read_relay::emit_read_result 透传回灌 im:read:result{req_id, body}。壳只供 postId（公告 server id）
    * + reqId（前端 bridge 生成·回灌关联·非 wire 字段·helix read_req_id 抠出）。返 reqId 供 e2e 关联。
    */
-  async announcementAcceptList(postId: string, reqId?: string): Promise<string> {
+  async announcementAcceptList(
+    postId: string,
+    reqId?: string,
+  ): Promise<string> {
     const rid = (reqId ?? this.genReqId()).trim();
     const post = postId.trim();
     if (!post) return rid;
@@ -1313,7 +1344,9 @@ export class ImStoreService {
     const ids = postIds.filter((p) => !!p && p.trim());
     if (ids.length === 0) return;
     try {
-      await this.bridge.invoke<void>("im_announcement_delete", { postIds: ids });
+      await this.bridge.invoke<void>("im_announcement_delete", {
+        postIds: ids,
+      });
     } catch {
       // 出站失败（非 Tauri dev 环境也会走这里）→ 静默（公告删除靠 server WS post_update 回声驱动·无乐观合成）。
     }
@@ -1448,7 +1481,11 @@ export class ImStoreService {
    * UC-8.x 投票·提交（写族）：invoke('im_vote_do', {id, indexes, postId?}）。
    * id=投票卡 id·indexes=选项序号字符串数组·postId 可选（真源 partials/6 §vote）。
    */
-  async submitVote(id: string, indexes: string[], postId?: string): Promise<void> {
+  async submitVote(
+    id: string,
+    indexes: string[],
+    postId?: string,
+  ): Promise<void> {
     const vid = id.trim();
     if (!vid) return;
     const args: Record<string, unknown> = { id: vid, indexes };
@@ -1525,7 +1562,11 @@ export class ImStoreService {
    * UC-8.x 平均分·提交评分（写族）：invoke('im_average_attend', {id, score, postId?}）。
    * id=平均分卡 id·score=数值评分·postId 可选（真源 partials/6 §average/attend）。
    */
-  async attendAverage(id: string, score: number, postId?: string): Promise<void> {
+  async attendAverage(
+    id: string,
+    score: number,
+    postId?: string,
+  ): Promise<void> {
     const vid = id.trim();
     if (!vid) return;
     const args: Record<string, unknown> = { id: vid, score };
@@ -1547,7 +1588,10 @@ export class ImStoreService {
     const vid = id.trim();
     if (!vid) return rid;
     try {
-      await this.bridge.invoke<void>("im_average_read", { id: vid, reqId: rid });
+      await this.bridge.invoke<void>("im_average_read", {
+        id: vid,
+        reqId: rid,
+      });
     } catch {
       // 出站失败 → 静默（平均分详情靠 im:read:result 投影驱动·无乐观合成）。
     }
@@ -1659,7 +1703,9 @@ export class ImStoreService {
       return;
     }
     if (channel === CHANNEL_INCREMENT_CHANNEL) {
-      this.applyChannelIncrement(env.payload?.data as ChannelIncrementData | undefined);
+      this.applyChannelIncrement(
+        env.payload?.data as ChannelIncrementData | undefined,
+      );
       return;
     }
     if (channel === CHANNEL_UPDATE_CHANNEL) {
@@ -1669,14 +1715,18 @@ export class ImStoreService {
     // UC-5.1 建群：im:channel:created（{channel_id, channel}）→ upsert CL 区新频道行
     // （data-channel-id 直映·壳纯渲染只持 channelId）。先于 message-row 分支（channel-row 信号）。
     if (channel === CHANNEL_CREATED_CHANNEL) {
-      this.applyChannelCreated(env.payload?.data as ChannelCreatedData | undefined);
+      this.applyChannelCreated(
+        env.payload?.data as ChannelCreatedData | undefined,
+      );
       return;
     }
     // UC-5.3 关闭/退出群：im:channel:closed（{channelId, deleteAt}·WS channel_close 透传·独立
     // broadcast 推送·非批次结束 thin）→ 把该频道行从 CL 区移除（data-channel-id 消失·壳纯渲染只
     // 消费投影删行·不在 JS 臆造软删态）。先于 message-row 分支（channel-row 信号·非 fat 集）。
     if (channel === CHANNEL_CLOSED_CHANNEL) {
-      this.applyChannelClosed(env.payload?.data as ChannelClosedData | undefined);
+      this.applyChannelClosed(
+        env.payload?.data as ChannelClosedData | undefined,
+      );
       return;
     }
     // UC-1.10 定时消息：im:channel:schedule-created（{channelId, hasSchedulePost}·WS post_schedule_created
@@ -1714,7 +1764,9 @@ export class ImStoreService {
     // nickName（data-nickname 回读·壳纯渲染透传投影 nickName·不在 JS 合成）；成员行缺则 upsert
     // （投影驱动成员入列·data-member-id=userId）。先于 message-row 分支（member-row 信号·非 fat 集）。
     if (channel === MEMBER_NICKNAME_CHANNEL) {
-      this.applyMemberNickname(env.payload?.data as MemberNicknameData | undefined);
+      this.applyMemberNickname(
+        env.payload?.data as MemberNicknameData | undefined,
+      );
       return;
     }
     // UC-6.1/6.4 成员族 render-ready：im:channel:members（{channelId, members, leaves}·helix 已把
@@ -1722,7 +1774,9 @@ export class ImStoreService {
     // leaves 删行·零 extract/role 判/合并）。冻结的 member-updated{channel_id,channel} / read:result
     // {req_id,body} 二投影仅供 ② 契约面裁定·壳不再据其派生成员。先于 message-row 分支（member-row 信号）。
     if (channel === CHANNEL_MEMBERS_CHANNEL) {
-      this.applyChannelMembers(env.payload?.data as ChannelMembersData | undefined);
+      this.applyChannelMembers(
+        env.payload?.data as ChannelMembersData | undefined,
+      );
       return;
     }
 
@@ -1749,7 +1803,9 @@ export class ImStoreService {
     // reply-drawer（data-reply-id 直映·壳纯绑定）。S8（issue #57·C013）：helix 抽好 postId·额外 emit·
     // 壳零 extract。先于 captureActiveChannel/message-row 分支（reply 投影无顶层 channel_id）。
     if (channel === CHANNEL_REPLIES_CHANNEL) {
-      this.applyChannelReplies(env.payload?.data as ChannelRepliesData | undefined);
+      this.applyChannelReplies(
+        env.payload?.data as ChannelRepliesData | undefined,
+      );
       return;
     }
 
@@ -1767,7 +1823,9 @@ export class ImStoreService {
     // 回声·invoke im_query_messages_by_channel 后 Scan 回报即 emit 本投影。先于 message-row fat 分支
     // （query_result 外层 2 键·非 message_item_data fat 集·messages 元素是 snake DB 行）。
     if (channel === MESSAGES_QUERY_RESULT_CHANNEL) {
-      this.applyMessagesQueryResult(env.payload?.data as MessagesQueryResultData | undefined);
+      this.applyMessagesQueryResult(
+        env.payload?.data as MessagesQueryResultData | undefined,
+      );
       return;
     }
 
@@ -1788,6 +1846,12 @@ export class ImStoreService {
     if (channel === POST_SENDING_CHANNEL) {
       const data = env.payload?.data as PostSendingData | undefined;
       if (data && typeof data === "object") this.applyPostSending(data);
+      return;
+    }
+    if (channel === POST_SEND_FAILED_CHANNEL) {
+      this.applyPostSendFailed(
+        env.payload?.data as PostSendFailedData | undefined,
+      );
       return;
     }
 
@@ -1859,7 +1923,8 @@ export class ImStoreService {
         urgent: this.bool(row["urgent"]),
       });
     }
-    if (!this._activeChannel() && ids.length > 0) this._activeChannel.set(ids[0]);
+    if (!this._activeChannel() && ids.length > 0)
+      this._activeChannel.set(ids[0]);
   }
 
   /** 投影字段纯展示取值（非 string → undefined·行不带该属性·零业务整形·C013(b)）。 */
@@ -1909,7 +1974,10 @@ export class ImStoreService {
     // （helix port_reply 解析 byIds body 额外 emit·壳 applyChannelMembers 纯绑定）。本读族回报仅 ② 契约面
     // （im:read:result{req_id,body}·UC-6.4 frozen）——壳不再解析 body（消灭 applyMembersSnapshot extract +
     // role→admin 禁区）。认领命中即 drop（防 byIds body{status,data} 误入下方 health/reply 透传分支）。
-    if (typeof data.req_id === "string" && this.pendingMemberReqs.has(data.req_id)) {
+    if (
+      typeof data.req_id === "string" &&
+      this.pendingMemberReqs.has(data.req_id)
+    ) {
       this.pendingMemberReqs.delete(data.req_id);
       return;
     }
@@ -1919,7 +1987,11 @@ export class ImStoreService {
     // UC-12.1 健康探针回灌：body=裸 `{status:"OK"}`（健康端点不走业务信封）→ 设 _health（data-health
     // 直映 H 区指示件·1:1 绑定后端权威 status·非合成）。纯渲染透传 body.status。
     const body = data.body;
-    if (body && typeof body === "object" && typeof (body as { status?: unknown }).status === "string") {
+    if (
+      body &&
+      typeof body === "object" &&
+      typeof (body as { status?: unknown }).status === "string"
+    ) {
       this._health.set((body as { status: string }).status);
     }
   }
@@ -1969,7 +2041,10 @@ export class ImStoreService {
       return [...byId.values()];
     });
     this._membersAttr.set(
-      this._members().map((m) => m.memberId).sort().join(","),
+      this._members()
+        .map((m) => m.memberId)
+        .sort()
+        .join(","),
     );
   }
 
@@ -1985,7 +2060,13 @@ export class ImStoreService {
     const items = Array.isArray(data.items) ? data.items : [];
     this._todos.set(
       items
-        .filter((it) => it && typeof it === "object" && typeof it.todoId === "string" && it.todoId !== "")
+        .filter(
+          (it) =>
+            it &&
+            typeof it === "object" &&
+            typeof it.todoId === "string" &&
+            it.todoId !== "",
+        )
         .map((it) => ({
           todoId: it.todoId as string,
           todoType: it.todoType,
@@ -2033,7 +2114,9 @@ export class ImStoreService {
     const channelId =
       (typeof data.channelId === "string" && data.channelId) || "";
     if (!channelId) return;
-    this._channels.update((rows) => rows.filter((c) => c.channelId !== channelId));
+    this._channels.update((rows) =>
+      rows.filter((c) => c.channelId !== channelId),
+    );
     if (this._activeChannel() === channelId) this._activeChannel.set("");
   }
 
@@ -2089,8 +2172,7 @@ export class ImStoreService {
    */
   private applyMemberNickname(data: MemberNicknameData | undefined): void {
     if (!data || typeof data !== "object") return;
-    const userId =
-      (typeof data.userId === "string" && data.userId) || "";
+    const userId = (typeof data.userId === "string" && data.userId) || "";
     if (!userId) return; // 无定点成员 → noop（与 helix WS handler 三键缺一 noop 一致）
     const nickName = typeof data.nickName === "string" ? data.nickName : "";
     let found = false;
@@ -2151,7 +2233,8 @@ export class ImStoreService {
       (typeof d["channelId"] === "string" && (d["channelId"] as string)) ||
       "";
     if (!channelId) return true; // 是 channelUpdate 帧（已认领·不进消息列表）·但无频道锚 → 不刷
-    const field = typeof pr["field"] === "string" ? (pr["field"] as string) : "";
+    const field =
+      typeof pr["field"] === "string" ? (pr["field"] as string) : "";
     const content =
       typeof pr["content"] === "string" ? (pr["content"] as string) : undefined;
     if (field === "displayName") {
@@ -2224,6 +2307,16 @@ export class ImStoreService {
     this.rememberRowAnchors(row);
   }
 
+  /** im:post:send-failed：helix 真实 HTTP 失败路径吐出的 row patch，壳按 temporaryId 直绑 sendStatus。 */
+  private applyPostSendFailed(d: PostSendFailedData | undefined): void {
+    if (!d || typeof d !== "object" || !d.temporaryId) return;
+    this.patchByTemp(d.temporaryId, (r) => ({
+      ...r,
+      sendStatus: d.sendStatus,
+    }));
+    this.clearPendingSendDraft(d.temporaryId);
+  }
+
   /**
    * 登记/刷新某行的 O(1) 定位锚（anchorKey → 行稳定 msgId·issue #53·C013）。
    * 锚：`t:<tmp>|<ch>` / `t:<tmp>|`（纯 tmp 回退）/ `s:<serverId>`。幂等·加法式。
@@ -2262,7 +2355,10 @@ export class ImStoreService {
     const temporaryId = d.temporaryId ?? "";
     const serverId = d.msg_id ?? "";
     const eventSeq = typeof d.event_seq === "number" ? d.event_seq : null;
-    const readBits = d.readBits === undefined || d.readBits === null ? null : this.toReadBits(d.readBits);
+    const readBits =
+      d.readBits === undefined || d.readBits === null
+        ? null
+        : this.toReadBits(d.readBits);
     const echoCh = d.channelId ?? d.channel_id ?? "";
 
     // O(1) 锚定位：带 ch → 严格 (tmp,ch)；不带 ch → 纯 tmp；无 tmp → server id。
@@ -2295,11 +2391,16 @@ export class ImStoreService {
                 // reactions：helix 预解串直绑（patch 只增不清·null echo 不抹既有 reactions）。
                 reactions: d.reactions ?? r.reactions,
                 // templateReceived：helix 判定直绑（命中置位·非模板 echo 不抹既有态）。
-                templateReceived: d.templateReceived ? true : r.templateReceived,
+                templateReceived: d.templateReceived
+                  ? true
+                  : r.templateReceived,
                 // systemNotice：helix 判定直绑（命中置位·非系统 echo 不抹既有态）。
                 systemNotice: d.systemNotice ? true : r.systemNotice,
                 // pinned：post_pin 明确 boolean 时更新；普通消息事件 pinned=null 时不抹既有态。
-                pinned: typeof d.pinned === "boolean" ? (d.pinned || undefined) : r.pinned,
+                pinned:
+                  typeof d.pinned === "boolean"
+                    ? d.pinned || undefined
+                    : r.pinned,
               }
             : r,
         ),
@@ -2334,7 +2435,7 @@ export class ImStoreService {
       reactions: d.reactions ?? undefined,
       templateReceived: d.templateReceived || undefined,
       systemNotice: d.systemNotice || undefined,
-      pinned: typeof d.pinned === "boolean" ? (d.pinned || undefined) : undefined,
+      pinned: typeof d.pinned === "boolean" ? d.pinned || undefined : undefined,
     };
     this._rows.update((rows) => [...rows, row]);
     this.rememberRowAnchors(row);
@@ -2357,11 +2458,14 @@ export class ImStoreService {
     const createAtRaw = d["createAt"];
     return {
       msgId,
-      temporaryId: (typeof d["temporaryId"] === "string" && d["temporaryId"]) || "",
+      temporaryId:
+        (typeof d["temporaryId"] === "string" && d["temporaryId"]) || "",
       channelId: (typeof d["channelId"] === "string" && d["channelId"]) || "",
       eventSeq: null, // 读族无 event_seq 列（render-ready 吐 null·渲染空串）
       sendStatus: this.toSendStatus(
-        typeof d["sendStatus"] === "string" ? (d["sendStatus"] as string) : undefined,
+        typeof d["sendStatus"] === "string"
+          ? (d["sendStatus"] as string)
+          : undefined,
       ),
       readBits: (typeof d["readBits"] === "string" && d["readBits"]) || "",
       text: (typeof d["text"] === "string" && d["text"]) || "",
@@ -2371,7 +2475,9 @@ export class ImStoreService {
         typeof createAtRaw === "number" && Number.isFinite(createAtRaw)
           ? (createAtRaw as number)
           : undefined,
-      userId: (typeof d["userId"] === "string" && (d["userId"] as string)) || undefined,
+      userId:
+        (typeof d["userId"] === "string" && (d["userId"] as string)) ||
+        undefined,
     };
   }
 
@@ -2383,7 +2489,11 @@ export class ImStoreService {
   private upsertHistoryRow(row: MessageRow, prepend: boolean): void {
     const serverId = row.msgId !== row.temporaryId ? row.msgId : "";
     const keys = row.temporaryId
-      ? [`t:${row.temporaryId}|${row.channelId}`, `t:${row.temporaryId}|`, `s:${row.msgId}`]
+      ? [
+          `t:${row.temporaryId}|${row.channelId}`,
+          `t:${row.temporaryId}|`,
+          `s:${row.msgId}`,
+        ]
       : [`s:${row.msgId}`];
     const targetMsgId = this.locateRowMsgId(keys);
     if (targetMsgId !== null) {
