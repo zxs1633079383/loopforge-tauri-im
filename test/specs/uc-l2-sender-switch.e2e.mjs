@@ -19,46 +19,41 @@ function readLines() {
     .filter(Boolean);
 }
 
-function headerValue(headers, name) {
-  const wanted = name.toLowerCase();
-  if (Array.isArray(headers)) {
-    const match = headers.find(([key]) => String(key).toLowerCase() === wanted);
-    return match?.[1] ?? null;
-  }
-  if (headers && typeof headers === "object") {
-    const key = Object.keys(headers).find((candidate) => candidate.toLowerCase() === wanted);
-    return key ? headers[key] : null;
-  }
-  return null;
-}
+const invokeBridge = (cmd, args) =>
+  browser.executeAsync(
+    (c, a, done) => {
+      // @ts-ignore - test-only bridge injected by src/main.ts in Tauri.
+      if (!window.__lf?.invoke) {
+        done({ ok: false, error: "no __lf bridge" });
+        return;
+      }
+      window.__lf
+        .invoke(c, a)
+        .then((result) => done({ ok: true, result: result ?? null }))
+        .catch((error) => done({ ok: false, error: String(error?.message ?? error) }));
+    },
+    cmd,
+    args,
+  );
 
-function cookieValue(cookieHeader, name) {
-  const wanted = name.toLowerCase();
-  return String(cookieHeader ?? "")
-    .split(";")
-    .map((part) => part.trim().split("="))
-    .find(([key]) => key?.toLowerCase() === wanted)?.[1] ?? null;
-}
+const snapshotChannelIds = () =>
+  browser.execute(() =>
+    Array.from(document.querySelectorAll('[data-testid="channel-list"] [data-channel-id]'))
+      .map((el) => el.getAttribute("data-channel-id"))
+      .filter((id) => !!id),
+  );
 
-function isStructuredIdentity678(line) {
-  const payload = line?.payload ?? {};
-  const headers = payload.headers ?? {};
-  const body = payload.body ?? {};
-  const cookieHeader = headerValue(headers, "cookie");
-  const explicitValues = [
-    line?.cookieId,
-    line?.userId,
-    payload.cookieId,
-    payload.userId,
-    headerValue(headers, "cookieId"),
-    cookieValue(cookieHeader, "cookieId"),
-    cookieValue(cookieHeader, "userId"),
-    cookieValue(cookieHeader, "session"),
-    cookieValue(cookieHeader, "sessionId"),
-    body.userId,
-    body.user_id,
-  ];
-  return explicitValues.some((value) => String(value ?? "") === "678");
+function findReceivedFrom678(text) {
+  return readLines().find((line) => {
+    const payload = line?.payload ?? {};
+    const data = payload.data ?? {};
+    return (
+      line?.facet === "projection" &&
+      payload.event === "im:post:received" &&
+      data.message === text &&
+      String(data.userId ?? "") === "678"
+    );
+  });
 }
 
 describe("L2 sender switch · 444/678 真实发送者切换", () => {
@@ -72,6 +67,28 @@ describe("L2 sender switch · 444/678 真实发送者切换", () => {
     );
     assert.equal(await status.getAttribute("data-sender-user-id"), "444");
 
+    const beforeIds = new Set(await snapshotChannelIds());
+    const created = await invokeBridge("im_create_channel", {
+      displayName: `lf-l2-switch-${Date.now()}`,
+      memberIds: ["678"],
+    });
+    assert.equal(created.ok, true, created.error);
+    await browser.waitUntil(
+      async () => (await snapshotChannelIds()).some((id) => !beforeIds.has(id)),
+      { timeout: 20000, interval: 200, timeoutMsg: "未创建 444+678 共享调试频道" },
+    );
+    const sharedChannelId = (await snapshotChannelIds()).find((id) => !beforeIds.has(id));
+    assert.ok(sharedChannelId, "未拿到共享调试频道 id");
+
+    await $(`[data-testid="channel-list"] [data-channel-id="${sharedChannelId}"]`).click();
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(
+          () => document.querySelector("main.im")?.getAttribute("data-active-channel"),
+        )) === sharedChannelId,
+      { timeout: 10000, interval: 200, timeoutMsg: "共享调试频道未成为 activeChannel" },
+    );
+
     await $('[data-testid="account-678-btn"]').click();
     await browser.waitUntil(
       async () => (await status.getAttribute("data-sender-user-id")) === "678",
@@ -79,6 +96,7 @@ describe("L2 sender switch · 444/678 真实发送者切换", () => {
     );
 
     const text = `lf-sender-alt-${Date.now()}`;
+    await invokeBridge("set_uc", { uc: "L2-sender-switch" });
     await $('[data-testid="compose-input"]').setValue(text);
     await $('[data-testid="send-btn"]').click();
 
@@ -97,12 +115,13 @@ describe("L2 sender switch · 444/678 真实发送者切换", () => {
       { timeout: 30000, interval: 300, timeoutMsg: "678 发送消息未在 DOM 以 sender=678 出现" },
     );
 
-    const outbound = readLines().filter((line) => {
-      const payload = line?.payload ?? {};
-      const textHit = payload.body?.message === text || payload.body?.simpleMessage === text;
-      const urlHit = String(payload.url ?? "").endsWith("posts/create");
-      return textHit && urlHit && isStructuredIdentity678(line);
+    await browser.waitUntil(() => !!findReceivedFrom678(text), {
+      timeout: 10000,
+      interval: 200,
+      timeoutMsg: "run.jsonl 未记录 A=444 收到 678 的 im:post:received",
     });
-    assert.ok(outbound.length > 0, "run.jsonl 未记录 678 posts/create 出站");
+    const received = findReceivedFrom678(text);
+    assert.equal(received.payload.data.channelId, sharedChannelId);
+    await invokeBridge("set_uc", { uc: "__quiescence__" });
   });
 });

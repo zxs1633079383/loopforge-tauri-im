@@ -97,7 +97,7 @@ const invokeBridge = (cmd, args) =>
 
 const snapshotChannelIds = () =>
   browser.execute(() =>
-    Array.from(document.querySelectorAll('[data-channel-id]'))
+    Array.from(document.querySelectorAll('[data-testid="channel-list"] [data-channel-id]'))
       .map((el) => el.getAttribute('data-channel-id')).filter((id) => !!id)
   );
 
@@ -140,6 +140,53 @@ const memberTokens = (value) =>
     .split(/[,\s]+/)
     .map((token) => token.trim())
     .filter(Boolean);
+
+const memberListTokens = () =>
+  browser.execute(() => {
+    const attr = document.querySelector('[data-testid="member-list"]')?.getAttribute('data-members') ?? '';
+    return String(attr).split(/[,\s]+/).map((token) => token.trim()).filter(Boolean);
+  });
+
+const selectChannelInUi = async (channelId) => {
+  const row = await $(`[data-testid="channel-list"] [data-channel-id="${channelId}"]`);
+  await row.waitForExist({ timeout: 15000, timeoutMsg: `频道行未渲染: ${channelId}` });
+  await row.click();
+  await browser.waitUntil(
+    async () => (await browser.execute(() => document.querySelector('main.im')?.getAttribute('data-active-channel'))) === channelId,
+    { timeout: 10000, interval: 150, timeoutMsg: `UI 未切到目标频道: ${channelId}` }
+  );
+};
+
+const refreshMembersViaUi = async (expectedMemberIds) => {
+  const btn = await $('[data-testid="load-members-btn"]');
+  await btn.waitForClickable({ timeout: 10000, timeoutMsg: '成员加载按钮不可点击' });
+  await btn.click();
+  await browser.waitUntil(
+    async () => {
+      const tokens = await memberListTokens();
+      return expectedMemberIds.every((id) => tokens.includes(String(id)));
+    },
+    {
+      timeout: 15000,
+      interval: 200,
+      timeoutMsg: `成员面板未加载期望成员: ${expectedMemberIds.join(',')}`,
+    }
+  );
+};
+
+const waitMemberGoneViaUi = async (memberId, remainingMemberId) => {
+  await browser.waitUntil(
+    async () => {
+      const tokens = await memberListTokens();
+      return tokens.includes(String(remainingMemberId)) && !tokens.includes(String(memberId));
+    },
+    {
+      timeout: 15000,
+      interval: 200,
+      timeoutMsg: `成员面板未收敛: ${memberId} 仍存在或 ${remainingMemberId} 缺失`,
+    }
+  );
+};
 
 const expectMemberAbsentFromDomEvidence = (evidence, memberId, remainingMemberId) => {
   const memberListRows = domRows(evidence, '[data-testid="member-list"][data-members]');
@@ -200,7 +247,8 @@ describe('UC-5.3b · L2 member-leave 广播（双账号·issue #44）', () => {
     );
     TARGET_CHANNEL_ID = (await snapshotChannelIds()).find((id) => !beforeIds.has(id));
     expect(TARGET_CHANNEL_ID).toBeTruthy();
-    await invokeBridge('im_query_messages_by_channel', { channelId: TARGET_CHANNEL_ID });
+    await selectChannelInUi(TARGET_CHANNEL_ID);
+    await refreshMembersViaUi([LEAVE_MEMBER_ID, OBSERVER_ID]);
     await invokeBridge('set_uc', { uc: 'UC-5.3b' });
     console.log(`[UC-5.3b] A=444 锚频道（含 678+999·待移除 678）channelId=${TARGET_CHANNEL_ID}`);
   });
@@ -240,6 +288,8 @@ describe('UC-5.3b · L2 member-leave 广播（双账号·issue #44）', () => {
     console.log(`[UC-5.3b L2] B=999 收到 channel_member_update{leave}·锚频道=${TARGET_CHANNEL_ID}·leave=${JSON.stringify(data.memberChange?.leave?.map((u) => u.id))}`);
     // 守可证伪：memberChange.leave 含被移除者 678（真离场态到达留存成员·非空帧）。
     expect((data.memberChange?.leave ?? []).map((u) => String(u.id))).toContain(LEAVE_MEMBER_ID);
+    await refreshMembersViaUi([OBSERVER_ID]);
+    await waitMemberGoneViaUi(LEAVE_MEMBER_ID, OBSERVER_ID);
     captureObserverEvidence('uc-5.3b-l2-leave-observer', {
       observerKind: 'raw-ws',
       observerUserId: OBSERVER_ID,

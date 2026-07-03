@@ -30,13 +30,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # 临时 repoint：指向 helix branch fix/im-send-echo-reconcile（HEAD 36162c9·send echo 对账修复）：
 #   ① HTTP200 无 serverId 不清栈·留 WS echo 幂等补乐观行 id 列（57e8b72）
 #   ② self-echo 在 cursor gap 下兜底 emit im:post:received 结算乐观行 DOM（36162c9）
-# 验回归后改回主线。当前 pin: helix 770e79e 后续 failed-send 修复快照 a285f2341fac54aad1a80215bd439ea497fa6dd2。
-helix-core          = { git = "file:///System/Volumes/Data/workspace/rust/helix", rev = "a285f2341fac54aad1a80215bd439ea497fa6dd2" }
-helix-im            = { git = "file:///System/Volumes/Data/workspace/rust/helix", rev = "a285f2341fac54aad1a80215bd439ea497fa6dd2" }
-helix-driver-native = { git = "file:///System/Volumes/Data/workspace/rust/helix", rev = "a285f2341fac54aad1a80215bd439ea497fa6dd2" }
+# 当前 pin: helix fb5140e（基于 770e79e30ad7153d38aa2215f4755a7bcdebe94a，补 UC-4.1 空游标 bootstrap retry）。
+helix-core          = { git = "file:///System/Volumes/Data/workspace/rust/helix", rev = "fb5140eeace9499b778c57f9406f566c7bc02070" }
+helix-im            = { git = "file:///System/Volumes/Data/workspace/rust/helix", rev = "fb5140eeace9499b778c57f9406f566c7bc02070" }
+helix-driver-native = { git = "file:///System/Volumes/Data/workspace/rust/helix", rev = "fb5140eeace9499b778c57f9406f566c7bc02070" }
 # 泛型引擎壳（run_engine_loop<S,H,E,Tr,C> + EngineDeps + RecordingSink）——
 # 组装根直连此泛型入口，把全 port 包上装饰器（native EngineConfig 具体类型注不进装饰器）。
-helix-driver-host   = { git = "file:///System/Volumes/Data/workspace/rust/helix", rev = "a285f2341fac54aad1a80215bd439ea497fa6dd2" }
+helix-driver-host   = { git = "file:///System/Volumes/Data/workspace/rust/helix", rev = "fb5140eeace9499b778c57f9406f566c7bc02070" }
 
 # 仪表层（本仓 · Recording<P> + InstrumentCtx + LogSink）
 helix-driver-instrument = { path = "../crates/helix-driver-instrument" }

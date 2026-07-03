@@ -1242,6 +1242,16 @@ console.log('· P0b ⓪ 纯壳不变量 IpcIn≡Inbound（C013 量化）');
   const rGood = checkPureShellInvariant({ jsonl: psGood, expect: expPs, ucId: 'UC-ps' });
   eq(rGood.ok, true, '纯壳绿：IpcIn{channelId,text,temporaryId} ≡ Inbound{channel_id,text,temporary_id}（归一逐字段等）');
 
+  // 回归：同一 UC 窗口可能先有 composer focus 触发的 read-channel inbound。纯壳面必须按领域锚
+  // 选 IpcIn/InBound 成对事件，不能用窗口内第一个 inbound 误配导致假红/假红。
+  const psWithUnrelatedInbound =
+    mkInb({ channels: [{ id: 'c1' }] }, 'im_channels_view') + '\n' +
+    mkIpc({ channelId: 'c1', text: 'hi', temporaryId: 't9' }) + '\n' +
+    mkInb({ channel_id: 'c1', text: 'hi', temporary_id: 't9' });
+  const rPaired = checkPureShellInvariant({ jsonl: psWithUnrelatedInbound, expect: expPs, ucId: 'UC-ps' });
+  eq(rPaired.ok, true, '纯壳按 corr_key/tmp 选成对 IpcIn/Inbound，跳过无关 im_channels_view inbound');
+  eq(rPaired.actual.command.inbound, 'im_send_message', '纯壳 paired inbound 命令应是 send 对应的 im_send_message');
+
   // 可证伪 a（篡改值）：Inbound.text 被改 → 壳在 IPC→helix 篡改字段 → 纯壳红（断点=该字段）。
   const psMutate = mkIpc({ channelId: 'c1', text: 'hi', temporaryId: 't9' }) + '\n' +
     mkInb({ channel_id: 'c1', text: 'HACKED', temporary_id: 't9' });

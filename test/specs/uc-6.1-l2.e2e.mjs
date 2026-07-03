@@ -109,10 +109,45 @@ const invokeBridge = (cmd, args) =>
 
 const snapshotChannelIds = () =>
   browser.execute(() =>
-    Array.from(document.querySelectorAll('[data-channel-id]'))
+    Array.from(document.querySelectorAll('[data-testid="channel-list"] [data-channel-id]'))
       .map((el) => el.getAttribute('data-channel-id'))
       .filter((id) => !!id)
   );
+
+const memberListTokens = () =>
+  browser.execute(() => {
+    const attr = document.querySelector('[data-testid="member-list"]')?.getAttribute('data-members') ?? '';
+    return String(attr).split(/[,\s]+/).map((token) => token.trim()).filter(Boolean);
+  });
+
+const selectChannelInUi = async (channelId) => {
+  const row = await $(`[data-testid="channel-list"] [data-channel-id="${channelId}"]`);
+  await row.waitForExist({ timeout: 15000, timeoutMsg: `频道行未渲染: ${channelId}` });
+  await row.click();
+  await browser.waitUntil(
+    async () =>
+      (await browser.execute(() => document.querySelector('main.im')?.getAttribute('data-active-channel'))) ===
+      channelId,
+    { timeout: 10000, interval: 150, timeoutMsg: `UI 未切到目标频道: ${channelId}` }
+  );
+};
+
+const refreshMembersViaUi = async (expectedMemberIds) => {
+  const btn = await $('[data-testid="load-members-btn"]');
+  await btn.waitForClickable({ timeout: 10000, timeoutMsg: '成员加载按钮不可点击' });
+  await btn.click();
+  await browser.waitUntil(
+    async () => {
+      const tokens = await memberListTokens();
+      return expectedMemberIds.every((id) => tokens.includes(String(id)));
+    },
+    {
+      timeout: 15000,
+      interval: 200,
+      timeoutMsg: `成员面板未加载期望成员: ${expectedMemberIds.join(',')}`,
+    }
+  );
+};
 
 // 读 B=678 observe jsonl → 解析帧（torn 末行容忍·只取可解析行）。
 const readObserveFrames = () => {
@@ -207,7 +242,8 @@ describe('UC-6.1b · L2 拉人广播（双账号·issue #28 / #43）', () => {
     expect(TARGET_CHANNEL_ID).toBeTruthy();
     console.log(`[UC-6.1b] A=444 锚频道（本人新建·待拉 ${JOIN_MEMBER_ID}）channelId=${TARGET_CHANNEL_ID}`);
 
-    await invokeBridge('im_query_messages_by_channel', { channelId: TARGET_CHANNEL_ID });
+    await selectChannelInUi(TARGET_CHANNEL_ID);
+    await refreshMembersViaUi(['444']);
     await invokeBridge('set_uc', { uc: 'UC-6.1' });
   });
 
@@ -271,6 +307,7 @@ describe('UC-6.1b · L2 拉人广播（双账号·issue #28 / #43）', () => {
       },
       frame: hit,
     });
+    await refreshMembersViaUi(['444', JOIN_MEMBER_ID]);
     const domEvidenceFile = await captureDomEvidence(browser, 'uc-6.1-l2-member-actor-dom', [
       '[data-testid="status-bar"]',
       '[data-testid="member-list"]',
@@ -283,6 +320,7 @@ describe('UC-6.1b · L2 拉人广播（双账号·issue #28 / #43）', () => {
     expectDomRows(domEvidence, '[data-member-id]');
     expectDomAttr(domEvidence, `[data-member-id="${JOIN_MEMBER_ID}"]`, 'data-member-id', JOIN_MEMBER_ID);
     expectDomAttr(domEvidence, `[data-channel-id="${TARGET_CHANNEL_ID}"]`, 'data-channel-id', TARGET_CHANNEL_ID);
+    const members = (await memberListTokens()).join(',');
 
     // —— 关 UC 窗口 ——
     await invokeBridge('set_uc', { uc: '__quiescence__' });
@@ -293,7 +331,7 @@ describe('UC-6.1b · L2 拉人广播（双账号·issue #28 / #43）', () => {
       corrAnchor: { ...EXPECT.corrAnchor, ch: TARGET_CHANNEL_ID },
     };
     const jsonl = readFileSync(RUN_JSONL, 'utf8');
-    const report = runFourFacet({ jsonl, expect: expectWithAnchor, dom: { members: null } });
+    const report = runFourFacet({ jsonl, expect: expectWithAnchor, dom: { members } });
 
     console.log('[UC-6.1b 四面报告] ' + report.summary);
     if (!report.facets.outbound.ok)

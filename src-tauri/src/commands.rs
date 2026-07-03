@@ -21,6 +21,8 @@ use helix_core::effect::HttpRequest;
 use helix_core::ports::HttpRequester;
 #[cfg(feature = "webdriver")]
 use helix_driver_host::{HostNetworkConfig, SharedHttpClient};
+#[cfg(feature = "webdriver")]
+use helix_driver_instrument::{Facet, Hop};
 
 /// 把 JSON 值打包成 `Tick::Command`（payload = JSON bytes，由 helix-im ACL-1 解析）。
 fn command(name: &'static str, payload: serde_json::Value) -> Tick {
@@ -63,6 +65,16 @@ fn l2_actor(actor_user_id: Option<String>) -> String {
 }
 
 #[cfg(feature = "webdriver")]
+fn l2_api_base_dir(api_base: &str) -> String {
+    let trimmed = api_base.trim();
+    if trimmed.ends_with('/') {
+        trimmed.to_string()
+    } else {
+        format!("{trimmed}/")
+    }
+}
+
+#[cfg(feature = "webdriver")]
 async fn l2_post(
     actor_user_id: &str,
     path: &str,
@@ -70,7 +82,7 @@ async fn l2_post(
 ) -> Result<String, String> {
     let (_profile, cfg) = crate::config::load()?;
     let client = SharedHttpClient::new(
-        HostNetworkConfig::new(cfg.api_base.clone(), cfg.ws_url.clone())
+        HostNetworkConfig::new(l2_api_base_dir(&cfg.api_base), cfg.ws_url.clone())
             .with_timeout(Duration::from_secs(12))
             .with_user_agent("LoopForge-L2-Debug"),
     )
@@ -142,31 +154,79 @@ pub async fn im_l2_send(
     let tmp = l2_temp_id();
     let mentions = l2_mentions(mention_user_id);
     let team_id = state.identity.team_id.clone();
-    l2_post(
-        &actor,
-        "posts/create",
-        serde_json::json!({
-            "viewers": ["all"],
-            "message": msg,
-            "mentions": mentions,
-            "temporaryId": tmp,
-            "type": "TEXT",
-            "simpleMessage": msg,
-            "channelId": ch,
+    let body = serde_json::json!({
+        "viewers": ["all"],
+        "message": msg,
+        "mentions": mentions,
+        "temporaryId": tmp,
+        "type": "TEXT",
+        "simpleMessage": msg,
+        "channelId": ch,
+        "userId": actor,
+        "teamId": team_id.clone(),
+        "userSnapshot": {
             "userId": actor,
-            "teamId": team_id.clone(),
-            "userSnapshot": {
-                "userId": actor,
-                "teamId": team_id,
-                "userName": actor,
-            },
-            "id": "",
-            "props": {},
-            "topicId": "",
-            "revoke": false,
+            "teamId": team_id,
+            "userName": actor,
+        },
+        "id": "",
+        "props": {},
+        "topicId": "",
+        "revoke": false,
+    });
+    let mention_log = body
+        .get("mentions")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!([]));
+    state.ctx.log_ipc_in(
+        "im_l2_send",
+        serde_json::json!({
+            "channelId": ch,
+            "text": msg,
+            "mentionUserId": mention_log,
+            "actorUserId": actor,
+            "temporaryId": tmp,
         }),
-    )
-    .await
+    );
+    state.ctx.log(
+        Facet::Outbound,
+        Hop::HttpReq,
+        serde_json::json!({
+            "command": "im_l2_send",
+            "url": "posts/create",
+            "cookieId": actor,
+            "body": body.clone(),
+        }),
+    );
+    let result = l2_post(&actor, "posts/create", body).await;
+    match &result {
+        Ok(text) => state.ctx.log(
+            Facet::WsRecv,
+            Hop::HttpResp,
+            serde_json::json!({
+                "command": "im_l2_send",
+                "status": "ok",
+                "actorUserId": actor,
+                "channelId": ch,
+                "temporaryId": tmp,
+                "body": serde_json::from_str::<serde_json::Value>(text)
+                    .unwrap_or_else(|_| serde_json::json!(text)),
+            }),
+        ),
+        Err(error) => state.ctx.log(
+            Facet::WsRecv,
+            Hop::HttpResp,
+            serde_json::json!({
+                "command": "im_l2_send",
+                "status": "error",
+                "actorUserId": actor,
+                "channelId": ch,
+                "temporaryId": tmp,
+                "error": error,
+            }),
+        ),
+    }
+    result
 }
 
 /// L2 debug: 以指定调试用户标整个会话已读（channels/view）。
@@ -249,7 +309,7 @@ pub async fn im_l2_urgent_post(
 
 #[cfg(all(test, feature = "webdriver"))]
 mod tests {
-    use super::l2_actor;
+    use super::{l2_actor, l2_api_base_dir};
 
     #[test]
     fn l2_actor_accepts_known_debug_users_and_defaults_to_678() {
@@ -257,6 +317,18 @@ mod tests {
         assert_eq!(l2_actor(Some("444".to_string())), "444");
         assert_eq!(l2_actor(Some("678".to_string())), "678");
         assert_eq!(l2_actor(Some("999".to_string())), "678");
+    }
+
+    #[test]
+    fn l2_api_base_keeps_api_cses_as_directory() {
+        assert_eq!(
+            l2_api_base_dir("http://localhost:8066/api/cses"),
+            "http://localhost:8066/api/cses/"
+        );
+        assert_eq!(
+            l2_api_base_dir("http://localhost:8066/api/cses/"),
+            "http://localhost:8066/api/cses/"
+        );
     }
 }
 

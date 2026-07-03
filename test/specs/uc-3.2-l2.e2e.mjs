@@ -69,10 +69,28 @@ const invokeBridge = (cmd, args) =>
 // 快照当前 CL 区频道 id 集（建群后比对取新建 ch）。
 const snapshotChannelIds = () =>
   browser.execute(() =>
-    Array.from(document.querySelectorAll('[data-channel-id]'))
+    Array.from(document.querySelectorAll('[data-testid="channel-list"] [data-channel-id]'))
       .map((el) => el.getAttribute('data-channel-id'))
       .filter((id) => !!id)
   );
+
+const selectChannelInUi = async (channelId) => {
+  const row = await $(`[data-testid="channel-list"] [data-channel-id="${channelId}"]`);
+  await row.waitForExist({ timeout: 15000 });
+  await row.click();
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (id) => document.querySelector('main.im')?.getAttribute('data-active-channel') === id,
+        channelId
+      ),
+    {
+      timeout: 15000,
+      interval: 150,
+      timeoutMsg: `频道 ${channelId} 未在 UI 中激活`,
+    }
+  );
+};
 
 const readMessageRow = (msgId) =>
   browser.execute((mid) => {
@@ -151,8 +169,8 @@ describe('UC-3.2 L2 · 单条消息已读双账号（#14 / #47）', () => {
     const afterIds = await snapshotChannelIds();
     CHANNEL_ID = afterIds.find((id) => !beforeIds.has(id));
     expect(CHANNEL_ID).toBeTruthy();
-    // 选中新频道·让其消息渲染到 ML 区（A 发的消息须在本地 DB + DOM 才有 ③④ 落点）。
-    await invokeBridge('im_query_messages_by_channel', { channelId: CHANNEL_ID });
+    // 真实点击选中新频道·让其消息渲染到 ML 区（A 发的消息须在本地 DB + DOM 才有 ③④ 落点）。
+    await selectChannelInUi(CHANNEL_ID);
     console.log(`[UC-3.2-L2 就绪] A=444 新建共享频道 channelId=${CHANNEL_ID}（拉 678 为成员）`);
   });
 

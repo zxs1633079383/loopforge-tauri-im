@@ -1849,8 +1849,8 @@ export class ImStoreService {
       return;
     }
     // UC-6.1/6.4 成员族 render-ready：im:channel:members（{channelId, members, leaves}·helix 已把
-    // role→admin + 四源/byIds 解析下沉·S7 issue #56）→ 壳纯绑定 applyChannelMembers（keyed upsert +
-    // leaves 删行·零 extract/role 判/合并）。冻结的 member-updated{channel_id,channel} / read:result
+    // role→admin + 四源/byIds 解析下沉·S7 issue #56）→ 壳纯绑定 applyChannelMembers（当前成员集绑定 +
+    // leaves 兜底过滤·零 extract/role 判/合并）。冻结的 member-updated{channel_id,channel} / read:result
     // {req_id,body} 二投影仅供 ② 契约面裁定·壳不再据其派生成员。先于 message-row 分支（member-row 信号）。
     if (channel === CHANNEL_MEMBERS_CHANNEL) {
       this.applyChannelMembers(
@@ -2306,30 +2306,25 @@ export class ImStoreService {
    * UC-6.1/6.4 成员族 render-ready 纯绑定（im:channel:members·issue #56 S7·C013 第二北极星）。
    *
    * helix 已把 role→admin 业务规则 + 四源/byIds 解析重组下沉（render_ready_members）→ 本壳**纯绑定**：
-   * 按 `memberId` keyed upsert（直接赋 helix 给的 nickname/admin 成品·不 extract / 不判 role / 不合并四源）
-   * + `leaves` 删 MB 区成员行（拉踢人离场）。双源同形态：① 拉/踢人 WS（members=应在册·leaves=离场）
+   * MB 区当前成员集 = `members` 终态行 - `leaves` 兜底过滤（直接赋 helix 给的 nickname/admin 成品·不
+   * extract / 不判 role / 不合并四源）。双源同形态：① 拉/踢人 WS（members=应在册·leaves=离场）
    * ② byIds 成员快照（载族自愈·members=快照·leaves 空）。data 缺 → noop（守边界零信任·不清旧名册）。
-   * 与 S6 applyMessageItem/upsertHistoryRow 同款（O(1) keyed bind·非 tmp→server 对账合并）。
+   * O(n) 绑定当前投影成员集，n=频道成员数；冷路径，可读性优先。
    */
   private applyChannelMembers(data: ChannelMembersData | undefined): void {
     if (!data || typeof data !== "object") return;
     const members = Array.isArray(data.members) ? data.members : [];
     const leaves = new Set(Array.isArray(data.leaves) ? data.leaves : []);
-    this._members.update((rows) => {
-      const byId = new Map(rows.map((m) => [m.memberId, m] as const));
-      for (const m of members) {
-        if (!m || typeof m.memberId !== "string" || !m.memberId) continue;
-        byId.set(m.memberId, {
-          memberId: m.memberId,
-          nickname: m.nickname || undefined,
-          admin: m.admin || undefined,
-        });
-      }
-      for (const id of leaves) byId.delete(id);
-      return [...byId.values()];
-    });
+    const next = members
+      .filter((m) => m && typeof m.memberId === "string" && m.memberId && !leaves.has(m.memberId))
+      .map((m) => ({
+        memberId: m.memberId,
+        nickname: m.nickname || undefined,
+        admin: m.admin || undefined,
+      }));
+    this._members.set(next);
     this._membersAttr.set(
-      this._members()
+      next
         .map((m) => m.memberId)
         .sort()
         .join(","),
