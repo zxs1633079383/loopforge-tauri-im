@@ -8,6 +8,7 @@
 - Allowed write scope used:
   - `test/specs/uc-10.1.e2e.mjs`
   - `test/reducer/four-facet-reducer.mjs`
+  - `test/reducer/four-facet-reducer.test.mjs`
   - `docs/uc-rollout/all-uc-real-chain-status.md`
   - `.superpowers/sdd/task-6-report.md`
 
@@ -15,7 +16,8 @@
 
 - Existing UC-10.1 spec waited for `data-ready=true` and then reduced `run.jsonl`.
 - Prior archive `/tmp/loopforge/runs/20260702-210107` showed DOM todo rows existed, while `posts/queryTodoList` and `im:todo:updated` were tagged as `uc_id="__quiescence__"`.
-- Current `scripts/run.sh` already contains a `uc-10.1` bootstrap UC branch, but live verification could not be re-run in this turn because ports were occupied by existing processes.
+- Review finding: accepting those `__quiescence__` hops as UC-10.1 evidence contradicts the task requirement. UC-10.1 evidence must be owned by the UC window.
+- Current `scripts/run.sh` already contains a `uc-10.1` bootstrap UC branch. A focused live rerun was attempted in this review-fix turn, but `run.sh` stopped because port 1420 was occupied.
 
 ## Changes
 
@@ -25,38 +27,41 @@
   - Resets to `__quiescence__` in `after`.
 
 - `test/reducer/four-facet-reducer.mjs`
-  - `runFourFacetSelfDriven` now prefers UC-owned hops.
-  - Only for `UC-10.1` + `posts/queryTodoList`, if no UC-owned matching hop exists, it may claim matching `__quiescence__` outbound/projection hops.
-  - The fallback is endpoint/event-gated and does not affect other reducer entries or other UCs.
+  - `runFourFacetSelfDriven` now only accepts UC-owned hops.
+  - Review fix removes the UC-10.1 `__quiescence__` fallback entirely.
+  - `posts/queryTodoList` outbound and `im:todo:updated` projection must now be tagged with `uc_id="UC-10.1"` to pass.
+
+- `test/reducer/four-facet-reducer.test.mjs`
+  - Added a regression pair: UC-owned UC-10.1 todo hops pass; the same hops retagged to `__quiescence__` fail outbound and projection.
 
 - `docs/uc-rollout/all-uc-real-chain-status.md`
   - Updated UC-10.1 from blocked to partial.
-  - Recorded focused reducer evidence and the occupied-port live-run blocker.
+  - Replaced the old fallback claim with the review-fix rule: `__quiescence__` evidence is rejected, and live rerun remains pending.
 
 ## TDD / Evidence
 
-- RED focused reducer replay before implementation:
-  - Command: inline `node --input-type=module` replay with `posts/queryTodoList` + `im:todo:updated` tagged `__quiescence__` and `expect.ucId='UC-10.1'`.
-  - Result: `green=false`, `brokenAt="outbound"`.
-
-- GREEN focused reducer replay after implementation:
-  - Same command.
-  - Result: `green=true`, `brokenAt=null`.
+- Regression test in `test/reducer/four-facet-reducer.test.mjs`:
+  - Bad pattern: `posts/queryTodoList` + `im:todo:updated` tagged `uc_id="__quiescence__"` with `expect.ucId='UC-10.1'` -> `green=false`, outbound false, projection false.
+  - Good pattern: identical todo hops tagged `uc_id="UC-10.1"` -> `green=true`.
 
 ## Verification
 
 - `node --check test/specs/uc-10.1.e2e.mjs` -> pass.
-- `node test/reducer/four-facet-reducer.test.mjs` -> pass, `191 通过 / 0 失败`.
-- Focused reducer replay for quiescence-owned UC-10.1 todo hops -> pass.
+- `node --check test/reducer/four-facet-reducer.mjs` -> pass.
+- `node test/reducer/four-facet-reducer.test.mjs` -> pass, `195 通过 / 0 失败`.
+- `bash scripts/multi-end-loop.sh --spec test/specs/uc-10.1.e2e.mjs` -> blocked before WDIO by occupied frontend port 1420; archive `/tmp/loopforge/runs/20260703-130509`.
 - `git diff --check` -> pass.
+
+## Review Fix Commit
+
+- Pending until verification and commit.
 
 ## Live Run Blocker
 
-`bash scripts/multi-end-loop.sh --spec test/specs/uc-10.1.e2e.mjs` was not attempted because live ports were already occupied:
+`bash scripts/multi-end-loop.sh --spec test/specs/uc-10.1.e2e.mjs` was attempted and stopped before WDIO because the frontend port was already occupied:
 
 - `1420`: `node` PID `68188`
-- `4445`: `loopforge` PID `69194`
-- `8066`: Go server PID `32834`
+- archive: `/tmp/loopforge/runs/20260703-130509`
 
 Per task instruction, I did not kill those processes. Full green still requires a fresh live run once ports are free.
 

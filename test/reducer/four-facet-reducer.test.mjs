@@ -912,6 +912,21 @@ console.log('· UC-10.1 待办列表（runFourFacetSelfDriven·projection-only �
   ok(rep.facets.projection.ok, '② im:todo:updated 外层 {items} 投影绿');
   ok(rep.facets.dom.ok, '③ data-todo-id 渲染绿');
   ok(rep.green, `UC-10.1 三面全绿（实 brokenAt=${rep.brokenAt} :: ${rep.summary}）`);
+  eq(rep.ucId, 'UC-10.1', 'UC-owned marker path：显式 UC-10.1 窗口归属通过');
+
+  // 可证伪 attribution：同样的 todo 出站/投影若仍落在 __quiescence__，不得被 UC-10.1 回捞认领。
+  const quiescenceOwned = goodLines
+    .split('\n')
+    .map((line) => {
+      const ev = JSON.parse(line);
+      ev.uc_id = '__quiescence__';
+      return JSON.stringify(ev);
+    })
+    .join('\n');
+  const repQuiescence = runFourFacetSelfDriven({ jsonl: quiescenceOwned, expect: expect101, dom });
+  eq(repQuiescence.green, false, '可证伪：UC-10.1 不认领 __quiescence__ todo 证据');
+  eq(repQuiescence.facets.outbound.ok, false, '可证伪：__quiescence__ queryTodoList 出站不算 UC-10.1 ①');
+  eq(repQuiescence.facets.projection.ok, false, '可证伪：__quiescence__ im:todo:updated 投影不算 UC-10.1 ②');
 
   // 可证伪 a：无 queryTodoList 出站（about-me 空 → 不发）→ ① 红。
   const noOut = goodLines.split('\n').slice(1).join('\n');
