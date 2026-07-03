@@ -21,6 +21,7 @@
 import { browser, expect } from '@wdio/globals';
 import { readFileSync, existsSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
+import { captureDomEvidence } from '../helpers/dom-evidence.mjs';
 import { captureObserverEvidence } from '../helpers/l2-evidence.mjs';
 import { runFourFacet } from '../reducer/four-facet-reducer.mjs';
 
@@ -205,6 +206,12 @@ describe('UC-5.3b · L2 member-leave 广播（双账号·issue #44）', () => {
       frame: hit,
       parsedData: data,
     });
+    await captureDomEvidence(browser, 'uc-5.3b-l2-leave-actor-dom', [
+      '[data-testid="status-bar"]',
+      '[data-testid="channel-list"] [data-channel-id]',
+      `[data-testid="channel-list"] [data-channel-id="${TARGET_CHANNEL_ID}"]`,
+      '[data-unread]',
+    ]);
 
     await invokeBridge('set_uc', { uc: '__quiescence__' });
 

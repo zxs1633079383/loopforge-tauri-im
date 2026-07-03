@@ -20,6 +20,7 @@
 import { browser, expect } from '@wdio/globals';
 import { existsSync, rmSync, readFileSync } from 'node:fs';
 import { spawn, execFileSync } from 'node:child_process';
+import { captureDomEvidence } from '../helpers/dom-evidence.mjs';
 import { captureObserverEvidence } from '../helpers/l2-evidence.mjs';
 
 const L2_ACT = new URL('../../scripts/l2-act.sh', import.meta.url).pathname;
@@ -196,5 +197,11 @@ describe('UC-11.2b · L2 退公司离群移除广播（双账号·issue #40 / #4
       },
       frames: newQuitFrames,
     });
+    await captureDomEvidence(browser, 'uc-11.2-l2-quit-actor-dom', [
+      '[data-testid="status-bar"]',
+      '[data-testid="channel-list"] [data-channel-id]',
+      `[data-testid="channel-list"] [data-channel-id="${TARGET_CHANNEL_ID}"]`,
+      '[data-members]',
+    ]);
   });
 });

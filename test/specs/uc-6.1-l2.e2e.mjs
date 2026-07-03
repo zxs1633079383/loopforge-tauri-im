@@ -26,6 +26,7 @@
 import { browser, expect } from '@wdio/globals';
 import { readFileSync, existsSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
+import { captureDomEvidence } from '../helpers/dom-evidence.mjs';
 import { captureObserverEvidence } from '../helpers/l2-evidence.mjs';
 import { runFourFacet } from '../reducer/four-facet-reducer.mjs';
 
@@ -252,6 +253,14 @@ describe('UC-6.1b · L2 拉人广播（双账号·issue #28 / #43）', () => {
       },
       frame: hit,
     });
+    await captureDomEvidence(browser, 'uc-6.1-l2-member-actor-dom', [
+      '[data-testid="status-bar"]',
+      '[data-testid="member-list"]',
+      '[data-member-id]',
+      `[data-member-id="${JOIN_MEMBER_ID}"]`,
+      '[data-members]',
+      `[data-channel-id="${TARGET_CHANNEL_ID}"]`,
+    ]);
 
     // —— 关 UC 窗口 ——
     await invokeBridge('set_uc', { uc: '__quiescence__' });

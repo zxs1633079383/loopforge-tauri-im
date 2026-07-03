@@ -24,7 +24,7 @@
 import { browser, expect } from '@wdio/globals';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { captureDomEvidence } from '../helpers/l2-evidence.mjs';
+import { captureDomEvidence } from '../helpers/dom-evidence.mjs';
 import { runFourFacet } from '../reducer/four-facet-reducer.mjs';
 
 const EXPECT = JSON.parse(
@@ -207,6 +207,7 @@ describe('UC-3.2 L2 · 单条消息已读双账号（#14 / #47）', () => {
       `[UC-3.2-L2 DOM] msgId=${MSG_ID} readBits=${readRow?.['read-bits']} eventSeq=${readRow?.['event-seq']}`
     );
     await captureDomEvidence(browser, 'uc-3.2-l2-read-observer', [
+      '[data-testid="status-bar"]',
       '[data-channel-id]',
       `[data-channel-id="${CHANNEL_ID}"]`,
       '[data-unread]',
