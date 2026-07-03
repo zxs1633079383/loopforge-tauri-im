@@ -82,7 +82,7 @@ Not run because required live ports were already occupied, and the task explicit
 
 ## Review Fix
 
-- Fix commit: pending
+- Fix commit: `ea68255`
 - Fixed Important review finding: `applyAnnouncementList()` now accepts a single-object announcement detail body through an announcement-only guard. Generic `bodyItems()` still returns singleton objects only when a caller supplies a guard, so arbitrary read-result envelope metadata is not treated as a rendered item.
 - Updated `test/specs/uc-5.6r.e2e.mjs` so the detail oracle passes the same announcement-only singleton guard and expects a `data-announcement-id` row when the response body is one announcement object.
 - Left the minor child-component `ImStoreService` DI cleanup out of this task to stay within the requested review-fix scope.
