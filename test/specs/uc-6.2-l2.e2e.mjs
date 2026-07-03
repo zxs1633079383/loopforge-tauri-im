@@ -22,7 +22,7 @@
 import { browser, expect } from '@wdio/globals';
 import { readFileSync, existsSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
-import { captureDomEvidence } from '../helpers/l2-evidence.mjs';
+import { captureObserverEvidence } from '../helpers/l2-evidence.mjs';
 import { runFourFacet } from '../reducer/four-facet-reducer.mjs';
 
 const EXPECT = JSON.parse(
@@ -190,11 +190,20 @@ describe('UC-6.2b · L2 设管理员广播（双账号·issue #29 / #45）', () 
     expect(String(data.role ?? '')).toBe('MANAGER');
     expect((data.userIds ?? []).map(String)).toContain(ADMIN_MEMBER_ID);
     expect(String(data.channelId ?? '')).toBe(TARGET_CHANNEL_ID);
-    await captureDomEvidence(browser, 'uc-6.2-l2-admin-observer', [
-      '[data-member-id]',
-      `[data-member-id="${ADMIN_MEMBER_ID}"]`,
-      '[data-admin]',
-    ]);
+    captureObserverEvidence('uc-6.2-l2-admin-observer', {
+      observerKind: 'raw-ws',
+      observerUserId: ADMIN_MEMBER_ID,
+      actorUserId: '444',
+      channelId: TARGET_CHANNEL_ID,
+      action: 'channel_member_role_updated',
+      assertions: {
+        role: 'MANAGER',
+        userIdsContains: ADMIN_MEMBER_ID,
+        rawContainsChannelId: hit.raw.includes(TARGET_CHANNEL_ID),
+      },
+      frame: hit,
+      parsedData: data,
+    });
 
     await invokeBridge('set_uc', { uc: '__quiescence__' });
 

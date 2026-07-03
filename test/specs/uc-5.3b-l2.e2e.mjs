@@ -21,7 +21,7 @@
 import { browser, expect } from '@wdio/globals';
 import { readFileSync, existsSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
-import { captureDomEvidence } from '../helpers/l2-evidence.mjs';
+import { captureObserverEvidence } from '../helpers/l2-evidence.mjs';
 import { runFourFacet } from '../reducer/four-facet-reducer.mjs';
 
 const EXPECT = JSON.parse(
@@ -192,10 +192,19 @@ describe('UC-5.3b · L2 member-leave 广播（双账号·issue #44）', () => {
     console.log(`[UC-5.3b L2] B=999 收到 channel_member_update{leave}·锚频道=${TARGET_CHANNEL_ID}·leave=${JSON.stringify(data.memberChange?.leave?.map((u) => u.id))}`);
     // 守可证伪：memberChange.leave 含被移除者 678（真离场态到达留存成员·非空帧）。
     expect((data.memberChange?.leave ?? []).map((u) => String(u.id))).toContain(LEAVE_MEMBER_ID);
-    await captureDomEvidence(browser, 'uc-5.3b-l2-leave-owner', [
-      '[data-channel-id]',
-      `[data-channel-id="${TARGET_CHANNEL_ID}"]`,
-    ]);
+    captureObserverEvidence('uc-5.3b-l2-leave-observer', {
+      observerKind: 'raw-ws',
+      observerUserId: OBSERVER_ID,
+      actorUserId: '444',
+      channelId: TARGET_CHANNEL_ID,
+      action: 'channel_member_update',
+      assertions: {
+        leaveContains: LEAVE_MEMBER_ID,
+        rawContainsChannelId: hit.raw.includes(TARGET_CHANNEL_ID),
+      },
+      frame: hit,
+      parsedData: data,
+    });
 
     await invokeBridge('set_uc', { uc: '__quiescence__' });
 

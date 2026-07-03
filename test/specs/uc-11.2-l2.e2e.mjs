@@ -20,7 +20,7 @@
 import { browser, expect } from '@wdio/globals';
 import { existsSync, rmSync, readFileSync } from 'node:fs';
 import { spawn, execFileSync } from 'node:child_process';
-import { captureDomEvidence } from '../helpers/l2-evidence.mjs';
+import { captureObserverEvidence } from '../helpers/l2-evidence.mjs';
 
 const L2_ACT = new URL('../../scripts/l2-act.sh', import.meta.url).pathname;
 const QUITTER_ID = '777'; // 退出者（独立账号·非暖栈 444）
@@ -182,9 +182,19 @@ describe('UC-11.2b · L2 退公司离群移除广播（双账号·issue #40 / #4
     console.log(`[UC-11.2b L2] B=888 留存成员 quit 后新增 quit_company：${baseline}→${total}（退公司离群广播到达留存成员）`);
     // 守可证伪：quit 后新增 ≥1（本次 777 quit 真触发广播到留存成员 888·非 stale·非空）。
     expect(total).toBeGreaterThan(baseline);
-    await captureDomEvidence(browser, 'uc-11.2-l2-quit-owner', [
-      '[data-channel-id]',
-      `[data-channel-id="${TARGET_CHANNEL_ID}"]`,
-    ]);
+    const newQuitFrames = readObserveFrames().filter((f) => f.action === 'quit_company').slice(baseline);
+    captureObserverEvidence('uc-11.2-l2-quit-observer', {
+      observerKind: 'raw-ws',
+      observerUserId: OBSERVER_ID,
+      actorUserId: QUITTER_ID,
+      channelId: TARGET_CHANNEL_ID,
+      action: 'quit_company',
+      assertions: {
+        baseline,
+        total,
+        newFrameCount: newQuitFrames.length,
+      },
+      frames: newQuitFrames,
+    });
   });
 });

@@ -1,9 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export async function captureDomEvidence(browser, name, selectors) {
+function evidencePath(name, suffix) {
   const outDir = process.env.LOOPFORGE_EVIDENCE_DIR || '/tmp/loopforge/evidence';
   fs.mkdirSync(outDir, { recursive: true });
+  return path.join(outDir, `${name}.${suffix}.json`);
+}
+
+export async function captureDomEvidence(browser, name, selectors) {
   const snapshot = await browser.execute((entries) => {
     const readNode = (selector) => {
       const nodes = [...document.querySelectorAll(selector)];
@@ -22,7 +26,13 @@ export async function captureDomEvidence(browser, name, selectors) {
       selectors: Object.fromEntries(entries.map((selector) => [selector, readNode(selector)])),
     };
   }, selectors);
-  const file = path.join(outDir, `${name}.dom.json`);
+  const file = evidencePath(name, 'dom');
   fs.writeFileSync(file, JSON.stringify(snapshot, null, 2));
+  return file;
+}
+
+export function captureObserverEvidence(name, evidence) {
+  const file = evidencePath(name, 'observer');
+  fs.writeFileSync(file, JSON.stringify({ capturedAt: new Date().toISOString(), ...evidence }, null, 2));
   return file;
 }
