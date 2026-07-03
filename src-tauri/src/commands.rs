@@ -54,6 +54,15 @@ fn l2_temp_id() -> String {
 }
 
 #[cfg(feature = "webdriver")]
+fn l2_actor(actor_user_id: Option<String>) -> String {
+    match actor_user_id.as_deref().map(str::trim) {
+        Some("444") => "444".to_string(),
+        Some("678") => "678".to_string(),
+        _ => "678".to_string(),
+    }
+}
+
+#[cfg(feature = "webdriver")]
 async fn l2_post(
     actor_user_id: &str,
     path: &str,
@@ -111,7 +120,7 @@ fn l2_mentions(mention_user_id: Option<String>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// L2 debug: 以 678 发消息，主窗口仍保持 444，靠后端 WS echo 验证多端联调。
+/// L2 debug: 以指定调试用户发消息，主窗口仍保持 444，靠后端 WS echo 验证多端联调。
 #[cfg(feature = "webdriver")]
 #[tauri::command]
 pub async fn im_l2_send(
@@ -119,6 +128,7 @@ pub async fn im_l2_send(
     channel_id: String,
     text: String,
     mention_user_id: Option<String>,
+    actor_user_id: Option<String>,
 ) -> Result<String, String> {
     let ch = channel_id.trim();
     let msg = text.trim();
@@ -128,12 +138,12 @@ pub async fn im_l2_send(
     if msg.is_empty() {
         return Err("im_l2_send: text 为空".into());
     }
-    let actor = "678";
+    let actor = l2_actor(actor_user_id);
     let tmp = l2_temp_id();
     let mentions = l2_mentions(mention_user_id);
     let team_id = state.identity.team_id.clone();
     l2_post(
-        actor,
+        &actor,
         "posts/create",
         serde_json::json!({
             "viewers": ["all"],
@@ -159,40 +169,49 @@ pub async fn im_l2_send(
     .await
 }
 
-/// L2 debug: 以 678 标整个会话已读（channels/view）。
+/// L2 debug: 以指定调试用户标整个会话已读（channels/view）。
 #[cfg(feature = "webdriver")]
 #[tauri::command]
-pub async fn im_l2_read_channel(channel_id: String) -> Result<String, String> {
+pub async fn im_l2_read_channel(
+    channel_id: String,
+    actor_user_id: Option<String>,
+) -> Result<String, String> {
     let ch = channel_id.trim();
     if ch.is_empty() {
         return Err("im_l2_read_channel: channelId 为空".into());
     }
+    let actor = l2_actor(actor_user_id);
     l2_post(
-        "678",
+        &actor,
         "channels/view",
         serde_json::json!({ "channels": [{ "id": ch }] }),
     )
     .await
 }
 
-/// L2 debug: 以 678 标单条消息已读。
+/// L2 debug: 以指定调试用户标单条消息已读。
 #[cfg(feature = "webdriver")]
 #[tauri::command]
-pub async fn im_l2_read_post(channel_id: String, post_id: String) -> Result<String, String> {
+pub async fn im_l2_read_post(
+    channel_id: String,
+    post_id: String,
+    actor_user_id: Option<String>,
+) -> Result<String, String> {
     let ch = channel_id.trim();
     let post = post_id.trim();
     if ch.is_empty() || post.is_empty() {
         return Err("im_l2_read_post: channelId/postId 为空".into());
     }
+    let actor = l2_actor(actor_user_id);
     l2_post(
-        "678",
+        &actor,
         "post/read",
         serde_json::json!({ "channelId": ch, "posts": [post] }),
     )
     .await
 }
 
-/// L2 debug: 以 678 对一条消息发起加急，默认目标为主窗口当前 userId（444）。
+/// L2 debug: 以指定调试用户对一条消息发起加急，默认目标为主窗口当前 userId（444）。
 #[cfg(feature = "webdriver")]
 #[tauri::command]
 pub async fn im_l2_urgent_post(
@@ -201,6 +220,7 @@ pub async fn im_l2_urgent_post(
     post_id: String,
     target_ids: Option<Vec<String>>,
     message: Option<String>,
+    actor_user_id: Option<String>,
 ) -> Result<String, String> {
     let ch = channel_id.trim();
     let post = post_id.trim();
@@ -223,7 +243,21 @@ pub async fn im_l2_urgent_post(
     if let Some(msg) = message.filter(|v| !v.trim().is_empty()) {
         body["message"] = serde_json::json!(msg);
     }
-    l2_post("678", "posts/urgentPost", body).await
+    let actor = l2_actor(actor_user_id);
+    l2_post(&actor, "posts/urgentPost", body).await
+}
+
+#[cfg(all(test, feature = "webdriver"))]
+mod tests {
+    use super::l2_actor;
+
+    #[test]
+    fn l2_actor_accepts_known_debug_users_and_defaults_to_678() {
+        assert_eq!(l2_actor(None), "678");
+        assert_eq!(l2_actor(Some("444".to_string())), "444");
+        assert_eq!(l2_actor(Some("678".to_string())), "678");
+        assert_eq!(l2_actor(Some("999".to_string())), "678");
+    }
 }
 
 /// UC-send-1 出站发送：前端生成 `temporaryId` 乐观上屏后调本命令。
