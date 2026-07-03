@@ -130,6 +130,24 @@ const readObserveFrames = () => {
   return frames;
 };
 
+const readDomEvidence = (file) => {
+  expect(existsSync(file)).toBe(true);
+  return JSON.parse(readFileSync(file, 'utf8'));
+};
+
+const expectDomRows = (evidence, selector) => {
+  const rows = evidence?.selectors?.[selector] ?? [];
+  expect(Array.isArray(rows)).toBe(true);
+  expect(rows.length).toBeGreaterThan(0);
+  return rows;
+};
+
+const expectDomAttr = (evidence, selector, attr, expected) => {
+  const rows = expectDomRows(evidence, selector);
+  expect(rows.some((row) => String(row?.attrs?.[attr] ?? '') === String(expected))).toBe(true);
+  return rows;
+};
+
 describe('UC-6.1b · L2 拉人广播（双账号·issue #28 / #43）', () => {
   let TARGET_CHANNEL_ID;
   let observeProc;
@@ -253,7 +271,7 @@ describe('UC-6.1b · L2 拉人广播（双账号·issue #28 / #43）', () => {
       },
       frame: hit,
     });
-    await captureDomEvidence(browser, 'uc-6.1-l2-member-actor-dom', [
+    const domEvidenceFile = await captureDomEvidence(browser, 'uc-6.1-l2-member-actor-dom', [
       '[data-testid="status-bar"]',
       '[data-testid="member-list"]',
       '[data-member-id]',
@@ -261,6 +279,10 @@ describe('UC-6.1b · L2 拉人广播（双账号·issue #28 / #43）', () => {
       '[data-members]',
       `[data-channel-id="${TARGET_CHANNEL_ID}"]`,
     ]);
+    const domEvidence = readDomEvidence(domEvidenceFile);
+    expectDomRows(domEvidence, '[data-member-id]');
+    expectDomAttr(domEvidence, `[data-member-id="${JOIN_MEMBER_ID}"]`, 'data-member-id', JOIN_MEMBER_ID);
+    expectDomAttr(domEvidence, `[data-channel-id="${TARGET_CHANNEL_ID}"]`, 'data-channel-id', TARGET_CHANNEL_ID);
 
     // —— 关 UC 窗口 ——
     await invokeBridge('set_uc', { uc: '__quiescence__' });

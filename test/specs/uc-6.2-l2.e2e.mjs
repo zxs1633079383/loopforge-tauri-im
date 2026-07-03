@@ -111,6 +111,24 @@ const readObserveFrames = () => {
   return frames;
 };
 
+const readDomEvidence = (file) => {
+  expect(existsSync(file)).toBe(true);
+  return JSON.parse(readFileSync(file, 'utf8'));
+};
+
+const expectDomRows = (evidence, selector) => {
+  const rows = evidence?.selectors?.[selector] ?? [];
+  expect(Array.isArray(rows)).toBe(true);
+  expect(rows.length).toBeGreaterThan(0);
+  return rows;
+};
+
+const expectDomAttr = (evidence, selector, attr, expected) => {
+  const rows = expectDomRows(evidence, selector);
+  expect(rows.some((row) => String(row?.attrs?.[attr] ?? '') === String(expected))).toBe(true);
+  return rows;
+};
+
 describe('UC-6.2b · L2 设管理员广播（双账号·issue #29 / #45）', () => {
   let TARGET_CHANNEL_ID;
   let observeProc;
@@ -205,7 +223,7 @@ describe('UC-6.2b · L2 设管理员广播（双账号·issue #29 / #45）', () 
       frame: hit,
       parsedData: data,
     });
-    await captureDomEvidence(browser, 'uc-6.2-l2-admin-actor-dom', [
+    const domEvidenceFile = await captureDomEvidence(browser, 'uc-6.2-l2-admin-actor-dom', [
       '[data-testid="status-bar"]',
       '[data-testid="member-list"]',
       '[data-member-id]',
@@ -213,6 +231,12 @@ describe('UC-6.2b · L2 设管理员广播（双账号·issue #29 / #45）', () 
       '[data-admin]',
       `[data-channel-id="${TARGET_CHANNEL_ID}"]`,
     ]);
+    const domEvidence = readDomEvidence(domEvidenceFile);
+    expectDomRows(domEvidence, '[data-member-id]');
+    expectDomRows(domEvidence, '[data-admin]');
+    expectDomAttr(domEvidence, `[data-member-id="${ADMIN_MEMBER_ID}"]`, 'data-member-id', ADMIN_MEMBER_ID);
+    expectDomAttr(domEvidence, `[data-member-id="${ADMIN_MEMBER_ID}"]`, 'data-admin', '1');
+    expectDomAttr(domEvidence, `[data-channel-id="${TARGET_CHANNEL_ID}"]`, 'data-channel-id', TARGET_CHANNEL_ID);
 
     await invokeBridge('set_uc', { uc: '__quiescence__' });
 

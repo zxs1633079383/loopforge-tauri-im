@@ -111,6 +111,24 @@ const readObserveFrames = () => {
   return frames;
 };
 
+const readDomEvidence = (file) => {
+  expect(existsSync(file)).toBe(true);
+  return JSON.parse(readFileSync(file, 'utf8'));
+};
+
+const expectDomRows = (evidence, selector) => {
+  const rows = evidence?.selectors?.[selector] ?? [];
+  expect(Array.isArray(rows)).toBe(true);
+  expect(rows.length).toBeGreaterThan(0);
+  return rows;
+};
+
+const expectDomAttr = (evidence, selector, attr, expected) => {
+  const rows = expectDomRows(evidence, selector);
+  expect(rows.some((row) => String(row?.attrs?.[attr] ?? '') === String(expected))).toBe(true);
+  return rows;
+};
+
 describe('UC-5.3b · L2 member-leave 广播（双账号·issue #44）', () => {
   let TARGET_CHANNEL_ID;
   let observeProc;
@@ -206,12 +224,20 @@ describe('UC-5.3b · L2 member-leave 广播（双账号·issue #44）', () => {
       frame: hit,
       parsedData: data,
     });
-    await captureDomEvidence(browser, 'uc-5.3b-l2-leave-actor-dom', [
+    const domEvidenceFile = await captureDomEvidence(browser, 'uc-5.3b-l2-leave-actor-dom', [
       '[data-testid="status-bar"]',
       '[data-testid="channel-list"] [data-channel-id]',
       `[data-testid="channel-list"] [data-channel-id="${TARGET_CHANNEL_ID}"]`,
       '[data-unread]',
     ]);
+    const domEvidence = readDomEvidence(domEvidenceFile);
+    expectDomRows(domEvidence, '[data-testid="channel-list"] [data-channel-id]');
+    expectDomAttr(
+      domEvidence,
+      `[data-testid="channel-list"] [data-channel-id="${TARGET_CHANNEL_ID}"]`,
+      'data-channel-id',
+      TARGET_CHANNEL_ID
+    );
 
     await invokeBridge('set_uc', { uc: '__quiescence__' });
 

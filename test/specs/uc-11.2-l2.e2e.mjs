@@ -104,6 +104,24 @@ const readObserveFrames = () => {
   return frames;
 };
 
+const readDomEvidence = (file) => {
+  expect(existsSync(file)).toBe(true);
+  return JSON.parse(readFileSync(file, 'utf8'));
+};
+
+const expectDomRows = (evidence, selector) => {
+  const rows = evidence?.selectors?.[selector] ?? [];
+  expect(Array.isArray(rows)).toBe(true);
+  expect(rows.length).toBeGreaterThan(0);
+  return rows;
+};
+
+const expectDomAttr = (evidence, selector, attr, expected) => {
+  const rows = expectDomRows(evidence, selector);
+  expect(rows.some((row) => String(row?.attrs?.[attr] ?? '') === String(expected))).toBe(true);
+  return rows;
+};
+
 // 退出者 777 退 team（l2-act quit·cookieId 桥·DELETE teams/member/quit）。
 function quitAsQuitter() {
   return execFileSync('bash', [L2_ACT, 'quit'], {
@@ -197,11 +215,19 @@ describe('UC-11.2b · L2 退公司离群移除广播（双账号·issue #40 / #4
       },
       frames: newQuitFrames,
     });
-    await captureDomEvidence(browser, 'uc-11.2-l2-quit-actor-dom', [
+    const domEvidenceFile = await captureDomEvidence(browser, 'uc-11.2-l2-quit-actor-dom', [
       '[data-testid="status-bar"]',
       '[data-testid="channel-list"] [data-channel-id]',
       `[data-testid="channel-list"] [data-channel-id="${TARGET_CHANNEL_ID}"]`,
       '[data-members]',
     ]);
+    const domEvidence = readDomEvidence(domEvidenceFile);
+    expectDomRows(domEvidence, '[data-testid="channel-list"] [data-channel-id]');
+    expectDomAttr(
+      domEvidence,
+      `[data-testid="channel-list"] [data-channel-id="${TARGET_CHANNEL_ID}"]`,
+      'data-channel-id',
+      TARGET_CHANNEL_ID
+    );
   });
 });

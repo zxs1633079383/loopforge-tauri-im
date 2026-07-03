@@ -22,7 +22,7 @@
 //   A 未收 im:post:read（msg_id==MSG_ID）→ ②④ 红（非 tautology）。
 
 import { browser, expect } from '@wdio/globals';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { captureDomEvidence } from '../helpers/dom-evidence.mjs';
 import { runFourFacet } from '../reducer/four-facet-reducer.mjs';
@@ -91,6 +91,30 @@ const readMessageRow = (msgId) =>
       _msgId: mid,
     };
   }, msgId);
+
+const readDomEvidence = (file) => {
+  expect(existsSync(file)).toBe(true);
+  return JSON.parse(readFileSync(file, 'utf8'));
+};
+
+const expectDomRows = (evidence, selector) => {
+  const rows = evidence?.selectors?.[selector] ?? [];
+  expect(Array.isArray(rows)).toBe(true);
+  expect(rows.length).toBeGreaterThan(0);
+  return rows;
+};
+
+const expectDomAttr = (evidence, selector, attr, expected) => {
+  const rows = expectDomRows(evidence, selector);
+  expect(rows.some((row) => String(row?.attrs?.[attr] ?? '') === String(expected))).toBe(true);
+  return rows;
+};
+
+const expectDomAttrNonEmpty = (evidence, selector, attr) => {
+  const rows = expectDomRows(evidence, selector);
+  expect(rows.some((row) => String(row?.attrs?.[attr] ?? '').length > 0)).toBe(true);
+  return rows;
+};
 
 // 以 B=678 身份 POST channels/view 标整会话已读（会话已读·child_process 跑 l2-act.sh·cookieId 桥）。
 function readAsB(channelId) {
@@ -210,7 +234,7 @@ describe('UC-3.1 L2 · 会话已读双账号（#15 / #47）', () => {
     console.log(
       `[UC-3.1-L2 DOM] msgId=${MSG_ID} readBits=${readRow?.['read-bits']} eventSeq=${readRow?.['event-seq']}`
     );
-    await captureDomEvidence(browser, 'uc-3.1-l2-read-observer', [
+    const domEvidenceFile = await captureDomEvidence(browser, 'uc-3.1-l2-read-observer', [
       '[data-testid="status-bar"]',
       '[data-channel-id]',
       `[data-channel-id="${CHANNEL_ID}"]`,
@@ -219,6 +243,11 @@ describe('UC-3.1 L2 · 会话已读双账号（#15 / #47）', () => {
       '[data-msg-id]',
       `[data-msg-id="${MSG_ID}"]`,
     ]);
+    const domEvidence = readDomEvidence(domEvidenceFile);
+    expectDomRows(domEvidence, '[data-read-bits]');
+    expectDomAttr(domEvidence, `[data-channel-id="${CHANNEL_ID}"]`, 'data-channel-id', CHANNEL_ID);
+    expectDomAttr(domEvidence, `[data-msg-id="${MSG_ID}"]`, 'data-msg-id', MSG_ID);
+    expectDomAttrNonEmpty(domEvidence, `[data-msg-id="${MSG_ID}"]`, 'data-read-bits');
 
     // —— 关 UC 窗口 ——
     await invokeBridge('set_uc', { uc: '__quiescence__' });
