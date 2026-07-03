@@ -127,6 +127,7 @@ pub fn run() {
     #[cfg(feature = "webdriver")]
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::im_send,
+        commands::im_identity,
         commands::im_ready,
         commands::im_query_dialog_list,
         commands::im_revoke,
@@ -182,11 +183,16 @@ pub fn run() {
         commands::im_average_delete,
         commands::im_sync_channels,
         commands::im_health,
+        commands::im_l2_send,
+        commands::im_l2_read_channel,
+        commands::im_l2_read_post,
+        commands::im_l2_urgent_post,
         commands::set_uc
     ]);
     #[cfg(not(feature = "webdriver"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::im_send,
+        commands::im_identity,
         commands::im_ready,
         commands::im_query_dialog_list,
         commands::im_revoke,

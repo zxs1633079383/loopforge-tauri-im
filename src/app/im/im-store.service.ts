@@ -88,6 +88,10 @@ export class ImStoreService {
   private readonly _activeChannel = signal<string>("");
   readonly activeChannel = computed(() => this._activeChannel());
 
+  /** 当前主窗口身份（dev-local=444）。只读展示/兜底用，不在前端改登录态。 */
+  private readonly _currentUserId = signal("");
+  readonly currentUserId = computed(() => this._currentUserId() || "444");
+
   // ——— 骨架区域信号（issue #46 · CL/MB/AX 语义区容器占位 · 各 UC issue 逐个填 apply 分支）———
   // 当前全空列表，模板渲染空容器（覆盖所有 UC 渲染容器）。壳纯渲染：data-* 直映投影，不在 JS 合成。
 
@@ -129,6 +133,7 @@ export class ImStoreService {
 
   private unlisten: (() => void) | null = null;
   private readyTimer: ReturnType<typeof setTimeout> | null = null;
+  private dialogRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** 本地暂存：temporaryId → 发送文本（瘦投影 im:post:sending 不带 text，渲染 sending 行需要）。 */
   private readonly pendingText = new Map<string, string>();
@@ -162,6 +167,7 @@ export class ImStoreService {
     // 会话列表 bootstrap：主动拉一次本地 dialogList → 设 activeChannel（send 族 UC 决定性发送目标）。
     // 早于就绪 probe 触发（probe 等增量静默 ~1.5s+），回报到时 activeChannel 已就位。
     this.bootstrapDialogList();
+    this.loadIdentity();
   }
 
   /** 拉一次本地会话列表（im_query_dialog_list → im:channels:projection 回报设 activeChannel）。
@@ -172,12 +178,40 @@ export class ImStoreService {
     });
   }
 
+  refreshDialogList(): void {
+    this.bootstrapDialogList();
+  }
+
+  private scheduleDialogListRefresh(): void {
+    if (this.dialogRefreshTimer) return;
+    this.dialogRefreshTimer = setTimeout(() => {
+      this.dialogRefreshTimer = null;
+      this.refreshDialogList();
+    }, 120);
+  }
+
+  private loadIdentity(): void {
+    this.bridge
+      .invoke<{ userId?: string }>("im_identity")
+      .then((identity) => {
+        const id = (identity.userId || "").trim();
+        if (id) this._currentUserId.set(id);
+      })
+      .catch(() => {
+        // 非 Tauri / 命令缺失 → 保持 dev-local fallback 444。
+      });
+  }
+
   stop(): void {
     this.unlisten?.();
     this.unlisten = null;
     if (this.readyTimer) {
       clearTimeout(this.readyTimer);
       this.readyTimer = null;
+    }
+    if (this.dialogRefreshTimer) {
+      clearTimeout(this.dialogRefreshTimer);
+      this.dialogRefreshTimer = null;
     }
   }
 
@@ -234,6 +268,61 @@ export class ImStoreService {
     } catch {
       // 出站失败（非 Tauri dev 环境也会走这里）→ 标 failed（若投影已插行）+ 清暂存。
       this.markSendFailed(temporaryId);
+    }
+  }
+
+  async l2Send(channelId: string, text: string, mentionUserId?: string): Promise<void> {
+    const ch = channelId.trim();
+    const msg = text.trim();
+    if (!ch || !msg) return;
+    try {
+      await this.bridge.invoke<string>("im_l2_send", {
+        channelId: ch,
+        text: msg,
+        mentionUserId,
+      });
+      this.scheduleDialogListRefresh();
+    } catch {
+      // debug-only 命令缺失或出站失败 → UI 不造假，等真实投影。
+    }
+  }
+
+  async l2ReadChannel(channelId: string): Promise<void> {
+    const ch = channelId.trim();
+    if (!ch) return;
+    try {
+      await this.bridge.invoke<string>("im_l2_read_channel", { channelId: ch });
+      this.scheduleDialogListRefresh();
+    } catch {
+      // debug-only 命令缺失或出站失败 → 静默。
+    }
+  }
+
+  async l2ReadPost(channelId: string, postId: string): Promise<void> {
+    const ch = channelId.trim();
+    const post = postId.trim();
+    if (!ch || !post) return;
+    try {
+      await this.bridge.invoke<string>("im_l2_read_post", { channelId: ch, postId: post });
+    } catch {
+      // debug-only 命令缺失或出站失败 → 静默。
+    }
+  }
+
+  async l2UrgentPost(channelId: string, postId: string, targetIds?: string[]): Promise<void> {
+    const ch = channelId.trim();
+    const post = postId.trim();
+    if (!ch || !post) return;
+    try {
+      await this.bridge.invoke<string>("im_l2_urgent_post", {
+        channelId: ch,
+        postId: post,
+        targetIds,
+        message: "678 加急调试",
+      });
+      this.scheduleDialogListRefresh();
+    } catch {
+      // debug-only 命令缺失或出站失败 → 静默。
     }
   }
 
@@ -1715,6 +1804,7 @@ export class ImStoreService {
     // 仍读频道行属性·UC-10.2 读消息行系统标·加法式不回退）。
     this.applyChannelUpdatePost(data);
     this.applyMessageItem(data);
+    this.scheduleDialogListRefresh();
   }
 
   /**

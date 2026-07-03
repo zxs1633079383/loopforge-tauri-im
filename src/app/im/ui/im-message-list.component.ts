@@ -42,12 +42,12 @@ import { authorName, avatarColor, avatarInitial, shortTime } from "./im-ui-forma
         >
           <div
             class="msg__avatar"
-            [style.background]="avatarColor(m.userId)"
+            [style.background]="avatarColor(m.userId || currentUserId)"
             [attr.data-user-id]="m.userId ?? null"
-          >{{ avatarInitial(m.userId) }}</div>
+          >{{ avatarInitial(m.userId || currentUserId) }}</div>
           <div class="msg__body">
             <div class="msg__head">
-              <span class="msg__author">{{ authorName(m.userId) }}</span>
+              <span class="msg__author">{{ authorName(m.userId, currentUserId) }}</span>
               <span class="msg__time">{{ shortTime(m.createAt) }}</span>
             </div>
             <span class="msg__text">{{ m.text }}</span>
@@ -93,6 +93,7 @@ import { authorName, avatarColor, avatarInitial, shortTime } from "./im-ui-forma
 export class ImMessageListComponent {
   @Input() rows: readonly MessageRow[] = [];
   @Input() activeChannel: string | null = null;
+  @Input() currentUserId = "444";
 
   @Output() loadOlderClick = new EventEmitter<void>();
   @Output() revokeClick = new EventEmitter<MessageRow>();

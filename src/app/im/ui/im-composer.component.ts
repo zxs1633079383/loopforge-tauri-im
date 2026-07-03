@@ -17,6 +17,8 @@ import { FormsModule } from "@angular/forms";
         placeholder="Enter发送，Ctrl/Cmd+Enter换行"
         [ngModel]="draft"
         (ngModelChange)="draftChange.emit($event)"
+        (focus)="readChannelClick.emit()"
+        (click)="readChannelClick.emit()"
         (keydown.enter)="sendClick.emit()"
       />
       <button
