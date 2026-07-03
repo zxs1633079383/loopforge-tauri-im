@@ -54,7 +54,7 @@
 
 ## Review Fix Commit
 
-- Pending until verification and commit.
+- `5f084a2` (`test(im): 拒绝 UC-10.1 静默归属`)
 
 ## Live Run Blocker
 
