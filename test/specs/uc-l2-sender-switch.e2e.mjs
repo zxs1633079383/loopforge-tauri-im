@@ -19,6 +19,48 @@ function readLines() {
     .filter(Boolean);
 }
 
+function headerValue(headers, name) {
+  const wanted = name.toLowerCase();
+  if (Array.isArray(headers)) {
+    const match = headers.find(([key]) => String(key).toLowerCase() === wanted);
+    return match?.[1] ?? null;
+  }
+  if (headers && typeof headers === "object") {
+    const key = Object.keys(headers).find((candidate) => candidate.toLowerCase() === wanted);
+    return key ? headers[key] : null;
+  }
+  return null;
+}
+
+function cookieValue(cookieHeader, name) {
+  const wanted = name.toLowerCase();
+  return String(cookieHeader ?? "")
+    .split(";")
+    .map((part) => part.trim().split("="))
+    .find(([key]) => key?.toLowerCase() === wanted)?.[1] ?? null;
+}
+
+function isStructuredIdentity678(line) {
+  const payload = line?.payload ?? {};
+  const headers = payload.headers ?? {};
+  const body = payload.body ?? {};
+  const cookieHeader = headerValue(headers, "cookie");
+  const explicitValues = [
+    line?.cookieId,
+    line?.userId,
+    payload.cookieId,
+    payload.userId,
+    headerValue(headers, "cookieId"),
+    cookieValue(cookieHeader, "cookieId"),
+    cookieValue(cookieHeader, "userId"),
+    cookieValue(cookieHeader, "session"),
+    cookieValue(cookieHeader, "sessionId"),
+    body.userId,
+    body.user_id,
+  ];
+  return explicitValues.some((value) => String(value ?? "") === "678");
+}
+
 describe("L2 sender switch · 444/678 真实发送者切换", () => {
   it("默认 444，切到 678 后 composer 以 678 发消息", async () => {
     const status = await $('[data-testid="status-bar"]');
@@ -36,7 +78,7 @@ describe("L2 sender switch · 444/678 真实发送者切换", () => {
       { timeout: 10000, interval: 200, timeoutMsg: "发送者未切到 678" },
     );
 
-    const text = `lf-sender-678-${Date.now()}`;
+    const text = `lf-sender-alt-${Date.now()}`;
     await $('[data-testid="compose-input"]').setValue(text);
     await $('[data-testid="send-btn"]').click();
 
@@ -56,9 +98,10 @@ describe("L2 sender switch · 444/678 真实发送者切换", () => {
     );
 
     const outbound = readLines().filter((line) => {
-      const textHit = JSON.stringify(line).includes(text);
-      const userHit = JSON.stringify(line).includes("678");
-      return textHit && userHit && JSON.stringify(line).includes("posts/create");
+      const payload = line?.payload ?? {};
+      const textHit = payload.body?.message === text || payload.body?.simpleMessage === text;
+      const urlHit = String(payload.url ?? "").endsWith("posts/create");
+      return textHit && urlHit && isStructuredIdentity678(line);
     });
     assert.ok(outbound.length > 0, "run.jsonl 未记录 678 posts/create 出站");
   });
