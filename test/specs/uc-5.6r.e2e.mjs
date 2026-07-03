@@ -161,7 +161,7 @@ function readReadResultBody(reqId) {
   return body;
 }
 
-function bodyItems(body) {
+function bodyItems(body, { singleObjectGuard } = {}) {
   let value = body;
   for (let i = 0; i < 2; i++) {
     if (value && typeof value === 'object' && !Array.isArray(value) && 'data' in value) {
@@ -173,6 +173,7 @@ function bodyItems(body) {
   for (const key of ['items', 'list', 'rows', 'postList', 'posts', 'announcements', 'records']) {
     if (Array.isArray(value[key])) return value[key];
   }
+  if (singleObjectGuard?.(value)) return [value];
   return [];
 }
 
@@ -185,8 +186,25 @@ function pickString(row, keys) {
   return '';
 }
 
-async function expectAttrRowsFromBody(reqId, attr, keys) {
-  const ids = bodyItems(readReadResultBody(reqId))
+function isAnnouncementItem(row) {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+  if (pickString(row, ['announcementId', 'postId'])) return true;
+  if (!pickString(row, ['id'])) return false;
+  return [
+    'message',
+    'text',
+    'content',
+    'channelId',
+    'type',
+    'createAt',
+    'createdAt',
+    'updateAt',
+    'updatedAt',
+  ].some((key) => key in row);
+}
+
+async function expectAttrRowsFromBody(reqId, attr, keys, options = {}) {
+  const ids = bodyItems(readReadResultBody(reqId), options)
     .map((row) => pickString(row, keys))
     .filter(Boolean);
   if (ids.length === 0) {
@@ -283,7 +301,12 @@ describe('UC-5.6r · 公告读族 acceptList/list/detail（读族 request-respon
     expect(r.ok).toBe(true);
 
     await waitReadResult(reqId, 'detail');
-    await expectAttrRowsFromBody(reqId, 'data-announcement-id', ['announcementId', 'id', 'postId']);
+    await expectAttrRowsFromBody(
+      reqId,
+      'data-announcement-id',
+      ['announcementId', 'id', 'postId'],
+      { singleObjectGuard: isAnnouncementItem }
+    );
     await invokeBridge('set_uc', { uc: '__quiescence__' });
 
     const jsonl = readFileSync(RUN_JSONL, 'utf8');

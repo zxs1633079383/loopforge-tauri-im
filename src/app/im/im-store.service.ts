@@ -2123,7 +2123,7 @@ export class ImStoreService {
 
   private applyAnnouncementList(body: unknown): void {
     this._announcements.set(
-      this.bodyItems(body)
+      this.bodyItems(body, (item) => this.isAnnouncementItem(item))
         .map((item) => {
           const announcementId = this.pickString(item, [
             "announcementId",
@@ -2201,7 +2201,10 @@ export class ImStoreService {
     this._onlineMembers.set(onlineMembers);
   }
 
-  private bodyItems(body: unknown): Array<Record<string, unknown>> {
+  private bodyItems(
+    body: unknown,
+    singleObjectGuard?: (item: Record<string, unknown>) => boolean,
+  ): Array<Record<string, unknown>> {
     let value = body;
     for (let i = 0; i < 2; i++) {
       if (
@@ -2231,6 +2234,7 @@ export class ImStoreService {
       const nested = record[key];
       if (Array.isArray(nested)) return this.objectItems(nested);
     }
+    if (singleObjectGuard?.(record)) return [record];
     return [];
   }
 
@@ -2239,6 +2243,22 @@ export class ImStoreService {
       (item): item is Record<string, unknown> =>
         !!item && typeof item === "object" && !Array.isArray(item),
     );
+  }
+
+  private isAnnouncementItem(item: Record<string, unknown>): boolean {
+    if (this.pickString(item, ["announcementId", "postId"])) return true;
+    if (!this.pickString(item, ["id"])) return false;
+    return [
+      "message",
+      "text",
+      "content",
+      "channelId",
+      "type",
+      "createAt",
+      "createdAt",
+      "updateAt",
+      "updatedAt",
+    ].some((key) => key in item);
   }
 
   private pickString(

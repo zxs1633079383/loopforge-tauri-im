@@ -80,6 +80,24 @@ Not run because required live ports were already occupied, and the task explicit
 - GitNexus MCP returned no indexed repositories, so symbol impact analysis and `detect_changes` could not be used for this workspace.
 - Fallback impact control used static typecheck/build, scoped grep, allowed-file diff review, and `git diff --check`.
 
+## Review Fix
+
+- Fix commit: pending
+- Fixed Important review finding: `applyAnnouncementList()` now accepts a single-object announcement detail body through an announcement-only guard. Generic `bodyItems()` still returns singleton objects only when a caller supplies a guard, so arbitrary read-result envelope metadata is not treated as a rendered item.
+- Updated `test/specs/uc-5.6r.e2e.mjs` so the detail oracle passes the same announcement-only singleton guard and expects a `data-announcement-id` row when the response body is one announcement object.
+- Left the minor child-component `ImStoreService` DI cleanup out of this task to stay within the requested review-fix scope.
+
+## Review Fix Verification
+
+- `node --check test/specs/uc-5.6r.e2e.mjs` - pass
+- `npm run check:static` - pass; existing Angular style budget warning remains.
+- `git diff --check` - pass
+- Focused live run skipped because required ports are occupied:
+  - `1420`: `node` PID 68188
+  - `4445`: `loopforge` PID 69194
+  - `8066`: `___7go_bu` PID 32834
+- GitNexus `impact()` / `detect_changes()` attempted again and still returned no indexed repositories.
+
 ## Final Assessment
 
 - Status: `DONE_WITH_CONCERNS`
