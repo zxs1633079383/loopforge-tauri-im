@@ -116,10 +116,35 @@ const expectDomRows = (evidence, selector) => {
   return rows;
 };
 
-const expectDomAttr = (evidence, selector, attr, expected) => {
-  const rows = expectDomRows(evidence, selector);
-  expect(rows.some((row) => String(row?.attrs?.[attr] ?? '') === String(expected))).toBe(true);
+const domRows = (evidence, selector) => {
+  const rows = evidence?.selectors?.[selector] ?? [];
+  expect(Array.isArray(rows)).toBe(true);
   return rows;
+};
+
+const memberTokens = (value) =>
+  String(value ?? '')
+    .split(/[,\s]+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+const expectMemberAbsentFromDomEvidence = (evidence, memberId) => {
+  const memberRows = domRows(evidence, '[data-member-id]');
+  const removedMemberRows = domRows(evidence, `[data-member-id="${memberId}"]`);
+  const membersAttrRows = domRows(evidence, '[data-members]');
+  const hasMemberSurface = memberRows.length > 0 || membersAttrRows.length > 0;
+
+  if (!hasMemberSurface) {
+    throw new Error(
+      `NEED_UI UC-11.2: DOM evidence has no quit/removal surface; expose [data-member-id] rows or [data-members] after quitter ${memberId} leaves`
+    );
+  }
+
+  expect(removedMemberRows.length).toBe(0);
+  expect(memberRows.some((row) => String(row?.attrs?.['data-member-id'] ?? '') === String(memberId))).toBe(false);
+  expect(
+    membersAttrRows.some((row) => memberTokens(row?.attrs?.['data-members']).includes(String(memberId)))
+  ).toBe(false);
 };
 
 // 退出者 777 退 team（l2-act quit·cookieId 桥·DELETE teams/member/quit）。
@@ -219,15 +244,11 @@ describe('UC-11.2b · L2 退公司离群移除广播（双账号·issue #40 / #4
       '[data-testid="status-bar"]',
       '[data-testid="channel-list"] [data-channel-id]',
       `[data-testid="channel-list"] [data-channel-id="${TARGET_CHANNEL_ID}"]`,
+      '[data-member-id]',
+      `[data-member-id="${QUITTER_ID}"]`,
       '[data-members]',
     ]);
     const domEvidence = readDomEvidence(domEvidenceFile);
-    expectDomRows(domEvidence, '[data-testid="channel-list"] [data-channel-id]');
-    expectDomAttr(
-      domEvidence,
-      `[data-testid="channel-list"] [data-channel-id="${TARGET_CHANNEL_ID}"]`,
-      'data-channel-id',
-      TARGET_CHANNEL_ID
-    );
+    expectMemberAbsentFromDomEvidence(domEvidence, QUITTER_ID);
   });
 });

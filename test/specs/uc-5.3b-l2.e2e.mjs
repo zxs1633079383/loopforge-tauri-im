@@ -123,10 +123,41 @@ const expectDomRows = (evidence, selector) => {
   return rows;
 };
 
+const domRows = (evidence, selector) => {
+  const rows = evidence?.selectors?.[selector] ?? [];
+  expect(Array.isArray(rows)).toBe(true);
+  return rows;
+};
+
 const expectDomAttr = (evidence, selector, attr, expected) => {
   const rows = expectDomRows(evidence, selector);
   expect(rows.some((row) => String(row?.attrs?.[attr] ?? '') === String(expected))).toBe(true);
   return rows;
+};
+
+const memberTokens = (value) =>
+  String(value ?? '')
+    .split(/[,\s]+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+const expectMemberAbsentFromDomEvidence = (evidence, memberId) => {
+  const memberRows = domRows(evidence, '[data-member-id]');
+  const removedMemberRows = domRows(evidence, `[data-member-id="${memberId}"]`);
+  const membersAttrRows = domRows(evidence, '[data-members]');
+  const hasMemberSurface = memberRows.length > 0 || membersAttrRows.length > 0;
+
+  if (!hasMemberSurface) {
+    throw new Error(
+      `NEED_UI UC-5.3b: DOM evidence has no member removal surface; expose [data-member-id] rows or [data-members] after leave ${memberId}`
+    );
+  }
+
+  expect(removedMemberRows.length).toBe(0);
+  expect(memberRows.some((row) => String(row?.attrs?.['data-member-id'] ?? '') === String(memberId))).toBe(false);
+  expect(
+    membersAttrRows.some((row) => memberTokens(row?.attrs?.['data-members']).includes(String(memberId)))
+  ).toBe(false);
 };
 
 describe('UC-5.3b · L2 member-leave 广播（双账号·issue #44）', () => {
@@ -228,6 +259,9 @@ describe('UC-5.3b · L2 member-leave 广播（双账号·issue #44）', () => {
       '[data-testid="status-bar"]',
       '[data-testid="channel-list"] [data-channel-id]',
       `[data-testid="channel-list"] [data-channel-id="${TARGET_CHANNEL_ID}"]`,
+      '[data-member-id]',
+      `[data-member-id="${LEAVE_MEMBER_ID}"]`,
+      '[data-members]',
       '[data-unread]',
     ]);
     const domEvidence = readDomEvidence(domEvidenceFile);
@@ -238,6 +272,7 @@ describe('UC-5.3b · L2 member-leave 广播（双账号·issue #44）', () => {
       'data-channel-id',
       TARGET_CHANNEL_ID
     );
+    expectMemberAbsentFromDomEvidence(domEvidence, LEAVE_MEMBER_ID);
 
     await invokeBridge('set_uc', { uc: '__quiescence__' });
 
