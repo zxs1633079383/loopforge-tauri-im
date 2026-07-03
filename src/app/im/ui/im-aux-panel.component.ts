@@ -1,5 +1,6 @@
-import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from "@angular/core";
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output, inject } from "@angular/core";
 import { BookmarkRow, ReplyRow, TodoRow } from "../message-row.model";
+import { ImStoreService } from "../im-store.service";
 
 @Component({
   selector: "app-im-aux-panel",
@@ -14,7 +15,26 @@ import { BookmarkRow, ReplyRow, TodoRow } from "../message-row.model";
       >
         <button class="im__mini" type="button" data-testid="bookmark-btn" (click)="bookmarkClick.emit()">书签</button>
         @for (b of bookmarks; track b.bookmarkId) {
-          <span class="aux-chip" [attr.data-bookmark-id]="b.bookmarkId"></span>
+          <span class="aux-chip" [attr.data-bookmark-id]="b.bookmarkId">{{ b.message }}</span>
+        }
+      </div>
+      <div class="im__panel" data-testid="announcement-panel">
+        @for (a of store.announcements(); track a.announcementId) {
+          <span
+            class="aux-chip"
+            [attr.data-announcement-id]="a.announcementId"
+            [attr.data-post-id]="a.postId"
+          >{{ a.message }}</span>
+        }
+      </div>
+      <div class="im__panel" data-testid="module-panel">
+        @for (m of store.modules(); track m.moduleId) {
+          <span class="aux-chip" [attr.data-module-id]="m.moduleId">{{ m.name }}</span>
+        }
+      </div>
+      <div class="im__panel" data-testid="channel-query-panel">
+        @for (c of store.queryChannelRows(); track c.channelId) {
+          <span class="aux-chip" [attr.data-query-channel-id]="c.channelId">{{ c.displayName }}</span>
         }
       </div>
       <div class="im__panel" data-testid="todo-panel">
@@ -36,6 +56,8 @@ import { BookmarkRow, ReplyRow, TodoRow } from "../message-row.model";
   `,
 })
 export class ImAuxPanelComponent {
+  protected readonly store = inject(ImStoreService);
+
   @Input() bookmarks: readonly BookmarkRow[] = [];
   @Input() todos: readonly TodoRow[] = [];
   @Input() replies: readonly ReplyRow[] = [];

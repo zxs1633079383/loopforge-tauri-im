@@ -86,6 +86,76 @@ async function waitReadResult(reqId, endpoint) {
   );
 }
 
+function readReadResultBody(reqId) {
+  let body;
+  const jsonl = readFileSync(RUN_JSONL, 'utf8');
+  for (const line of jsonl.split('\n')) {
+    if (!line.trim()) continue;
+    let ev;
+    try {
+      ev = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (
+      ev.facet === 'projection' &&
+      ev.hop === 'projection' &&
+      ev.payload?.event === 'im:read:result' &&
+      (ev.payload?.data?.req_id ?? ev.payload?.data?.reqId) === reqId
+    ) {
+      body = ev.payload?.data?.body;
+    }
+  }
+  return body;
+}
+
+function bodyItems(body) {
+  let value = body;
+  for (let i = 0; i < 2; i++) {
+    if (value && typeof value === 'object' && !Array.isArray(value) && 'data' in value) {
+      value = value.data;
+    }
+  }
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== 'object') return [];
+  for (const key of ['items', 'list', 'rows', 'modules', 'records', 'content']) {
+    if (Array.isArray(value[key])) return value[key];
+  }
+  return [];
+}
+
+function pickString(row, keys) {
+  if (!row || typeof row !== 'object') return '';
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return '';
+}
+
+async function expectAttrRowsFromBody(reqId, attr, keys) {
+  const ids = bodyItems(readReadResultBody(reqId))
+    .map((row) => pickString(row, keys))
+    .filter(Boolean);
+  if (ids.length === 0) {
+    const count = await browser.execute((a) => document.querySelectorAll(`[${a}]`).length, attr);
+    expect(count).toBe(0);
+    return;
+  }
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (a, id) =>
+          Array.from(document.querySelectorAll(`[${a}]`)).some(
+            (el) => el.getAttribute(a) === id
+          ),
+        attr,
+        ids[0]
+      ),
+    { timeout: 10000, interval: 150, timeoutMsg: `${attr}=${ids[0]} 未渲染` }
+  );
+}
+
 describe('UC-10.3 · 获取全部功能模块（读族 request-response·断面 ①②）', () => {
   before(async () => {
     // 就绪 probe（spec §3.1）：等 data-ready 标志。
@@ -101,12 +171,13 @@ describe('UC-10.3 · 获取全部功能模块（读族 request-response·断面 
   it('①②：modules/getAll 拉全部模块 + 投影透传（im:read:result {req_id, body}）', async () => {
     await invokeBridge('set_uc', { uc: 'UC-10.3' });
 
-    const reqId = `req-${Math.random().toString(36).slice(2, 12)}`;
+    const reqId = `modules-get-all-${Math.random().toString(36).slice(2, 12)}`;
     // modules/getAll 无 body（handler 不解析请求体）→ 仅注入 reqId 驱动读族回灌锚。
     const r = await invokeBridge('im_modules_get_all', { reqId });
     expect(r.ok).toBe(true);
 
     await waitReadResult(reqId, 'modulesGetAll');
+    await expectAttrRowsFromBody(reqId, 'data-module-id', ['moduleId', 'id']);
 
     // 关窗口（窗口隔离·后续帧归 __quiescence__·不串味本 UC 束）。
     await invokeBridge('set_uc', { uc: '__quiescence__' });

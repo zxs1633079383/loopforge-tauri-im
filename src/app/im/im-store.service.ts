@@ -1,10 +1,14 @@
 import { Injectable, computed, inject, signal } from "@angular/core";
 import { TauriBridgeService } from "./tauri-bridge.service";
 import {
+  AnnouncementRow,
   BookmarkRow,
   ChannelRow,
   MemberRow,
   MessageRow,
+  ModuleRow,
+  OnlineStatusRow,
+  QueryChannelRow,
   ReplyRow,
   SendStatus,
   TodoRow,
@@ -132,6 +136,27 @@ export class ImStoreService {
   /** 书签列表（AX bookmark-panel · UC-9.x）。空占位。 */
   private readonly _bookmarks = signal<BookmarkRow[]>([]);
   readonly bookmarks = computed(() => this._bookmarks());
+
+  /** 公告列表（AX announcement-panel · UC-5.6r）。 */
+  private readonly _announcements = signal<AnnouncementRow[]>([]);
+  readonly announcements = computed(() => this._announcements());
+
+  /** 模块列表（AX module-panel · UC-10.3）。 */
+  private readonly _modules = signal<ModuleRow[]>([]);
+  readonly modules = computed(() => this._modules());
+
+  /** 条件查频道结果（AX channel-query-panel · UC-5.8）。 */
+  private readonly _queryChannels = signal<QueryChannelRow[]>([]);
+  readonly queryChannelRows = computed(() => this._queryChannels());
+
+  /** 在线状态（MB online-status-panel · UC-5.7）。 */
+  private readonly _onlineStatuses = signal<OnlineStatusRow[]>([]);
+  readonly onlineStatuses = computed(() => this._onlineStatuses());
+
+  private readonly _onlineMembers = signal<
+    Array<{ channelId: string; memberId: string; online: boolean }>
+  >([]);
+  readonly onlineMembers = computed(() => this._onlineMembers());
 
   /** 待办列表（AX todo-panel · UC-10.1）。空占位。 */
   private readonly _todos = signal<TodoRow[]>([]);
@@ -1125,7 +1150,7 @@ export class ImStoreService {
     channelIds: string[],
     reqId?: string,
   ): Promise<string> {
-    const rid = (reqId ?? this.genReqId()).trim();
+    const rid = (reqId ?? this.genReqId("online-status")).trim();
     const ids = channelIds.filter((c) => !!c && c.trim());
     if (ids.length === 0) return rid;
     try {
@@ -1216,7 +1241,7 @@ export class ImStoreService {
     offset = 0,
     reqId?: string,
   ): Promise<string> {
-    const rid = (reqId ?? this.genReqId()).trim();
+    const rid = (reqId ?? this.genReqId("channel-query")).trim();
     try {
       await this.bridge.invoke<void>("im_channel_query", {
         condition,
@@ -1263,7 +1288,7 @@ export class ImStoreService {
    * 等回灌关联。本 UC 验收仅 ①② 面（出站空 body + im:read:result 投影透传）。
    */
   async getAllModules(reqId?: string): Promise<string> {
-    const rid = (reqId ?? this.genReqId()).trim();
+    const rid = (reqId ?? this.genReqId("modules-get-all")).trim();
     try {
       await this.bridge.invoke<void>("im_modules_get_all", { reqId: rid });
     } catch {
@@ -1286,7 +1311,7 @@ export class ImStoreService {
     postId: string,
     reqId?: string,
   ): Promise<string> {
-    const rid = (reqId ?? this.genReqId()).trim();
+    const rid = (reqId ?? this.genReqId("announcement-accept-list")).trim();
     const post = postId.trim();
     if (!post) return rid;
     try {
@@ -1311,7 +1336,7 @@ export class ImStoreService {
     postId?: string,
     reqId?: string,
   ): Promise<string> {
-    const rid = (reqId ?? this.genReqId()).trim();
+    const rid = (reqId ?? this.genReqId("announcement-list")).trim();
     const ch = channelId.trim();
     if (!ch) return rid;
     const args: Record<string, unknown> = { channelId: ch, reqId: rid };
@@ -1331,7 +1356,7 @@ export class ImStoreService {
    * 回灌 im:read:result{req_id, body}。壳只供 postIds（公告 server id 数组）+ reqId。返 reqId 供 e2e 关联。
    */
   async announcementDetail(postIds: string[], reqId?: string): Promise<string> {
-    const rid = (reqId ?? this.genReqId()).trim();
+    const rid = (reqId ?? this.genReqId("announcement-list")).trim();
     const ids = postIds.filter((p) => !!p && p.trim());
     if (ids.length === 0) return rid;
     try {
@@ -1501,7 +1526,7 @@ export class ImStoreService {
     offset?: number,
     reqId?: string,
   ): Promise<string> {
-    const rid = (reqId ?? this.genReqId()).trim();
+    const rid = (reqId ?? this.genReqId("bookmark-load")).trim();
     const ch = channelId.trim();
     if (!ch) return rid;
     const args: Record<string, unknown> = { channelId: ch, reqId: rid };
@@ -1687,8 +1712,8 @@ export class ImStoreService {
   }
 
   /** 读族关联 id（req_id）生成器（非 wire 字段·仅前端 bridge↔回灌关联用·z-base-32 短 id）。 */
-  private genReqId(): string {
-    return `req-${Math.random().toString(36).slice(2, 12)}`;
+  private genReqId(prefix = "req"): string {
+    return `${prefix}-${Math.random().toString(36).slice(2, 12)}`;
   }
 
   /**
@@ -2029,19 +2054,40 @@ export class ImStoreService {
    */
   private applyReadResult(data: ReadResultData | undefined): void {
     if (!data || typeof data !== "object") return;
+    const reqId = typeof data.req_id === "string" ? data.req_id : "";
     // UC-6.4 成员快照回灌：S7（issue #56·C013）后成员渲染走 helix render-ready im:channel:members
     // （helix port_reply 解析 byIds body 额外 emit·壳 applyChannelMembers 纯绑定）。本读族回报仅 ② 契约面
     // （im:read:result{req_id,body}·UC-6.4 frozen）——壳不再解析 body（消灭 applyMembersSnapshot extract +
     // role→admin 禁区）。认领命中即 drop（防 byIds body{status,data} 误入下方 health/reply 透传分支）。
     if (
-      typeof data.req_id === "string" &&
-      this.pendingMemberReqs.has(data.req_id)
+      reqId !== "" &&
+      this.pendingMemberReqs.has(reqId)
     ) {
-      this.pendingMemberReqs.delete(data.req_id);
+      this.pendingMemberReqs.delete(reqId);
       return;
     }
     if (data.error !== undefined) {
       return; // 失败回灌：回复抽屉清空由 im:channel:replies(replyIds:[]) 收口（S8·不在本分支）
+    }
+    if (reqId.startsWith("bookmark-load-")) {
+      this.applyBookmarkLoad(data.body);
+      return;
+    }
+    if (reqId.startsWith("announcement-list-")) {
+      this.applyAnnouncementList(data.body);
+      return;
+    }
+    if (reqId.startsWith("modules-get-all-")) {
+      this.applyModules(data.body);
+      return;
+    }
+    if (reqId.startsWith("channel-query-")) {
+      this.applyChannelQuery(data.body);
+      return;
+    }
+    if (reqId.startsWith("online-status-")) {
+      this.applyOnlineStatus(data.body);
+      return;
     }
     // UC-12.1 健康探针回灌：body=裸 `{status:"OK"}`（健康端点不走业务信封）→ 设 _health（data-health
     // 直映 H 区指示件·1:1 绑定后端权威 status·非合成）。纯渲染透传 body.status。
@@ -2053,6 +2099,174 @@ export class ImStoreService {
     ) {
       this._health.set((body as { status: string }).status);
     }
+  }
+
+  private applyBookmarkLoad(body: unknown): void {
+    this._bookmarks.set(
+      this.bodyItems(body)
+        .map((item) => {
+          const bookmarkId = this.pickString(item, [
+            "bookmarkId",
+            "postId",
+            "id",
+            "msgId",
+          ]);
+          if (!bookmarkId) return null;
+          return {
+            bookmarkId,
+            message: this.pickString(item, ["message", "text", "content"]),
+          };
+        })
+        .filter((row): row is BookmarkRow => row !== null),
+    );
+  }
+
+  private applyAnnouncementList(body: unknown): void {
+    this._announcements.set(
+      this.bodyItems(body)
+        .map((item) => {
+          const announcementId = this.pickString(item, [
+            "announcementId",
+            "id",
+            "postId",
+          ]);
+          const postId = this.pickString(item, ["postId", "id"]);
+          if (!announcementId) return null;
+          return {
+            announcementId,
+            postId,
+            message: this.pickString(item, ["message", "text", "content"]),
+          };
+        })
+        .filter((row): row is AnnouncementRow => row !== null),
+    );
+  }
+
+  private applyModules(body: unknown): void {
+    this._modules.set(
+      this.bodyItems(body)
+        .map((item) => {
+          const moduleId = this.pickString(item, ["moduleId", "id"]);
+          if (!moduleId) return null;
+          return {
+            moduleId,
+            name: this.pickString(item, ["name", "label"]),
+          };
+        })
+        .filter((row): row is ModuleRow => row !== null),
+    );
+  }
+
+  private applyChannelQuery(body: unknown): void {
+    this._queryChannels.set(
+      this.bodyItems(body)
+        .map((item) => {
+          const channelId = this.pickString(item, ["channelId", "id"]);
+          if (!channelId) return null;
+          return {
+            channelId,
+            displayName: this.pickString(item, ["displayName", "name"]),
+          };
+        })
+        .filter((row): row is QueryChannelRow => row !== null),
+    );
+  }
+
+  private applyOnlineStatus(body: unknown): void {
+    const statuses: OnlineStatusRow[] = [];
+    const onlineMembers: Array<{
+      channelId: string;
+      memberId: string;
+      online: boolean;
+    }> = [];
+    for (const item of this.bodyItems(body)) {
+      const channelId = this.pickString(item, ["channelId", "id"]);
+      if (!channelId) continue;
+      const members = Array.isArray(item["members"]) ? item["members"] : [];
+      const onlineCount =
+        this.pickNumber(item, ["onlineCount", "count"]) ??
+        members.filter((member) => this.isOnlineMember(member)).length;
+      statuses.push({ channelId, onlineCount });
+      for (const member of members) {
+        const memberId = this.pickString(member, ["userId", "memberId", "id"]);
+        if (!memberId) continue;
+        onlineMembers.push({
+          channelId,
+          memberId,
+          online: this.isOnlineMember(member),
+        });
+      }
+    }
+    this._onlineStatuses.set(statuses);
+    this._onlineMembers.set(onlineMembers);
+  }
+
+  private bodyItems(body: unknown): Array<Record<string, unknown>> {
+    let value = body;
+    for (let i = 0; i < 2; i++) {
+      if (
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        "data" in value
+      ) {
+        value = (value as Record<string, unknown>)["data"];
+      }
+    }
+    if (Array.isArray(value)) return this.objectItems(value);
+    if (!value || typeof value !== "object") return [];
+    const record = value as Record<string, unknown>;
+    for (const key of [
+      "items",
+      "list",
+      "rows",
+      "postList",
+      "posts",
+      "announcements",
+      "channels",
+      "modules",
+      "records",
+      "content",
+    ]) {
+      const nested = record[key];
+      if (Array.isArray(nested)) return this.objectItems(nested);
+    }
+    return [];
+  }
+
+  private objectItems(items: unknown[]): Array<Record<string, unknown>> {
+    return items.filter(
+      (item): item is Record<string, unknown> =>
+        !!item && typeof item === "object" && !Array.isArray(item),
+    );
+  }
+
+  private pickString(
+    item: Record<string, unknown>,
+    keys: string[],
+  ): string {
+    for (const key of keys) {
+      const value = item[key];
+      if (typeof value === "string" && value.trim()) return value;
+    }
+    return "";
+  }
+
+  private pickNumber(
+    item: Record<string, unknown>,
+    keys: string[],
+  ): number | undefined {
+    for (const key of keys) {
+      const value = item[key];
+      if (typeof value === "number" && Number.isFinite(value)) return value;
+    }
+    return undefined;
+  }
+
+  private isOnlineMember(item: unknown): boolean {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    const record = item as Record<string, unknown>;
+    return record["online"] === true || record["status"] === "online";
   }
 
   /**

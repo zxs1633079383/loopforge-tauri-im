@@ -1,5 +1,6 @@
-import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from "@angular/core";
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output, inject } from "@angular/core";
 import type { MemberRow } from "../message-row.model";
+import { ImStoreService } from "../im-store.service";
 import { ImMemberActionsComponent } from "./im-member-actions.component";
 import { ImMemberEmptyComponent } from "./im-member-empty.component";
 import { ImMemberPanelHeaderComponent } from "./im-member-panel-header.component";
@@ -31,6 +32,23 @@ export type MemberChangeAction = "join" | "leave";
       <app-im-member-actions
         (memberChange)="memberChange.emit($event)"
       ></app-im-member-actions>
+      <div class="mem-panel__online" data-testid="online-status-panel">
+        @for (status of store.onlineStatuses(); track status.channelId) {
+          <span
+            class="aux-chip"
+            [attr.data-channel-id]="status.channelId"
+            [attr.data-online-count]="status.onlineCount"
+          >{{ status.onlineCount }}</span>
+        }
+        @for (member of store.onlineMembers(); track member.channelId + ':' + member.memberId) {
+          <span
+            class="aux-chip"
+            [attr.data-channel-id]="member.channelId"
+            [attr.data-member-id]="member.memberId"
+            [attr.data-member-online]="member.online ? '1' : '0'"
+          ></span>
+        }
+      </div>
       @for (mem of members; track mem.memberId) {
         <app-im-member-row
           [member]="mem"
@@ -44,6 +62,8 @@ export type MemberChangeAction = "join" | "leave";
   `,
 })
 export class ImMemberPanelComponent {
+  protected readonly store = inject(ImStoreService);
+
   @Input() members: readonly MemberRow[] = [];
   @Input() membersAttr = "";
 

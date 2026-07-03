@@ -96,6 +96,112 @@ async function waitReadResult(reqId, endpoint) {
   );
 }
 
+function readReadResultBody(reqId) {
+  let body;
+  const jsonl = readFileSync(RUN_JSONL, 'utf8');
+  for (const line of jsonl.split('\n')) {
+    if (!line.trim()) continue;
+    let ev;
+    try {
+      ev = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (
+      ev.facet === 'projection' &&
+      ev.hop === 'projection' &&
+      ev.payload?.event === 'im:read:result' &&
+      (ev.payload?.data?.req_id ?? ev.payload?.data?.reqId) === reqId
+    ) {
+      body = ev.payload?.data?.body;
+    }
+  }
+  return body;
+}
+
+function bodyItems(body) {
+  let value = body;
+  for (let i = 0; i < 2; i++) {
+    if (value && typeof value === 'object' && !Array.isArray(value) && 'data' in value) {
+      value = value.data;
+    }
+  }
+  return Array.isArray(value) ? value : [];
+}
+
+function onlineCount(group) {
+  if (!group || typeof group !== 'object') return 0;
+  if (typeof group.onlineCount === 'number') return group.onlineCount;
+  const members = Array.isArray(group.members) ? group.members : [];
+  return members.filter((m) => m?.online === true || m?.status === 'online').length;
+}
+
+function onlineMemberIds(body) {
+  return bodyItems(body).flatMap((group) => {
+    const channelId = typeof group?.channelId === 'string' ? group.channelId : '';
+    const members = Array.isArray(group?.members) ? group.members : [];
+    return members
+      .filter((m) => m?.online === true || m?.status === 'online')
+      .map((m) => ({ channelId, memberId: typeof m.userId === 'string' ? m.userId : '' }))
+      .filter((m) => m.channelId && m.memberId);
+  });
+}
+
+async function expectOnlineDomFromBody(reqId) {
+  const body = readReadResultBody(reqId);
+  const rows = bodyItems(body)
+    .map((group) => ({
+      channelId: typeof group?.channelId === 'string' ? group.channelId : '',
+      count: onlineCount(group),
+    }))
+    .filter((row) => row.channelId);
+  if (rows.length === 0) {
+    const count = await browser.execute(() => document.querySelectorAll('[data-online-count]').length);
+    expect(count).toBe(0);
+    return;
+  }
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (channelId, count) =>
+          Array.from(document.querySelectorAll('[data-online-count]')).some(
+            (el) =>
+              el.getAttribute('data-channel-id') === channelId &&
+              el.getAttribute('data-online-count') === String(count)
+          ),
+        rows[0].channelId,
+        rows[0].count
+      ),
+    {
+      timeout: 10000,
+      interval: 150,
+      timeoutMsg: `onlineStatus channel=${rows[0].channelId} count=${rows[0].count} 未渲染`,
+    }
+  );
+
+  const onlineMembers = onlineMemberIds(body);
+  if (onlineMembers.length > 0) {
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          (channelId, memberId) =>
+            Array.from(document.querySelectorAll('[data-member-online="1"]')).some(
+              (el) =>
+                el.getAttribute('data-channel-id') === channelId &&
+                el.getAttribute('data-member-id') === memberId
+            ),
+          onlineMembers[0].channelId,
+          onlineMembers[0].memberId
+        ),
+      {
+        timeout: 10000,
+        interval: 150,
+        timeoutMsg: `data-member-online=${onlineMembers[0].memberId} 未渲染`,
+      }
+    );
+  }
+}
+
 describe('UC-5.7 · 频道成员在线状态（读族 request-response·断面 ①②）', () => {
   before(async () => {
     // 就绪 probe（spec §3.1）：等 data-ready 标志。
@@ -111,7 +217,7 @@ describe('UC-5.7 · 频道成员在线状态（读族 request-response·断面 �
   it('①②：channel/onlineStatus 批量查在线状态 + 投影透传（im:read:result {req_id, body}）', async () => {
     await invokeBridge('set_uc', { uc: 'UC-5.7' });
 
-    const reqId = `req-${Math.random().toString(36).slice(2, 12)}`;
+    const reqId = `online-status-${Math.random().toString(36).slice(2, 12)}`;
     // channelIds 来源：取已渲染真频道 id（保证命中·真实「批量查在线」流·≥1 元素满足 bodyFields 校验）。
     const channelId = await getFirstChannelId();
     expect(channelId).toBeTruthy();
@@ -122,6 +228,7 @@ describe('UC-5.7 · 频道成员在线状态（读族 request-response·断面 �
     expect(r.ok).toBe(true);
 
     await waitReadResult(reqId, 'onlineStatus');
+    await expectOnlineDomFromBody(reqId);
 
     // 关窗口（窗口隔离·后续帧归 __quiescence__·不串味本 UC 束）。
     await invokeBridge('set_uc', { uc: '__quiescence__' });
