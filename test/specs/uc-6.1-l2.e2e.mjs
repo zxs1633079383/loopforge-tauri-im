@@ -26,6 +26,7 @@
 import { browser, expect } from '@wdio/globals';
 import { readFileSync, existsSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
+import { captureDomEvidence } from '../helpers/l2-evidence.mjs';
 import { runFourFacet } from '../reducer/four-facet-reducer.mjs';
 
 const EXPECT = JSON.parse(
@@ -239,6 +240,11 @@ describe('UC-6.1b · L2 拉人广播（双账号·issue #28 / #43）', () => {
     expect(hit).toBeTruthy();
     // broadcast.userId == 678：echo key（被拉成员 userId）落 userId 路由位（issue #28 机制实证·非多设备 echo）。
     expect(hit.broadcast?.userId).toBe(JOIN_MEMBER_ID);
+    await captureDomEvidence(browser, 'uc-6.1-l2-member-observer', [
+      '[data-member-id]',
+      `[data-member-id="${JOIN_MEMBER_ID}"]`,
+      '[data-admin]',
+    ]);
 
     // —— 关 UC 窗口 ——
     await invokeBridge('set_uc', { uc: '__quiescence__' });

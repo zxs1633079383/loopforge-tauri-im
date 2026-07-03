@@ -24,6 +24,7 @@
 import { browser, expect } from '@wdio/globals';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { captureDomEvidence } from '../helpers/l2-evidence.mjs';
 import { runFourFacet } from '../reducer/four-facet-reducer.mjs';
 
 // UC-3.1 oracle（ucId=UC-3.1·与本 spec set_uc('UC-3.1') 的窗口一致）。
@@ -209,6 +210,14 @@ describe('UC-3.1 L2 · 会话已读双账号（#15 / #47）', () => {
     console.log(
       `[UC-3.1-L2 DOM] msgId=${MSG_ID} readBits=${readRow?.['read-bits']} eventSeq=${readRow?.['event-seq']}`
     );
+    await captureDomEvidence(browser, 'uc-3.1-l2-read-observer', [
+      '[data-channel-id]',
+      `[data-channel-id="${CHANNEL_ID}"]`,
+      '[data-unread]',
+      '[data-read-bits]',
+      '[data-msg-id]',
+      `[data-msg-id="${MSG_ID}"]`,
+    ]);
 
     // —— 关 UC 窗口 ——
     await invokeBridge('set_uc', { uc: '__quiescence__' });

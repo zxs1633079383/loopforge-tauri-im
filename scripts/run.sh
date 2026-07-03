@@ -47,6 +47,8 @@ assert_port_free "$WEBDRIVER_PORT" "webdriver"
 ensure_log_dir
 NG_LOG="$RUN_LOG_DIR/run-ng.log"
 APP_LOG="$RUN_LOG_DIR/run-app.log"
+export LOOPFORGE_EVIDENCE_DIR="${LOOPFORGE_EVIDENCE_DIR:-$RUN_LOG_DIR/evidence}"
+mkdir -p "$LOOPFORGE_EVIDENCE_DIR"
 
 trap cleanup_chain EXIT
 
@@ -88,6 +90,7 @@ info "起 app：cargo run（src-tauri，debug，${MODE_ENV_VAR}=${MODE}，webdri
 ( cd "$REPO_ROOT" && env \
     "$MODE_ENV_VAR=$MODE" \
     "HELIX_RUN_JSONL=$HELIX_RUN_JSONL" \
+    "LOOPFORGE_EVIDENCE_DIR=$LOOPFORGE_EVIDENCE_DIR" \
     ${HELIX_DEVICE_ID:+"HELIX_DEVICE_ID=$HELIX_DEVICE_ID"} \
     ${HELIX_HTTP_MAX_INFLIGHT:+"HELIX_HTTP_MAX_INFLIGHT=$HELIX_HTTP_MAX_INFLIGHT"} \
     ${BOOTSTRAP_UC:+"LOOPFORGE_BOOTSTRAP_UC=$BOOTSTRAP_UC"} \

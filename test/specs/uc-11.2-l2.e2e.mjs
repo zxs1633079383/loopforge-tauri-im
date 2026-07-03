@@ -20,6 +20,7 @@
 import { browser, expect } from '@wdio/globals';
 import { existsSync, rmSync, readFileSync } from 'node:fs';
 import { spawn, execFileSync } from 'node:child_process';
+import { captureDomEvidence } from '../helpers/l2-evidence.mjs';
 
 const L2_ACT = new URL('../../scripts/l2-act.sh', import.meta.url).pathname;
 const QUITTER_ID = '777'; // 退出者（独立账号·非暖栈 444）
@@ -111,6 +112,7 @@ function quitAsQuitter() {
 
 describe('UC-11.2b · L2 退公司离群移除广播（双账号·issue #40 / #48）', () => {
   let observeProc;
+  let TARGET_CHANNEL_ID;
 
   before(async () => {
     try { if (existsSync(OBSERVE_OUT)) rmSync(OBSERVE_OUT); } catch { /* ignore */ }
@@ -148,6 +150,8 @@ describe('UC-11.2b · L2 退公司离群移除广播（双账号·issue #40 / #4
       async () => (await snapshotChannelIds()).some((id) => !beforeIds.has(id)),
       { timeout: 20000, interval: 200, timeoutMsg: '建群无新行' }
     );
+    TARGET_CHANNEL_ID = (await snapshotChannelIds()).find((id) => !beforeIds.has(id));
+    expect(TARGET_CHANNEL_ID).toBeTruthy();
     console.log(`[UC-11.2b] setup 完成（777+888 纳入 team·888 observe 连上）`);
   });
 
@@ -178,5 +182,9 @@ describe('UC-11.2b · L2 退公司离群移除广播（双账号·issue #40 / #4
     console.log(`[UC-11.2b L2] B=888 留存成员 quit 后新增 quit_company：${baseline}→${total}（退公司离群广播到达留存成员）`);
     // 守可证伪：quit 后新增 ≥1（本次 777 quit 真触发广播到留存成员 888·非 stale·非空）。
     expect(total).toBeGreaterThan(baseline);
+    await captureDomEvidence(browser, 'uc-11.2-l2-quit-owner', [
+      '[data-channel-id]',
+      `[data-channel-id="${TARGET_CHANNEL_ID}"]`,
+    ]);
   });
 });
