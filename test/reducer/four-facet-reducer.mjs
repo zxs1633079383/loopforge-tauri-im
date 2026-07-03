@@ -847,13 +847,22 @@ export function runFourFacetSelfDriven({ jsonl, expect, dom, ucId }) {
 
   const exp = expect.outbound ?? {};
   const urlEnds = exp.urlEndsWith;
+  const isTodoAttributionUc = uc === 'UC-10.1' && urlEnds === 'posts/queryTodoList';
+  const inUcWindow = (e) => uc === undefined || e.uc_id === uc;
+  const canClaimSelfDrivenQuiescence = (e) =>
+    isTodoAttributionUc && e.uc_id === '__quiescence__';
+  const chooseOwnedOrQuiescence = (predicate) => {
+    const owned = events.filter((e) => inUcWindow(e) && predicate(e));
+    if (owned.length > 0 || !isTodoAttributionUc) return owned;
+    return events.filter((e) => canClaimSelfDrivenQuiescence(e) && predicate(e));
+  };
 
   // ① 出站：UC 窗口内按 endpoint（urlEndsWith）找 outbound http-req（窗口隔离保证唯一·多于一个取
-  // 最后一条——同窗口同 endpoint 重发取最新·一般唯一）。
-  const httpHops = events
-    .filter(
+  // 最后一条——同窗口同 endpoint 重发取最新·一般唯一）。UC-10.1 是 boot self-driven read-result：
+  // 若旧 harness/现存 evidence 将 boot hop 写成 __quiescence__，且没有 UC-owned hit，按同 endpoint
+  // 归还给 UC-10.1；run.sh/harness 的 LOOPFORGE_BOOTSTRAP_UC 或 spec set_uc 一旦生效则优先用 UC-owned。
+  const httpHops = chooseOwnedOrQuiescence(
       (e) =>
-        (uc === undefined || e.uc_id === uc) &&
         e.facet === 'outbound' &&
         e.hop === 'http-req' &&
         (!urlEnds || urlEnds === '*' || String(e.payload?.url ?? '').endsWith(urlEnds))
@@ -864,9 +873,8 @@ export function runFourFacetSelfDriven({ jsonl, expect, dom, ucId }) {
 
   // ② 投影：UC 窗口内找期望 event 的 projection（窗口隔离保证唯一·多于一个取最后一条）。
   const pexp = expect.projection ?? {};
-  const projHops = events.filter(
+  const projHops = chooseOwnedOrQuiescence(
     (e) =>
-      (uc === undefined || e.uc_id === uc) &&
       e.facet === 'projection' &&
       e.hop === 'projection' &&
       (e.payload?.event ?? e.payload?.channel) === pexp.event
