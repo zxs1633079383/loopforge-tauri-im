@@ -47,6 +47,8 @@ import {
   TodoUpdatedData,
 } from "./projection.types";
 
+export type SenderUserId = "444" | "678";
+
 /**
  * IM 薄壳状态机 —— **纯渲染**：listen im:__bus__ → 按投影渲染，零业务逻辑（铁律）。
  *
@@ -95,6 +97,10 @@ export class ImStoreService {
   /** 当前主窗口身份（dev-local=444）。只读展示/兜底用，不在前端改登录态。 */
   private readonly _currentUserId = signal("");
   readonly currentUserId = computed(() => this._currentUserId() || "444");
+
+  /** 右上角调试发送者：只影响发送/已读/加急的出站 actor，不改变主窗口观察身份。 */
+  private readonly _senderUserId = signal<SenderUserId>("444");
+  readonly senderUserId = computed(() => this._senderUserId());
 
   // ——— 骨架区域信号（issue #46 · CL/MB/AX 语义区容器占位 · 各 UC issue 逐个填 apply 分支）———
   // 当前全空列表，模板渲染空容器（覆盖所有 UC 渲染容器）。壳纯渲染：data-* 直映投影，不在 JS 合成。
@@ -205,6 +211,10 @@ export class ImStoreService {
       });
   }
 
+  setSenderUserId(userId: SenderUserId): void {
+    this._senderUserId.set(userId);
+  }
+
   stop(): void {
     this.unlisten?.();
     this.unlisten = null;
@@ -274,10 +284,25 @@ export class ImStoreService {
     }
   }
 
+  async sendAsSelected(
+    channelId: string,
+    text: string,
+    mentionUserId?: string,
+  ): Promise<void> {
+    if (this.senderUserId() === "678") {
+      return this.l2Send(channelId, text, mentionUserId, "678");
+    }
+    if (mentionUserId) {
+      return this.l2Send(channelId, text, mentionUserId, "444");
+    }
+    return this.send(channelId, text);
+  }
+
   async l2Send(
     channelId: string,
     text: string,
     mentionUserId?: string,
+    actorUserId: SenderUserId = "678",
   ): Promise<void> {
     const ch = channelId.trim();
     const msg = text.trim();
@@ -287,6 +312,7 @@ export class ImStoreService {
         channelId: ch,
         text: msg,
         mentionUserId,
+        actorUserId,
       });
       this.scheduleDialogListRefresh();
     } catch {
@@ -294,18 +320,28 @@ export class ImStoreService {
     }
   }
 
-  async l2ReadChannel(channelId: string): Promise<void> {
+  async l2ReadChannel(
+    channelId: string,
+    actorUserId: SenderUserId = "678",
+  ): Promise<void> {
     const ch = channelId.trim();
     if (!ch) return;
     try {
-      await this.bridge.invoke<string>("im_l2_read_channel", { channelId: ch });
+      await this.bridge.invoke<string>("im_l2_read_channel", {
+        channelId: ch,
+        actorUserId,
+      });
       this.scheduleDialogListRefresh();
     } catch {
       // debug-only 命令缺失或出站失败 → 静默。
     }
   }
 
-  async l2ReadPost(channelId: string, postId: string): Promise<void> {
+  async l2ReadPost(
+    channelId: string,
+    postId: string,
+    actorUserId: SenderUserId = "678",
+  ): Promise<void> {
     const ch = channelId.trim();
     const post = postId.trim();
     if (!ch || !post) return;
@@ -313,6 +349,7 @@ export class ImStoreService {
       await this.bridge.invoke<string>("im_l2_read_post", {
         channelId: ch,
         postId: post,
+        actorUserId,
       });
     } catch {
       // debug-only 命令缺失或出站失败 → 静默。
@@ -323,6 +360,8 @@ export class ImStoreService {
     channelId: string,
     postId: string,
     targetIds?: string[],
+    message = "678 加急调试",
+    actorUserId: SenderUserId = "678",
   ): Promise<void> {
     const ch = channelId.trim();
     const post = postId.trim();
@@ -332,12 +371,32 @@ export class ImStoreService {
         channelId: ch,
         postId: post,
         targetIds,
-        message: "678 加急调试",
+        message,
+        actorUserId,
       });
       this.scheduleDialogListRefresh();
     } catch {
       // debug-only 命令缺失或出站失败 → 静默。
     }
+  }
+
+  async readChannelAsSelected(channelId: string): Promise<void> {
+    if (this.senderUserId() === "678") {
+      return this.l2ReadChannel(channelId, "678");
+    }
+    return this.readChannel(channelId);
+  }
+
+  async urgentPostAsSelected(
+    channelId: string,
+    postId: string,
+    targetIds: string[],
+    message?: string,
+  ): Promise<void> {
+    if (this.senderUserId() === "678") {
+      return this.l2UrgentPost(channelId, postId, targetIds, message, "678");
+    }
+    return this.urgentPost(channelId, postId, targetIds, message);
   }
 
   /**

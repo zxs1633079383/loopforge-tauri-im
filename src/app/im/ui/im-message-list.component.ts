@@ -27,6 +27,7 @@ import { authorName, avatarColor, avatarInitial, shortTime } from "./im-ui-forma
           [attr.data-channel-id]="m.channelId"
           [attr.data-event-seq]="m.eventSeq === null ? '' : m.eventSeq"
           [attr.data-send-status]="m.sendStatus"
+          [attr.data-user-id]="m.userId ?? null"
           [attr.data-read-bits]="m.readBits"
           [attr.data-revoke]="m.revoked ? '1' : null"
           [attr.data-highlighted]="m.highlighted ? 'true' : null"

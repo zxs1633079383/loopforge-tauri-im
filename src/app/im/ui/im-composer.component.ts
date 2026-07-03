@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from "@angular/core";
 import { FormsModule } from "@angular/forms";
+import type { SenderUserId } from "../im-store.service";
 
 @Component({
   selector: "app-im-composer",
@@ -8,7 +9,10 @@ import { FormsModule } from "@angular/forms";
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <footer class="im__compose">
-      <span class="im__compose-to">To <strong>所有人</strong></span>
+      <span
+        class="im__compose-to"
+        [attr.data-composer-sender-user-id]="senderUserId"
+      >From <strong>{{ senderUserId }}</strong></span>
       <input
         class="im__input"
         type="text"
@@ -69,6 +73,7 @@ import { FormsModule } from "@angular/forms";
 export class ImComposerComponent {
   @Input() activeChannel: string | null = null;
   @Input() draft = "";
+  @Input() senderUserId: SenderUserId = "444";
 
   @Output() draftChange = new EventEmitter<string>();
   @Output() sendClick = new EventEmitter<void>();
