@@ -25,6 +25,120 @@
 
 use serde::Deserialize;
 
+/// 可观测性配置。缺省为空配置，保证旧 profile JSON 仍可解析。
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ObservabilityConfig {
+    #[serde(default)]
+    pub otel: OtelConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OtelConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(rename = "serviceName", default = "default_service_name")]
+    pub service_name: String,
+    #[serde(default)]
+    pub endpoint: String,
+    #[serde(default = "default_otel_protocol")]
+    pub protocol: String,
+    #[serde(default)]
+    pub sampler: OtelSamplerConfig,
+    #[serde(default)]
+    pub facets: OtelFacetsConfig,
+}
+
+impl Default for OtelConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            service_name: default_service_name(),
+            endpoint: String::new(),
+            protocol: default_otel_protocol(),
+            sampler: OtelSamplerConfig::default(),
+            facets: OtelFacetsConfig::default(),
+        }
+    }
+}
+
+impl OtelConfig {
+    /// Build a side-effect-free snapshot for the runtime bridge layer.
+    ///
+    /// Exporter bootstrap is intentionally out of this task; this keeps the parsed config
+    /// exercised without making env vars or exporter setup the source of truth.
+    fn runtime_snapshot(&self) -> serde_json::Value {
+        serde_json::json!({
+            "enabled": self.enabled,
+            "serviceName": self.service_name,
+            "endpoint": self.endpoint,
+            "protocol": self.protocol,
+            "sampler": {
+                "type": self.sampler.sampler_type,
+                "ratio": self.sampler.ratio,
+            },
+            "facets": {
+                "client": self.facets.client,
+                "tauri": self.facets.tauri,
+                "core": self.facets.core,
+                "http": self.facets.http,
+                "ws": self.facets.ws,
+                "storage": self.facets.storage,
+                "event": self.facets.event,
+                "render": self.facets.render,
+            }
+        })
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OtelSamplerConfig {
+    #[serde(rename = "type", default = "default_sampler_type")]
+    pub sampler_type: String,
+    #[serde(default)]
+    pub ratio: f64,
+}
+
+impl Default for OtelSamplerConfig {
+    fn default() -> Self {
+        Self {
+            sampler_type: default_sampler_type(),
+            ratio: 0.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct OtelFacetsConfig {
+    #[serde(default)]
+    pub client: bool,
+    #[serde(default)]
+    pub tauri: bool,
+    #[serde(default)]
+    pub core: bool,
+    #[serde(default)]
+    pub http: bool,
+    #[serde(default)]
+    pub ws: bool,
+    #[serde(default)]
+    pub storage: bool,
+    #[serde(default)]
+    pub event: bool,
+    #[serde(default)]
+    pub render: bool,
+}
+
+fn default_service_name() -> String {
+    "loopforge-tauri-im".to_string()
+}
+
+fn default_otel_protocol() -> String {
+    "http".to_string()
+}
+
+fn default_sampler_type() -> String {
+    "parentbased_traceidratio".to_string()
+}
+
 /// 单个 profile 的部署配置（身份 + 端点 + 租户）。
 ///
 /// `cookie_id` / `device_id` 在 pre/prod 留空（运行时真鉴权注入）；dev-local 含联调实值。
@@ -42,6 +156,9 @@ pub struct ProfileConfig {
     /// 开发态设备 id；pre/prod 为空 → 运行时真鉴权注入。
     #[serde(rename = "deviceId", default)]
     pub device_id: String,
+    /// 观测配置；缺省关闭，避免旧 profile 因缺字段启动失败。
+    #[serde(default)]
+    pub observability: ObservabilityConfig,
 }
 
 // 三套 profile 编译期内嵌（路径相对本文件 src-tauri/src/ → ../../config/）。
@@ -86,5 +203,43 @@ pub fn load() -> Result<(String, ProfileConfig), String> {
         .ok_or_else(|| format!("未知 profile：{name}（可选 dev-local/pre/prod）"))?;
     let cfg: ProfileConfig =
         serde_json::from_str(json).map_err(|e| format!("解析 profile {name} 失败：{e}"))?;
+    let _otel_runtime_snapshot = cfg.observability.otel.runtime_snapshot();
     Ok((name, cfg))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_observability_defaults_to_disabled_otel() {
+        let cfg: ProfileConfig = serde_json::from_str(
+            r#"{
+                "apiBase":"http://localhost/api/cses",
+                "wsUrl":"ws://localhost/api/v4/websocket",
+                "companyId":"team",
+                "cookieId":"444",
+                "deviceId":"device"
+            }"#,
+        )
+        .expect("profile without observability should parse");
+
+        assert!(!cfg.observability.otel.enabled);
+        assert_eq!(cfg.observability.otel.service_name, "loopforge-tauri-im");
+        assert_eq!(
+            cfg.observability.otel.sampler.sampler_type,
+            "parentbased_traceidratio"
+        );
+    }
+
+    #[test]
+    fn embedded_profiles_parse_observability_config() {
+        for profile in ["dev-local", "pre", "prod"] {
+            let cfg: ProfileConfig =
+                serde_json::from_str(embedded_json(profile).expect("embedded profile"))
+                    .expect("embedded profile should parse");
+            assert_eq!(cfg.observability.otel.service_name, "loopforge-tauri-im");
+            assert_eq!(cfg.observability.otel.protocol, "http");
+        }
+    }
 }

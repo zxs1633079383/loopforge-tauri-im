@@ -11,6 +11,7 @@ use helix_core::Tick;
 use tauri::State;
 
 use crate::state::AppState;
+use crate::trace::TraceSidecar;
 
 #[cfg(feature = "webdriver")]
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -28,6 +29,20 @@ use helix_driver_instrument::{Facet, Hop};
 fn command(name: &'static str, payload: serde_json::Value) -> Tick {
     let bytes = serde_json::to_vec(&payload).unwrap_or_default();
     Tick::Command(AppCommand::new(name, Bytes::from(bytes)))
+}
+
+fn send_payload(
+    channel_id: String,
+    text: String,
+    temporary_id: String,
+    msg_type: Option<String>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "channel_id": channel_id,
+        "temporary_id": temporary_id,
+        "text": text,
+        "type": msg_type,
+    })
 }
 
 #[derive(serde::Serialize)]
@@ -344,6 +359,7 @@ pub async fn im_send(
     text: String,
     temporary_id: String,
     msg_type: Option<String>,
+    __trace: Option<TraceSidecar>,
 ) -> Result<(), String> {
     if channel_id.is_empty() {
         return Err("im_send: channelId 为空".into());
@@ -365,24 +381,69 @@ pub async fn im_send(
             "type": &msg_type,
         }),
     );
+    if let Some(trace) = __trace.as_ref() {
+        match trace.normalized() {
+            Ok(trace) => {
+                tracing::debug!(
+                    traceparent = %trace.traceparent,
+                    baggage_present = trace.baggage.is_some(),
+                    "im_send trace sidecar accepted at IPC boundary"
+                );
+            }
+            Err(error) => {
+                tracing::warn!(
+                    ?error,
+                    "im_send trace sidecar ignored; business command continues"
+                );
+            }
+        }
+    }
     // type 原值透传（None→null·壳零默认 shaping·issue #53 C013 纯渲染壳）：默认 "TEXT" 由
     // helix 兜底——出站 send_build.rs（空→TEXT）+ 入站 parser.rs（空→TEXT）双端下沉。壳不补 type →
     // 纯壳不变量 IpcIn.args ≡ Inbound.args 成立（旧「壳补 TEXT 致 ipc-in.type=null ≠ inbound」已消除）。
     // DOCUMENT 等富媒体仍显式透传真值（UC-1.2·msg_type=Some("DOCUMENT")）。
     let tick = command(
         "im_send_message",
-        serde_json::json!({
-            "channel_id": channel_id,
-            "temporary_id": temporary_id,
-            "text": text,
-            "type": msg_type,
-        }),
+        send_payload(channel_id, text, temporary_id, msg_type),
     );
     state
         .tick_tx
         .send(tick)
         .await
         .map_err(|e| format!("im_send: 入泵失败（泵已退出？）：{e}"))
+}
+
+#[cfg(test)]
+mod command_tests {
+    use super::send_payload;
+
+    #[test]
+    fn send_payload_never_contains_trace_sidecar() {
+        let payload = send_payload(
+            "c1".to_string(),
+            "hello".to_string(),
+            "tmp1".to_string(),
+            Some("DOCUMENT".to_string()),
+        );
+
+        assert_eq!(
+            payload.get("channel_id").and_then(|v| v.as_str()),
+            Some("c1")
+        );
+        assert_eq!(
+            payload.get("temporary_id").and_then(|v| v.as_str()),
+            Some("tmp1")
+        );
+        assert_eq!(payload.get("text").and_then(|v| v.as_str()), Some("hello"));
+        assert_eq!(
+            payload.get("type").and_then(|v| v.as_str()),
+            Some("DOCUMENT")
+        );
+        assert!(
+            payload.get("__trace").is_none(),
+            "__trace must stay outside Tick::Command business payload"
+        );
+    }
 }
 
 /// UC-1.5 撤回：前端传 `postId`（Tauri 自动 camel→snake 到 `post_id`）→ pump `im_revoke`
@@ -515,10 +576,7 @@ pub async fn im_mark_read(
 /// 薄壳纪律：只翻译入参（channelId）→ 包成 `channels:[{id:channelId}]`（对齐 helix ViewChannelsCommand
 /// 透传 channels 数组·元素键 camelCase id）+ 入泵 `im_channels_view`，endpoint / casing 全在 helix-im。
 #[tauri::command]
-pub async fn im_read_channel(
-    state: State<'_, AppState>,
-    channel_id: String,
-) -> Result<(), String> {
+pub async fn im_read_channel(state: State<'_, AppState>, channel_id: String) -> Result<(), String> {
     if channel_id.trim().is_empty() {
         return Err("im_read_channel: channelId 为空".into());
     }
@@ -608,7 +666,10 @@ pub async fn im_relay_messages(
     if posts.is_empty() {
         return Err("im_relay_messages: posts 为空（须指定待转发消息·非空数组）".into());
     }
-    let targets: Vec<String> = channel_ids.into_iter().filter(|c| !c.trim().is_empty()).collect();
+    let targets: Vec<String> = channel_ids
+        .into_iter()
+        .filter(|c| !c.trim().is_empty())
+        .collect();
     if targets.is_empty() {
         return Err("im_relay_messages: channelIds 为空（须指定目标频道·非空数组）".into());
     }
@@ -958,10 +1019,7 @@ pub async fn im_channel_online_status(
 /// 薄壳纪律：只翻译入参 + 入泵（无 body·不臆造分页/condition 等字段）·`req_id` 经 payload 透传
 /// （helix `module::read_req_id` 抠出注册回灌上下文）。
 #[tauri::command]
-pub async fn im_modules_get_all(
-    state: State<'_, AppState>,
-    req_id: String,
-) -> Result<(), String> {
+pub async fn im_modules_get_all(state: State<'_, AppState>, req_id: String) -> Result<(), String> {
     if req_id.is_empty() {
         return Err("im_modules_get_all: reqId 为空（前端 bridge 须生成·回灌关联）".into());
     }
@@ -996,7 +1054,9 @@ pub async fn im_announcement_accept_list(
         return Err("im_announcement_accept_list: postId 为空".into());
     }
     if req_id.is_empty() {
-        return Err("im_announcement_accept_list: reqId 为空（前端 bridge 须生成·回灌关联）".into());
+        return Err(
+            "im_announcement_accept_list: reqId 为空（前端 bridge 须生成·回灌关联）".into(),
+        );
     }
     let payload = serde_json::json!({
         "post_id": post_id,
@@ -1890,7 +1950,8 @@ pub async fn im_load_older_context(
     }
     if anchor_post_id.trim().is_empty() {
         return Err(
-            "im_load_older_context: anchorPostId 为空（须当前最旧一条带 server id 的消息作 pivot）".into(),
+            "im_load_older_context: anchorPostId 为空（须当前最旧一条带 server id 的消息作 pivot）"
+                .into(),
         );
     }
     if anchor_create_at <= 0 {

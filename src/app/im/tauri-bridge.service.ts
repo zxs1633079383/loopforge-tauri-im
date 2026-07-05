@@ -1,4 +1,5 @@
 import { Injectable } from "@angular/core";
+import { TraceSidecar } from "./trace-context.service";
 
 /**
  * Tauri bridge —— 封装 invoke / listen，提供浏览器无 Tauri 时的降级 fallback。
@@ -22,12 +23,17 @@ export class TauriBridgeService {
   /**
    * 调用 Tauri 命令。非 Tauri 环境下返回 reject，避免纯浏览器调试误以为命令已执行。
    */
-  async invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  async invoke<T>(
+    cmd: string,
+    args?: Record<string, unknown>,
+    trace?: TraceSidecar,
+  ): Promise<T> {
     if (!this.isTauri()) {
       return Promise.reject(new Error(`[bridge] 非 Tauri 环境，invoke(${cmd}) 跳过`));
     }
     const { invoke } = await import("@tauri-apps/api/core");
-    return invoke<T>(cmd, args);
+    const envelope = trace ? { ...(args ?? {}), __trace: trace } : args;
+    return invoke<T>(cmd, envelope);
   }
 
   /**

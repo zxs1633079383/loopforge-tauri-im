@@ -4,5 +4,27 @@
   "wsUrl": "ws://localhost:8066/api/v4/websocket",
   "companyId": "64118eebd2b665246b7880eb",
   "cookieId": "444",
-  "deviceId": "ED380414932542BAB4993E5AC3E07C64"
+  "deviceId": "ED380414932542BAB4993E5AC3E07C64",
+  "observability": {
+    "otel": {
+      "enabled": true,
+      "serviceName": "loopforge-tauri-im",
+      "endpoint": "http://127.0.0.1:4318",
+      "protocol": "http",
+      "sampler": {
+        "type": "parentbased_traceidratio",
+        "ratio": 1.0
+      },
+      "facets": {
+        "client": true,
+        "tauri": true,
+        "core": true,
+        "http": true,
+        "ws": true,
+        "storage": true,
+        "event": true,
+        "render": true
+      }
+    }
+  }
 }
