@@ -30,7 +30,14 @@ impl TraceSidecar {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TraceSidecarError {
+    InvalidSidecar,
     InvalidTraceparent,
+}
+
+pub fn normalize_trace_sidecar(raw: &serde_json::Value) -> Result<TraceSidecar, TraceSidecarError> {
+    let sidecar: TraceSidecar =
+        serde_json::from_value(raw.clone()).map_err(|_| TraceSidecarError::InvalidSidecar)?;
+    sidecar.normalized()
 }
 
 fn normalize_traceparent(raw: &str) -> Result<String, TraceSidecarError> {
@@ -108,5 +115,28 @@ mod tests {
                 Err(TraceSidecarError::InvalidTraceparent)
             );
         }
+    }
+
+    #[test]
+    fn raw_sidecar_shape_errors_are_reported_after_command_deserialization() {
+        for raw in [
+            serde_json::json!({}),
+            serde_json::json!({ "traceparent": 42 }),
+            serde_json::json!("not-an-object"),
+        ] {
+            assert_eq!(
+                normalize_trace_sidecar(&raw),
+                Err(TraceSidecarError::InvalidSidecar)
+            );
+        }
+
+        assert_eq!(
+            normalize_trace_sidecar(&serde_json::json!({
+                "traceparent": "00-00000000000000000000000000000001-0000000000000002-01"
+            }))
+            .expect("valid raw sidecar")
+            .traceparent,
+            "00-00000000000000000000000000000001-0000000000000002-01"
+        );
     }
 }

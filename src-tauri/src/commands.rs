@@ -11,7 +11,7 @@ use helix_core::Tick;
 use tauri::State;
 
 use crate::state::AppState;
-use crate::trace::TraceSidecar;
+use crate::trace::normalize_trace_sidecar;
 
 #[cfg(feature = "webdriver")]
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -359,7 +359,7 @@ pub async fn im_send(
     text: String,
     temporary_id: String,
     msg_type: Option<String>,
-    __trace: Option<TraceSidecar>,
+    __trace: Option<serde_json::Value>,
 ) -> Result<(), String> {
     if channel_id.is_empty() {
         return Err("im_send: channelId 为空".into());
@@ -381,8 +381,8 @@ pub async fn im_send(
             "type": &msg_type,
         }),
     );
-    if let Some(trace) = __trace.as_ref() {
-        match trace.normalized() {
+    if let Some(raw_trace) = __trace.as_ref() {
+        match normalize_trace_sidecar(raw_trace) {
             Ok(trace) => {
                 tracing::debug!(
                     traceparent = %trace.traceparent,

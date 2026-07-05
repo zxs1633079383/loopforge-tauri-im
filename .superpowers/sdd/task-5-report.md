@@ -25,24 +25,26 @@ Commit hash: final response carries exact committed HEAD; self-referential commi
 - `pre` and `prod` keep tracing disabled by default with conservative sampling metadata.
 - Extended Rust profile parsing so missing `observability` remains valid and defaults to tracing disabled.
 - Added Rust `trace.rs` sidecar helpers for W3C `traceparent` validation/normalization and baggage trimming.
-- Added `im_send(..., __trace: Option<TraceSidecar>)` at the Tauri IPC boundary.
-- Invalid trace sidecars are ignored with a warning; IM business command success/failure is unchanged.
+- Added `im_send(..., __trace: Option<serde_json::Value>)` at the Tauri IPC boundary so malformed sidecars cannot fail typed command deserialization before handler code runs.
+- Valid trace sidecars are parsed and logged at the IPC boundary; malformed trace sidecars are ignored with a warning after command entry, and IM business command success/failure is unchanged.
 - Added Angular `TraceContextService` to generate browser-safe W3C `traceparent` plus optional baggage.
 - Extended `TauriBridgeService.invoke` to attach `__trace` only to the Tauri invoke envelope without mutating caller args.
 - `ImStoreService.send`, `sendDocument`, and `resend` now start and pass a trace sidecar for `im_send`.
 
 ## Evidence That `__trace` Does Not Enter Helix Business Payload
 
-- `src-tauri/src/commands.rs::im_send` accepts `__trace` as a separate strong Tauri parameter.
+- `src-tauri/src/commands.rs::im_send` accepts `__trace` as a separate raw `serde_json::Value` sidecar parameter, not as a required `TraceSidecar`.
+- `src-tauri/src/trace.rs::normalize_trace_sidecar` validates raw JSON inside handler execution; malformed sidecars return `InvalidSidecar` / `InvalidTraceparent` and are logged/dropped.
 - `src-tauri/src/commands.rs::send_payload` constructs the `Tick::Command` JSON from only `channel_id`, `temporary_id`, `text`, and `type`.
 - `commands::command_tests::send_payload_never_contains_trace_sidecar` asserts the command payload has no `__trace`.
+- `trace::tests::raw_sidecar_shape_errors_are_reported_after_command_deserialization` covers malformed raw sidecar shapes without requiring Tauri command deserialization to fail.
 - Existing `state.ctx.log_ipc_in("im_send", ...)` logs only business args and does not include the sidecar.
 - Existing `TeeTickSender` logs `Tick::Command` payload after serialization; since the serialized payload is built by `send_payload`, the inbound Helix command remains trace-free.
 
 ## Verification
 
 - PASS: `cargo test --manifest-path src-tauri/Cargo.toml`
-  - 7 passed; 0 failed.
+  - 8 passed; 0 failed.
 - PASS: `pnpm run check:static`
   - TypeScript check and Angular build completed.
   - Existing warning remains: `src/app/app.component.ts` component style budget exceeds 4.00 kB by 3.98 kB.
