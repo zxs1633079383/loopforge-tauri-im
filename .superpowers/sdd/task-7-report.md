@@ -1,104 +1,50 @@
-# Task 7 Report - P1 Read-Result UI Surfaces
+# Task 7 Report - Golden End-To-End Trace Gate
 
-## Scope
+## Status
 
-- Workspace: `/System/Volumes/Data/workspace/rust/loopforge-tauri-im`
-- Branch: `codex/loopforge-ui-uc-gap-closure`
-- Baseline: `538ce90`
-- Allowed write scope used:
-  - `src/app/im/message-row.model.ts`
-  - `src/app/im/im-store.service.ts`
-  - `src/app/im/ui/im-aux-panel.component.ts`
-  - `src/app/im/ui/im-member-panel.component.ts`
-  - `test/specs/uc-5.6r.e2e.mjs`
-  - `test/specs/uc-5.7.e2e.mjs`
-  - `test/specs/uc-5.8.e2e.mjs`
-  - `test/specs/uc-9.x.e2e.mjs`
-  - `test/specs/uc-10.3.e2e.mjs`
-  - `.superpowers/sdd/task-7-report.md`
+DONE
 
-## TDD Evidence
+## Commit Hash
 
-- Added WDIO DOM assertions first for:
-  - `data-bookmark-id`
-  - `data-announcement-id`
-  - `data-online-count`
-  - `data-member-online` when online members exist in response body
-  - `data-module-id`
-  - `data-query-channel-id`
-- Each assertion derives expected ids/counts from the matching `im:read:result` body in `run.jsonl`.
-- Empty response bodies assert no corresponding rendered rows, avoiding rows faked from request inputs.
-- `node --check` passed for all modified P1 specs before implementation and after implementation.
+Final response carries exact committed HEAD. A committed report cannot embed its own final commit hash without changing that hash.
 
-## Implementation
+## Files Changed
 
-- Added render row models for announcements, modules, query-channel results, and online status.
-- Added store signals for announcements/modules/query-channel rows/online statuses and online member status chips.
-- Routed `im:read:result` by deterministic `req_id` prefixes:
-  - `bookmark-load-`
-  - `announcement-list-`
-  - `modules-get-all-`
-  - `channel-query-`
-  - `online-status-`
-- Updated store request-id defaults for the corresponding UI methods.
-- Rendered read-result surfaces in AX/MB:
-  - AX bookmark rows include message text when present.
-  - AX announcement/module/channel-query panels render the required `data-*` attributes.
-  - MB online status panel renders `data-online-count` and member-level `data-member-online`.
+- `scripts/otel-trace-check.mjs`
+- `scripts/otel-trace-smoke.sh`
+- `docs/trace/otel-trace-gate.md`
+- `.superpowers/sdd/task-7-report.md`
 
-## Conservative Mapping Notes
+## Checker Semantics And Usage
 
-- Response arrays are accepted only from the response body itself: `body`, `body.data`, or common list wrappers such as `items/list/rows/postList/posts/announcements/channels/modules/records/content`.
-- Rows without an authoritative id from the response are skipped.
-- Announcement rows use response `announcementId`, else response `id`, else response `postId`; `postId` uses response `postId`, else response `id`.
-- Bookmark rows use response `bookmarkId`, else response `postId`, `id`, or `msgId`.
-- Module rows use response `moduleId` or `id`; display name uses `name` or `label`.
-- Channel query rows use response `channelId` or `id`; display name uses `displayName` or `name`.
-- Online count uses response `onlineCount`/`count` if present; otherwise it counts response members whose status is `online` or `online === true`.
-- The brief suggested a `queryChannels` computed signal, but the store already has a `queryChannels(...)` command method used by `app.component.ts`. The render signal is named `queryChannelRows` to avoid breaking the command API.
+- `scripts/otel-trace-check.mjs` accepts a trace id positional argument and queries Jaeger Query at `http://127.0.0.1:16686/api/traces/<trace-id>` by default.
+- The checker target can be overridden with `--jaeger-url <url>` / `--jaeger-query-url <url>` or `JAEGER_QUERY_URL`. This only changes the Jaeger read target; it is not trace enablement source-of-truth.
+- The checker also supports deterministic no-network verification:
+  - `node scripts/otel-trace-check.mjs --self-test`
+  - `node scripts/otel-trace-check.mjs --input <jaeger-response.json> <trace-id>`
+- Client span semantics are alternative-group based:
+  - action: `pc.ui.action` or future `mobile.js.im_send`
+  - bridge: `pc.tauri.invoke` or future `mobile.core_bridge.call_with_trace`
+  - render: `pc.ui.render` or future `mobile.render`
+- Fixed middle spans are required from Helix and cses-im-server. `helix.event.emit` must appear at least twice; every other fixed middle span must appear at least once.
+- `scripts/otel-trace-smoke.sh <trace-id>` is the normal operator wrapper. It prints usage and exits `2` when no trace id is provided.
 
 ## Verification
 
-- `node --check test/specs/uc-5.6r.e2e.mjs` - pass
-- `node --check test/specs/uc-5.7.e2e.mjs` - pass
-- `node --check test/specs/uc-5.8.e2e.mjs` - pass
-- `node --check test/specs/uc-9.x.e2e.mjs` - pass
-- `node --check test/specs/uc-10.3.e2e.mjs` - pass
-- `npm run check:static` - pass; existing Angular style budget warning remains.
-- `git diff --check` - pass
+- PASS: `node --check scripts/otel-trace-check.mjs`
+- PASS: `node scripts/otel-trace-check.mjs --self-test`
+  - Output included: `trace self-test-trace contains required full-link spans`
+- PASS: `bash -n scripts/otel-trace-smoke.sh`
+- PASS: `bash scripts/otel-trace-smoke.sh` with no args exited `2` and printed usage.
+- PASS: `git diff --check`
+- UNAVAILABLE: `shellcheck scripts/otel-trace-smoke.sh`
+  - `shellcheck` is not installed on this machine.
+- UNAVAILABLE: GitNexus `detect_changes`
+  - `mcp__gitnexus.list_repos` returned zero indexed repositories.
+  - `mcp__gitnexus.detect_changes(scope=all, worktree=...)` returned `Error: No indexed repositories. Run: gitnexus analyze`.
 
-## Live Focused Runs
+## Residual Risks
 
-Not run because required live ports were already occupied, and the task explicitly said not to kill user processes:
-
-- `1420`: `node` PID 68188
-- `4445`: `loopforge` PID 69194
-- `8066`: `___7go_bu` PID 32834
-
-## GitNexus / Impact
-
-- GitNexus MCP returned no indexed repositories, so symbol impact analysis and `detect_changes` could not be used for this workspace.
-- Fallback impact control used static typecheck/build, scoped grep, allowed-file diff review, and `git diff --check`.
-
-## Review Fix
-
-- Fix commit: `ea68255`
-- Fixed Important review finding: `applyAnnouncementList()` now accepts a single-object announcement detail body through an announcement-only guard. Generic `bodyItems()` still returns singleton objects only when a caller supplies a guard, so arbitrary read-result envelope metadata is not treated as a rendered item.
-- Updated `test/specs/uc-5.6r.e2e.mjs` so the detail oracle passes the same announcement-only singleton guard and expects a `data-announcement-id` row when the response body is one announcement object.
-- Left the minor child-component `ImStoreService` DI cleanup out of this task to stay within the requested review-fix scope.
-
-## Review Fix Verification
-
-- `node --check test/specs/uc-5.6r.e2e.mjs` - pass
-- `npm run check:static` - pass; existing Angular style budget warning remains.
-- `git diff --check` - pass
-- Focused live run skipped because required ports are occupied:
-  - `1420`: `node` PID 68188
-  - `4445`: `loopforge` PID 69194
-  - `8066`: `___7go_bu` PID 32834
-- GitNexus `impact()` / `detect_changes()` attempted again and still returned no indexed repositories.
-
-## Final Assessment
-
-- Status: `DONE_WITH_CONCERNS`
-- Concern: focused live RED/GREEN was skipped due occupied ports.
+- This gate validates one trace after PC/mobile clients, Helix, and cses-im-server actually export spans to the local OTel Collector / Jaeger stack.
+- The checker asserts operation-name presence and duplicate counts only. It does not yet validate parent-child topology, span timing, service names, or attributes.
+- Mobile alternatives are accepted by name for future reuse, but the committed wrapper lives in LoopForge and the primary documented path is the PC Tauri trace.
