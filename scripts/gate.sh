@@ -92,8 +92,17 @@ else
   bad "real-chain 扫描红（禁止 debug patch/mock/fake id/乐观 admin）"
 fi
 
-# 12. clippy 卫生（慢·默认跳；GATE_CLIPPY=1 启用·deny warnings）
-step "12 clippy 卫生（默认跳·GATE_CLIPPY=1 启用）"
+# 12. trace sidecar 静态漂移/安全闸门
+step "12 trace sidecar 静态漂移/安全闸门"
+if bash scripts/trace-static-gate.sh >/tmp/lf-gate-trace-static.log 2>&1; then
+  ok "$(tail -1 /tmp/lf-gate-trace-static.log)"
+else
+  cat /tmp/lf-gate-trace-static.log
+  bad "trace static gate 红（sidecar 泄漏或 trace 日志记录敏感/业务正文）"
+fi
+
+# 13. clippy 卫生（慢·默认跳；GATE_CLIPPY=1 启用·deny warnings）
+step "13 clippy 卫生（默认跳·GATE_CLIPPY=1 启用）"
 if [ "${GATE_CLIPPY:-0}" = "1" ]; then
   if cargo clippy --manifest-path src-tauri/Cargo.toml --quiet -- -D warnings >/tmp/lf-gate-clippy.log 2>&1; then ok "clippy 无 warning"; else bad "clippy 有 warning/error（见 /tmp/lf-gate-clippy.log）"; fi
 else printf "  ⏭ 跳过（GATE_CLIPPY=1 启用·workspace lints 已配 unwrap/panic/dbg/todo=warn）\n"; fi
