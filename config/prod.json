@@ -4,5 +4,27 @@
   "wsUrl": "wss://im.example.com/api/v4/websocket",
   "companyId": "TODO-prod-company-id",
   "cookieId": "",
-  "deviceId": ""
+  "deviceId": "",
+  "observability": {
+    "otel": {
+      "enabled": false,
+      "serviceName": "loopforge-tauri-im",
+      "endpoint": "",
+      "protocol": "http",
+      "sampler": {
+        "type": "parentbased_traceidratio",
+        "ratio": 0.01
+      },
+      "facets": {
+        "client": true,
+        "tauri": true,
+        "core": true,
+        "http": true,
+        "ws": true,
+        "storage": false,
+        "event": true,
+        "render": false
+      }
+    }
+  }
 }

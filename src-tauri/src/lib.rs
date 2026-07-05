@@ -16,6 +16,7 @@ mod config;
 mod engine;
 mod state;
 mod tick_tee;
+mod trace;
 
 use std::sync::Arc;
 

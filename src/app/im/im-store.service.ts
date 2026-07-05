@@ -1,5 +1,6 @@
 import { Injectable, computed, inject, signal } from "@angular/core";
 import { TauriBridgeService } from "./tauri-bridge.service";
+import { TraceContextService } from "./trace-context.service";
 import {
   AnnouncementRow,
   BookmarkRow,
@@ -69,6 +70,7 @@ export type SenderUserId = "444" | "678";
 @Injectable({ providedIn: "root" })
 export class ImStoreService {
   private readonly bridge = inject(TauriBridgeService);
+  private readonly traceContext = inject(TraceContextService);
 
   /** 消息行（按插入序） */
   private readonly _rows = signal<MessageRow[]>([]);
@@ -298,11 +300,15 @@ export class ImStoreService {
     this.pendingText.set(temporaryId, trimmed);
 
     try {
-      await this.bridge.invoke<void>("im_send", {
-        channelId,
-        text: trimmed,
-        temporaryId,
-      });
+      await this.bridge.invoke<void>(
+        "im_send",
+        {
+          channelId,
+          text: trimmed,
+          temporaryId,
+        },
+        this.traceContext.startTrace(),
+      );
     } catch {
       // 出站失败 → 生产失败态由 helix 投影驱动；此处只清本地暂存。
       this.markSendFailed(temporaryId);
@@ -455,12 +461,16 @@ export class ImStoreService {
     this.pendingType.set(temporaryId, "DOCUMENT");
 
     try {
-      await this.bridge.invoke<void>("im_send", {
-        channelId,
-        text: trimmed,
-        temporaryId,
-        msgType: "DOCUMENT",
-      });
+      await this.bridge.invoke<void>(
+        "im_send",
+        {
+          channelId,
+          text: trimmed,
+          temporaryId,
+          msgType: "DOCUMENT",
+        },
+        this.traceContext.startTrace(),
+      );
     } catch {
       this.markSendFailed(temporaryId);
     }
@@ -485,11 +495,15 @@ export class ImStoreService {
     if (!trimmed || !temporaryId || !channelId) return;
 
     try {
-      await this.bridge.invoke<void>("im_send", {
-        channelId,
-        text: trimmed,
-        temporaryId, // 复用原 tmp → upsert，不生成新 id
-      });
+      await this.bridge.invoke<void>(
+        "im_send",
+        {
+          channelId,
+          text: trimmed,
+          temporaryId, // 复用原 tmp → upsert，不生成新 id
+        },
+        this.traceContext.startTrace(),
+      );
     } catch {
       // 出站失败 → 生产失败态由 helix 投影驱动；此处只清本地暂存。
       this.markSendFailed(temporaryId);
