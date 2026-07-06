@@ -55,8 +55,11 @@ impl<H: HttpRequester> HttpRequester for Recording<H> {
                 let resp = self.ctx.with_tape(|t| t.next_http(&key));
                 match resp {
                     Some(r) => {
-                        let response_payload =
-                            serde_json::json!({"status": r.status, "body": payload_from_bytes(&r.body)});
+                        let response_payload = serde_json::json!({
+                            "status": r.status,
+                            "headers": r.headers,
+                            "body": payload_from_bytes(&r.body)
+                        });
                         self.ctx.trace(
                             "helix.http.response",
                             "helix",
@@ -80,8 +83,11 @@ impl<H: HttpRequester> HttpRequester for Recording<H> {
                 if mode == Mode::Record {
                     self.ctx.with_tape(|t| t.record_http(key, &resp));
                 }
-                let response_payload =
-                    serde_json::json!({"status": resp.status, "body": payload_from_bytes(&resp.body)});
+                let response_payload = serde_json::json!({
+                    "status": resp.status,
+                    "headers": resp.headers,
+                    "body": payload_from_bytes(&resp.body)
+                });
                 self.ctx.trace(
                     "helix.http.response",
                     "helix",

@@ -2890,6 +2890,7 @@ export class ImStoreService {
       name: "pc.ui.render",
       layer: "pc.ui",
       direction: "internal",
+      traceparent: this.traceContext.currentTraceparent(),
       payload: {
         msgId: row.msgId,
         temporaryId: row.temporaryId,

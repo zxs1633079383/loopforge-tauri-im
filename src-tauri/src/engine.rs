@@ -180,8 +180,19 @@ pub async fn spawn(
         .iter()
         .map(|(n, v)| (n.to_string(), v.to_string()))
         .collect();
+    ctx.trace(
+        "helix.ws.connect",
+        "helix",
+        helix_driver_instrument::TraceDirection::Out,
+        serde_json::json!({
+            "op": "connect",
+            "url": &ws_url,
+            "headers": &ws_headers,
+            "mode": format!("{:?}", ctx.mode()),
+        }),
+    );
     let mut transport = NativeTransport::new(ws_url.clone(), main_transport, Some(tick_tx.clone()))
-        .with_handshake_headers(ws_headers);
+        .with_handshake_headers(ws_headers.clone());
     match transport.connect().await {
         Ok(()) => tracing::info!(transport_id = main_transport.raw(), "主 WS 已连接"),
         Err(e) => tracing::error!(error = %e, "主 WS 连接失败——仍进泵，Send 走 warn 兜底"),

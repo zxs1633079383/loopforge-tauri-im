@@ -10,7 +10,6 @@ Start the local OTel collector / Jaeger stack from the Helix trace plan:
 cd /System/Volumes/Data/workspace/rust/helix
 docker compose -f docker/otel/docker-compose.yaml up -d
 nc -zv 127.0.0.1 4317
-curl -fsS http://127.0.0.1:4318/v1/traces -X POST -H 'content-type: application/json' -d '{}'
 open http://127.0.0.1:16686
 ```
 
@@ -21,13 +20,13 @@ cd /System/Volumes/Data/workspace/rust/loopforge-tauri-im
 bash scripts/run.sh -- --spec test/specs/uc-send-1.e2e.mjs
 ```
 
-`config/dev-local.json` enables local OTLP export with sampling ratio `1.0` and endpoint `http://127.0.0.1:4318`. For the shared monitoring environment, export to the OTLP gRPC collector:
+`config/dev-local.json` enables OTLP export with sampling ratio `1.0` and the shared OTLP gRPC collector endpoint:
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://opentelemetry-collector.monitoring.svc.cluster.local:4317
 ```
 
-Jaeger Query is expected at `http://127.0.0.1:16686` by default for local checks, and can be overridden with `JAEGER_QUERY_URL`. The OTLP exporter endpoint and Jaeger Query URL are separate knobs.
+Jaeger Query is expected at `http://127.0.0.1:16686` by default for local checks, and can be overridden with `JAEGER_QUERY_URL`. The OTLP exporter endpoint `http://opentelemetry-collector.monitoring.svc.cluster.local:4317` and Jaeger Query URL are separate knobs.
 
 The Go side must also run with `observability.otel.enabled=true` so the server spans appear in the same trace.
 
@@ -94,6 +93,8 @@ Validate the local evidence:
 node scripts/trace-jsonl-check.mjs --input /tmp/loopforge-trace/events.jsonl --trace-id <trace-id>
 node scripts/trace-jsonl-check.mjs --self-test
 ```
+
+The JSONL checker requires one correlated trace id to contain PC action/invoke/listen/render, Tauri command enqueue/event emit, HTTP request/response, and WS connect/send/recv/close events. This is the local sidecar evidence; Jaeger Query remains the remote OTel evidence.
 
 ## Span semantics
 

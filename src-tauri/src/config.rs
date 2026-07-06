@@ -239,7 +239,15 @@ mod tests {
                 serde_json::from_str(embedded_json(profile).expect("embedded profile"))
                     .expect("embedded profile should parse");
             assert_eq!(cfg.observability.otel.service_name, "loopforge-tauri-im");
-            assert_eq!(cfg.observability.otel.protocol, "http");
+            if profile == "dev-local" {
+                assert_eq!(
+                    cfg.observability.otel.endpoint,
+                    "http://opentelemetry-collector.monitoring.svc.cluster.local:4317"
+                );
+                assert_eq!(cfg.observability.otel.protocol, "grpc");
+            } else {
+                assert_eq!(cfg.observability.otel.protocol, "http");
+            }
         }
     }
 }

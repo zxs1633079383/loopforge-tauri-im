@@ -1,5 +1,5 @@
-import { Injectable } from "@angular/core";
-import { TraceSidecar } from "./trace-context.service";
+import { Injectable, inject } from "@angular/core";
+import { TraceContextService, TraceSidecar } from "./trace-context.service";
 
 /**
  * Tauri bridge —— 封装 invoke / listen，提供浏览器无 Tauri 时的降级 fallback。
@@ -13,6 +13,8 @@ import { TraceSidecar } from "./trace-context.service";
  */
 @Injectable({ providedIn: "root" })
 export class TauriBridgeService {
+  private readonly traceContext = inject(TraceContextService);
+
   /** 运行时是否在 Tauri WebView 内 */
   isTauri(): boolean {
     return typeof window !== "undefined" &&
@@ -24,7 +26,11 @@ export class TauriBridgeService {
     if (!this.isTauri()) return;
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("trace_record_event", { event });
+      const traceparent = typeof event["traceparent"] === "string"
+        ? event["traceparent"]
+        : this.traceContext.currentTraceparent();
+      const tracedEvent = traceparent ? { ...event, traceparent } : event;
+      await invoke("trace_record_event", { event: tracedEvent });
     } catch {
       // trace must never break business flow
     }
@@ -94,6 +100,7 @@ export class TauriBridgeService {
         name: "pc.tauri.event.listen",
         layer: "pc.tauri",
         direction: "in",
+        traceparent: this.traceContext.currentTraceparent(),
         payload: { event, payload: e.payload },
       });
       handler(e.payload);
