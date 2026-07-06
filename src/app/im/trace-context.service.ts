@@ -5,16 +5,28 @@ export interface TraceSidecar {
   baggage?: string;
 }
 
+function isNonZeroHex(value: string, length: number): boolean {
+  return value.length === length &&
+    /^[0-9a-f]+$/.test(value) &&
+    !/^0+$/.test(value);
+}
+
+function traceparentParts(traceparent: string): string[] {
+  return traceparent.trim().toLowerCase().split("-");
+}
+
 export function traceIdFromTraceparent(traceparent: string): string {
-  const parts = traceparent.trim().toLowerCase().split("-");
-  if (parts.length !== 4 || parts[1]?.length !== 32) return "";
-  return parts[1];
+  const parts = traceparentParts(traceparent);
+  const traceId = parts[1] ?? "";
+  if (parts.length !== 4 || !isNonZeroHex(traceId, 32)) return "";
+  return traceId;
 }
 
 export function parentSpanIdFromTraceparent(traceparent: string): string {
-  const parts = traceparent.trim().toLowerCase().split("-");
-  if (parts.length !== 4 || parts[2]?.length !== 16) return "";
-  return parts[2];
+  const parts = traceparentParts(traceparent);
+  const spanId = parts[2] ?? "";
+  if (parts.length !== 4 || !isNonZeroHex(spanId, 16)) return "";
+  return spanId;
 }
 
 function randomBytes(length: number): Uint8Array {
