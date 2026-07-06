@@ -26,6 +26,16 @@ impl TraceSidecar {
             baggage,
         })
     }
+
+    #[allow(dead_code)]
+    pub fn trace_id(&self) -> Option<String> {
+        self.traceparent.split('-').nth(1).map(ToOwned::to_owned)
+    }
+
+    #[allow(dead_code)]
+    pub fn parent_span_id(&self) -> Option<String> {
+        self.traceparent.split('-').nth(2).map(ToOwned::to_owned)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,6 +147,25 @@ mod tests {
             .expect("valid raw sidecar")
             .traceparent,
             "00-00000000000000000000000000000001-0000000000000002-01"
+        );
+    }
+
+    #[test]
+    fn trace_sidecar_exposes_trace_ids() {
+        let sidecar = TraceSidecar {
+            traceparent: "00-00000000000000000000000000000001-0000000000000002-01".to_string(),
+            baggage: None,
+        }
+        .normalized()
+        .expect("valid sidecar");
+
+        assert_eq!(
+            sidecar.trace_id().as_deref(),
+            Some("00000000000000000000000000000001")
+        );
+        assert_eq!(
+            sidecar.parent_span_id().as_deref(),
+            Some("0000000000000002")
         );
     }
 }

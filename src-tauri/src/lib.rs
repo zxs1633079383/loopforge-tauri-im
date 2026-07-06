@@ -20,7 +20,9 @@ mod trace;
 
 use std::sync::Arc;
 
-use helix_driver_instrument::{InstrumentCtx, LogSink, Mode, Tape};
+use helix_driver_instrument::{
+    default_trace_jsonl_path, InstrumentCtx, LogSink, Mode, Tape, TraceEmitter, TraceJsonlSink,
+};
 use state::{AppState, ReadinessProbe};
 use tauri::Manager;
 
@@ -67,6 +69,16 @@ fn build_log_sink() -> LogSink {
     })
 }
 
+fn build_trace_emitter(run_id: &str) -> TraceEmitter {
+    let path = std::env::var("LOOPFORGE_TRACE_JSONL")
+        .unwrap_or_else(|_| default_trace_jsonl_path().to_string());
+    let sink = TraceJsonlSink::to_file(&path).unwrap_or_else(|e| {
+        tracing::warn!(error = %e, %path, "trace JSONL 创建失败，回退 stdout");
+        TraceJsonlSink::to_writer(Box::new(std::io::stdout()))
+    });
+    TraceEmitter::new(run_id.to_string(), sink)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -81,7 +93,8 @@ pub fn run() {
     let run_id = std::env::var("LOOPFORGE_RUN_ID").unwrap_or_else(|_| "loopforge-w1".into());
     let (mode, tape, tape_path) = resolve_mode_tape();
     tracing::info!(?mode, %tape_path, "仪表运行模式");
-    let ctx = InstrumentCtx::new(run_id, mode, build_log_sink(), tape);
+    let trace = build_trace_emitter(&run_id);
+    let ctx = InstrumentCtx::new(run_id, mode, build_log_sink(), tape).with_trace(trace);
     let probe = Arc::new(ReadinessProbe::default());
 
     #[allow(unused_mut)]
@@ -188,6 +201,7 @@ pub fn run() {
         commands::im_l2_read_channel,
         commands::im_l2_read_post,
         commands::im_l2_urgent_post,
+        commands::trace_record_event,
         commands::set_uc
     ]);
     #[cfg(not(feature = "webdriver"))]
