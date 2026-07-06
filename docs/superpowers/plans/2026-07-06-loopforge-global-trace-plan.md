@@ -14,6 +14,7 @@
 - 本轮不改 `/System/Volumes/Data/workspace/golang/cses-im-server`。
 - 本轮不改 mobile / QuickJS / C++ 仓。
 - JSONL trace event 默认落点必须是 `/tmp/loopforge-trace/events.jsonl`。
+- OTel 导出端点固定为 `OTEL_EXPORTER_OTLP_ENDPOINT=http://opentelemetry-collector.monitoring.svc.cluster.local:4317`；这是 OTLP gRPC Collector 地址，不是 Jaeger Query 读取地址。
 - 现有四面 hop 日志继续默认落 `/tmp/loopforge/run.jsonl`。
 - `__trace` 只允许作为 Tauri invoke envelope sidecar，不得进入 `Tick::Command` business payload。
 - HTTP、WS、Tauri 边界是强制 trace；func 级 trace 是关键执行阶段和按需工具，不做自动全函数扫描。

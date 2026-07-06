@@ -21,7 +21,13 @@ cd /System/Volumes/Data/workspace/rust/loopforge-tauri-im
 bash scripts/run.sh -- --spec test/specs/uc-send-1.e2e.mjs
 ```
 
-`config/dev-local.json` enables local OTLP export with sampling ratio `1.0` and endpoint `http://127.0.0.1:4318`. Jaeger Query is expected at `http://127.0.0.1:16686` by default.
+`config/dev-local.json` enables local OTLP export with sampling ratio `1.0` and endpoint `http://127.0.0.1:4318`. For the shared monitoring environment, export to the OTLP gRPC collector:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://opentelemetry-collector.monitoring.svc.cluster.local:4317
+```
+
+Jaeger Query is expected at `http://127.0.0.1:16686` by default for local checks, and can be overridden with `JAEGER_QUERY_URL`. The OTLP exporter endpoint and Jaeger Query URL are separate knobs.
 
 The Go side must also run with `observability.otel.enabled=true` so the server spans appear in the same trace.
 
