@@ -102,6 +102,14 @@ OTel/Jaeger 是主链路视图；JSONL 是本地证据视图。
 
 两者共享 `trace_id`、`span_id`、`parent_span_id`、`corr_key`。
 
+本环境的 OTel 导出端点固定为：
+
+```text
+OTEL_EXPORTER_OTLP_ENDPOINT=http://opentelemetry-collector.monitoring.svc.cluster.local:4317
+```
+
+这是 Collector 的 OTLP gRPC 导出地址；Jaeger Query / checker 读取地址仍由 `JAEGER_QUERY_URL` 单独配置。
+
 ## 5. JSONL 落点
 
 所有 JSONL event 日志必须位于 `/tmp` 下，不写入仓库目录。

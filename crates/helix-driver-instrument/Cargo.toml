@@ -16,6 +16,13 @@ serde       = { workspace = true }
 serde_json  = { workspace = true }
 bytes       = { workspace = true }
 async-trait = { workspace = true }
+opentelemetry = { version = "0.32", optional = true }
+opentelemetry_sdk = { version = "0.32", features = ["trace"], optional = true }
+opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "grpc-tonic"], optional = true }
+
+[features]
+default = []
+otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp"]
 
 [dev-dependencies]
 # 测试用轻量 block_on（不引 tokio，装饰器本身 executor-agnostic）。

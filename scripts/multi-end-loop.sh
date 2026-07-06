@@ -19,6 +19,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HELIX_ROOT="${HELIX_ROOT:-/System/Volumes/Data/workspace/rust/helix}"
 CSES_IM_ROOT="${CSES_IM_ROOT:-/System/Volumes/Data/workspace/golang/cses-im-server}"
 RUN_LOG_DIR="${RUN_LOG_DIR:-/tmp/loopforge}"
+TRACE_JSONL="${LOOPFORGE_TRACE_JSONL:-/tmp/loopforge-trace/events.jsonl}"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
 ARCHIVE_ROOT="${ARCHIVE_ROOT:-/tmp/loopforge/runs}"
 ARCHIVE_DIR="${ARCHIVE_DIR:-$ARCHIVE_ROOT/$RUN_ID}"
@@ -60,6 +61,8 @@ copy_dir_if_exists() {
 }
 
 clear_stale_run_artifacts() {
+  mkdir -p "$(dirname "$TRACE_JSONL")"
+  : >"$TRACE_JSONL" 2>/dev/null || true
   rm -f \
     "$RUN_LOG_DIR/run-ng.log" \
     "$RUN_LOG_DIR/run-app.log" \
@@ -96,6 +99,7 @@ EOF
   copy_if_exists "$RUN_LOG_DIR/run-ng.log" "$spec_dir/run-ng.log"
   copy_if_exists "$RUN_LOG_DIR/run-app.log" "$spec_dir/run-app.log"
   copy_if_exists "$RUN_LOG_DIR/run.jsonl" "$spec_dir/run.jsonl"
+  copy_if_exists "$TRACE_JSONL" "$spec_dir/trace-events.jsonl"
   copy_if_exists "$RUN_LOG_DIR/wdio-out.log" "$spec_dir/wdio-out.log"
   copy_if_exists "$RUN_LOG_DIR/cses-health.json" "$spec_dir/cses-health.json"
   copy_if_exists "$CSES_LOG" "$spec_dir/cses-im-server.log"
@@ -138,6 +142,7 @@ EOF
   copy_if_exists "$RUN_LOG_DIR/run-ng.log" "$ARCHIVE_DIR/run-ng.log"
   copy_if_exists "$RUN_LOG_DIR/run-app.log" "$ARCHIVE_DIR/run-app.log"
   copy_if_exists "$RUN_LOG_DIR/run.jsonl" "$ARCHIVE_DIR/run.jsonl"
+  copy_if_exists "$TRACE_JSONL" "$ARCHIVE_DIR/trace-events.jsonl"
   copy_if_exists "$RUN_LOG_DIR/wdio-out.log" "$ARCHIVE_DIR/wdio-out.log"
   copy_if_exists "$RUN_LOG_DIR/cses-health.json" "$ARCHIVE_DIR/cses-health.json"
   copy_if_exists "$CSES_LOG" "$ARCHIVE_DIR/cses-im-server.log"

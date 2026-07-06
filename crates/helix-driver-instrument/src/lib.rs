@@ -39,6 +39,7 @@ pub mod log_sink;
 pub mod recording;
 pub mod storage;
 pub mod tape;
+pub mod trace_event;
 pub mod transport;
 pub mod util;
 
@@ -48,6 +49,9 @@ pub use log_sink::LogSink;
 pub use mode::Mode;
 pub use recording::Recording;
 pub use tape::Tape;
+pub use trace_event::{
+    TraceDirection, TraceEmitter, TraceEvent, TraceJsonlSink, default_trace_jsonl_path,
+};
 
 pub mod mode {
     //! 录放模式。

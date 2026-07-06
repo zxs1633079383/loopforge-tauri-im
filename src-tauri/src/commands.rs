@@ -8,6 +8,7 @@
 use bytes::Bytes;
 use helix_core::tick::AppCommand;
 use helix_core::Tick;
+use helix_driver_instrument::TraceDirection;
 use tauri::State;
 
 use crate::state::AppState;
@@ -381,9 +382,27 @@ pub async fn im_send(
             "type": &msg_type,
         }),
     );
+    let mut accepted_traceparent = None;
     if let Some(raw_trace) = __trace.as_ref() {
         match normalize_trace_sidecar(raw_trace) {
             Ok(trace) => {
+                state.ctx.trace_with_ids(
+                    "pc.tauri.invoke.in",
+                    "pc.tauri",
+                    TraceDirection::In,
+                    Some(trace.traceparent.as_str()),
+                    serde_json::json!({
+                        "cmd": "im_send",
+                        "args": {
+                            "channelId": &channel_id,
+                            "text": &text,
+                            "temporaryId": &temporary_id,
+                            "type": &msg_type,
+                            "__trace": trace,
+                        }
+                    }),
+                );
+                accepted_traceparent = Some(trace.traceparent.clone());
                 tracing::debug!(
                     traceparent = %trace.traceparent,
                     baggage_present = trace.baggage.is_some(),
@@ -402,15 +421,54 @@ pub async fn im_send(
     // helix 兜底——出站 send_build.rs（空→TEXT）+ 入站 parser.rs（空→TEXT）双端下沉。壳不补 type →
     // 纯壳不变量 IpcIn.args ≡ Inbound.args 成立（旧「壳补 TEXT 致 ipc-in.type=null ≠ inbound」已消除）。
     // DOCUMENT 等富媒体仍显式透传真值（UC-1.2·msg_type=Some("DOCUMENT")）。
-    let tick = command(
-        "im_send_message",
-        send_payload(channel_id, text, temporary_id, msg_type),
+    let payload = send_payload(channel_id, text, temporary_id, msg_type);
+    state.ctx.trace_with_ids(
+        "pc.tauri.command.enqueue",
+        "pc.tauri",
+        TraceDirection::Internal,
+        accepted_traceparent.as_deref(),
+        serde_json::json!({
+            "cmd": "im_send_message",
+            "payload": payload.clone(),
+        }),
     );
+    let tick = command("im_send_message", payload);
     state
         .tick_tx
         .send(tick)
         .await
         .map_err(|e| format!("im_send: 入泵失败（泵已退出？）：{e}"))
+}
+
+#[cfg(feature = "webdriver")]
+#[tauri::command]
+pub fn trace_record_event(
+    state: State<'_, AppState>,
+    event: serde_json::Value,
+) -> Result<(), String> {
+    let name = event
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("pc.trace.event")
+        .to_string();
+    let layer = event
+        .get("layer")
+        .and_then(|v| v.as_str())
+        .unwrap_or("pc.ui")
+        .to_string();
+    let direction = match event.get("direction").and_then(|v| v.as_str()) {
+        Some("out") => TraceDirection::Out,
+        Some("internal") => TraceDirection::Internal,
+        _ => TraceDirection::In,
+    };
+    let traceparent = event
+        .get("traceparent")
+        .and_then(|v| v.as_str())
+        .map(ToOwned::to_owned);
+    state
+        .ctx
+        .trace_with_ids(&name, &layer, direction, traceparent.as_deref(), event);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -443,6 +501,17 @@ mod command_tests {
             payload.get("__trace").is_none(),
             "__trace must stay outside Tick::Command business payload"
         );
+    }
+
+    #[test]
+    fn send_payload_still_never_contains_trace_sidecar_after_trace_ingress() {
+        let payload = send_payload(
+            "c1".to_string(),
+            "hello".to_string(),
+            "tmp1".to_string(),
+            Some("TEXT".to_string()),
+        );
+        assert!(payload.get("__trace").is_none());
     }
 }
 

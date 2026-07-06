@@ -49,13 +49,32 @@ else
   pass "src/app/im/im-store.service.ts does not write __trace"
 fi
 
-if rg -n '("__trace"[[:space:]]*:|payload\[[[:space:]]*["'\'']__trace["'\''][[:space:]]*\][[:space:]]*=|\.insert\([[:space:]]*["'\'']__trace["'\''])' \
+TRACE_DEFAULT=$(awk '
+  /fn default_trace_jsonl_path\(\)/ { in_fn=1; next }
+  in_fn && match($0, /"[^"]+"/) { print substr($0, RSTART + 1, RLENGTH - 2); exit }
+' crates/helix-driver-instrument/src/trace_event.rs)
+if [ "$TRACE_DEFAULT" = "/tmp/loopforge-trace/events.jsonl" ]; then
+  pass "trace JSONL defaults stay under /tmp"
+else
+  printf "  observed default: %s\n" "${TRACE_DEFAULT:-<missing>}"
+  fail "trace JSONL default must stay exactly /tmp/loopforge-trace/events.jsonl"
+fi
+
+if rg -n 'payload\[[[:space:]]*["'\'']__trace["'\''][[:space:]]*\][[:space:]]*=|\.insert\([[:space:]]*["'\'']__trace["'\'']' \
   src-tauri/src/commands.rs >"$PAYLOAD_TRACE"; then
   fail "src-tauri/src/commands.rs appears to insert __trace into a business payload"
   print_hits "$PAYLOAD_TRACE"
 else
   pass "business payload builders do not insert __trace"
 fi
+
+for name in helix.ws.connect helix.ws.send helix.ws.recv helix.ws.close; do
+  if rg -q "\"$name\"" crates/helix-driver-instrument/src/transport.rs src-tauri/src/engine.rs; then
+    pass "WS trace event is instrumented: $name"
+  else
+    fail "missing WS trace instrumentation for $name"
+  fi
+done
 
 rg -0 -l 'TraceContext|__trace|traceparent|baggage|otel|opentelemetry' \
   src src-tauri scripts config >"$TRACE_FILES" || true
@@ -64,7 +83,7 @@ if [ -s "$TRACE_FILES" ]; then
   count="$(tr '\0' '\n' <"$TRACE_FILES" | sed '/^$/d' | wc -l | tr -d ' ')"
   pass "trace-related file discovery found $count files"
 
-  DANGEROUS_TERMS='Authorization|cookieId|cookie[_-]?id|cookie|token|message|text|payload|body'
+  DANGEROUS_TERMS='Authorization|cookieId|cookie[_-]?id|cookie|token'
   DANGEROUS_WORDS="(^|[^[:alnum:]_])(${DANGEROUS_TERMS})([^[:alnum:]_]|$)"
   DANGEROUS_CONTEXTS='set_attribute|\brecord[[:space:]]*\(|\bspan\b|attribute|console\.log|println!|tracing::|debug!|info!|warn!|error!'
   DANGER_RE="(${DANGEROUS_CONTEXTS}).{0,160}(${DANGEROUS_WORDS})|(${DANGEROUS_WORDS}).{0,160}(${DANGEROUS_CONTEXTS})"

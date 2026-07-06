@@ -101,6 +101,15 @@ else
   bad "trace static gate 红（sidecar 泄漏或 trace 日志记录敏感/业务正文）"
 fi
 
+# 12b. trace JSONL checker 自测
+step "12b trace JSONL checker self-test"
+if node scripts/trace-jsonl-check.mjs --self-test >/tmp/lf-gate-trace-jsonl.log 2>&1; then
+  ok "$(cat /tmp/lf-gate-trace-jsonl.log)"
+else
+  cat /tmp/lf-gate-trace-jsonl.log
+  bad "trace JSONL checker self-test 红"
+fi
+
 # 13. clippy 卫生（慢·默认跳；GATE_CLIPPY=1 启用·deny warnings）
 step "13 clippy 卫生（默认跳·GATE_CLIPPY=1 启用）"
 if [ "${GATE_CLIPPY:-0}" = "1" ]; then

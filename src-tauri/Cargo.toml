@@ -36,7 +36,7 @@ helix-driver-native = { git = "file:///System/Volumes/Data/workspace/rust/helix"
 helix-driver-host   = { git = "file:///System/Volumes/Data/workspace/rust/helix", rev = "50737c3e0d6aad775da45fd5575964b43db80ea8" }
 
 # 仪表层（本仓 · Recording<P> + InstrumentCtx + LogSink）
-helix-driver-instrument = { path = "../crates/helix-driver-instrument" }
+helix-driver-instrument = { path = "../crates/helix-driver-instrument", features = ["otel"] }
 
 # 间接依赖版本钉死（非本仓直接使用，仅为约束 cargo 解析）：
 # tauri/wry 的 cookie 0.18.1 调 1 参 time::Parsable::parse，而 time 0.3.52 把该方法

@@ -47,6 +47,7 @@ assert_port_free "$WEBDRIVER_PORT" "webdriver"
 ensure_log_dir
 NG_LOG="$RUN_LOG_DIR/run-ng.log"
 APP_LOG="$RUN_LOG_DIR/run-app.log"
+TRACE_JSONL="${LOOPFORGE_TRACE_JSONL:-/tmp/loopforge-trace/events.jsonl}"
 export LOOPFORGE_EVIDENCE_DIR="${LOOPFORGE_EVIDENCE_DIR:-$RUN_LOG_DIR/evidence}"
 mkdir -p "$LOOPFORGE_EVIDENCE_DIR"
 
@@ -91,11 +92,14 @@ elif printf '%s\n' "${WDIO_ARGS[@]+"${WDIO_ARGS[@]}"}" | grep -q 'uc-10.1'; then
 fi
 
 # —— 起 app：cargo run debug（边构建边起；首次构建慢，耐心等 webdriver 就绪）——
+mkdir -p "$(dirname "$TRACE_JSONL")"
 : >"$HELIX_RUN_JSONL" 2>/dev/null || true
+: >"$TRACE_JSONL" 2>/dev/null || true
 info "起 app：cargo run（src-tauri，debug，${MODE_ENV_VAR}=${MODE}，webdriver ${WEBDRIVER_PORT}，run.jsonl=${HELIX_RUN_JSONL}）"
 ( cd "$REPO_ROOT" && env \
     "$MODE_ENV_VAR=$MODE" \
     "HELIX_RUN_JSONL=$HELIX_RUN_JSONL" \
+    "LOOPFORGE_TRACE_JSONL=$TRACE_JSONL" \
     "LOOPFORGE_EVIDENCE_DIR=$LOOPFORGE_EVIDENCE_DIR" \
     ${HELIX_DEVICE_ID:+"HELIX_DEVICE_ID=$HELIX_DEVICE_ID"} \
     ${HELIX_HTTP_MAX_INFLIGHT:+"HELIX_HTTP_MAX_INFLIGHT=$HELIX_HTTP_MAX_INFLIGHT"} \

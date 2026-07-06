@@ -11,6 +11,7 @@ use crate::event::{extract_corr_key, Facet, Hop, HopEvent};
 use crate::log_sink::LogSink;
 use crate::mode::Mode;
 use crate::tape::Tape;
+use crate::trace_event::{TraceDirection, TraceEmitter, TraceEvent};
 
 /// 静默/就绪期的伪 UC id（CLAUDE.md §3：窗口外帧不归任何真 UC）。
 pub const QUIESCENCE_UC: &str = "__quiescence__";
@@ -50,6 +51,8 @@ struct CtxInner {
     uc: Mutex<String>,
     mode: Mode,
     log: LogSink,
+    trace: Option<TraceEmitter>,
+    active_traceparent: Mutex<Option<String>>,
     tape: Mutex<Tape>,
     http_fail_once_url_suffix: Mutex<Option<String>>,
 }
@@ -62,6 +65,8 @@ impl InstrumentCtx {
                 uc: Mutex::new(bootstrap_uc()),
                 mode,
                 log,
+                trace: None,
+                active_traceparent: Mutex::new(None),
                 tape: Mutex::new(tape),
                 http_fail_once_url_suffix: Mutex::new(http_fail_once_url_suffix()),
             }),
@@ -71,6 +76,13 @@ impl InstrumentCtx {
     /// Live 模式便捷构造（空 tape）。
     pub fn live(run_id: impl Into<String>, log: LogSink) -> Self {
         Self::new(run_id, Mode::Live, log, Tape::new())
+    }
+
+    pub fn with_trace(mut self, trace: TraceEmitter) -> Self {
+        Arc::get_mut(&mut self.inner)
+            .expect("with_trace must be called before cloning InstrumentCtx")
+            .trace = Some(trace);
+        self
     }
 
     pub fn mode(&self) -> Mode {
@@ -142,16 +154,95 @@ impl InstrumentCtx {
         self.inner.log.emit(&ev);
     }
 
+    pub fn trace(
+        &self,
+        name: &str,
+        layer: &str,
+        direction: TraceDirection,
+        payload: Value,
+    ) {
+        let traceparent = self.active_traceparent();
+        self.trace_with_ids(name, layer, direction, traceparent.as_deref(), payload);
+    }
+
+    pub fn set_active_traceparent(&self, traceparent: impl Into<String>) {
+        let traceparent = traceparent.into();
+        if parse_traceparent_ids(&traceparent).is_none() {
+            return;
+        }
+        *self
+            .inner
+            .active_traceparent
+            .lock()
+            .expect("active traceparent mutex poisoned") = Some(traceparent);
+    }
+
+    pub fn active_traceparent(&self) -> Option<String> {
+        self.inner
+            .active_traceparent
+            .lock()
+            .expect("active traceparent mutex poisoned")
+            .clone()
+    }
+
+    pub fn trace_with_ids(
+        &self,
+        name: &str,
+        layer: &str,
+        direction: TraceDirection,
+        traceparent: Option<&str>,
+        payload: Value,
+    ) {
+        let Some(emitter) = self.inner.trace.as_ref() else {
+            return;
+        };
+        let mut ev = TraceEvent::new(
+            emitter.run_id().to_string(),
+            name.to_string(),
+            layer.to_string(),
+            direction,
+            payload.clone(),
+        );
+        ev.corr_key = extract_corr_key(&payload);
+        if let Some(tp) = traceparent {
+            if let Some((trace_id, parent_span_id)) = parse_traceparent_ids(tp) {
+                self.set_active_traceparent(tp.to_string());
+                ev.trace_id = Some(trace_id);
+                ev.parent_span_id = Some(parent_span_id);
+                ev.span_id = Some(emitter.next_span_id());
+            }
+        }
+        emitter.emit(ev);
+    }
+
     /// 把当前 tape 存盘（Record 跑完后调用）。
     pub fn save_tape(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
         self.with_tape(|t| t.save(path))
     }
 }
 
+fn parse_traceparent_ids(traceparent: &str) -> Option<(String, String)> {
+    let mut parts = traceparent.trim().split('-');
+    let version = parts.next()?;
+    let trace_id = parts.next()?;
+    let span_id = parts.next()?;
+    let flags = parts.next()?;
+    if parts.next().is_some()
+        || version.len() != 2
+        || trace_id.len() != 32
+        || span_id.len() != 16
+        || flags.len() != 2
+    {
+        return None;
+    }
+    Some((trace_id.to_string(), span_id.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::log_sink::LogSink;
+    use crate::trace_event::TraceJsonlSink;
     use serde_json::json;
 
     /// 构造一个 in-memory LogSink 背书的 ctx，跑闭包后取回写出的行。
@@ -161,6 +252,19 @@ mod tests {
         ctx.set_uc("UC-test");
         f(&ctx);
         buf.lines()
+            .iter()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).expect("行须为合法 JSON"))
+            .collect()
+    }
+
+    fn capture_trace(f: impl FnOnce(&InstrumentCtx)) -> Vec<serde_json::Value> {
+        let (sink, _hop_buf) = LogSink::in_memory();
+        let (trace_sink, trace_buf) = TraceJsonlSink::in_memory();
+        let ctx = InstrumentCtx::new("r-test", Mode::Live, sink, Tape::new())
+            .with_trace(TraceEmitter::new("r-test", trace_sink));
+        f(&ctx);
+        trace_buf
+            .lines()
             .iter()
             .map(|l| serde_json::from_str::<serde_json::Value>(l).expect("行须为合法 JSON"))
             .collect()
@@ -214,5 +318,30 @@ mod tests {
         let s0 = rows[0]["seq"].as_u64().unwrap();
         let s1 = rows[1]["seq"].as_u64().unwrap();
         assert!(s1 > s0, "Inbound seq 须晚于 IpcIn（{s1} > {s0}）");
+    }
+
+    #[test]
+    fn trace_inherits_active_traceparent() {
+        let traceparent = "00-00000000000000000000000000000001-0000000000000002-01";
+        let rows = capture_trace(|ctx| {
+            ctx.trace_with_ids(
+                "pc.tauri.invoke.in",
+                "pc.tauri",
+                TraceDirection::In,
+                Some(traceparent),
+                json!({"cmd": "im_send", "temporary_id": "t9"}),
+            );
+            ctx.trace(
+                "helix.http.request",
+                "helix",
+                TraceDirection::Out,
+                json!({"url": "posts/create", "temporary_id": "t9"}),
+            );
+        });
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["trace_id"], "00000000000000000000000000000001");
+        assert_eq!(rows[1]["trace_id"], "00000000000000000000000000000001");
+        assert_eq!(rows[1]["parent_span_id"], "0000000000000002");
     }
 }

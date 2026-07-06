@@ -5,6 +5,45 @@ export interface TraceSidecar {
   baggage?: string;
 }
 
+function isNonZeroHex(value: string, length: number): boolean {
+  return value.length === length &&
+    /^[0-9a-f]+$/.test(value) &&
+    !/^0+$/.test(value);
+}
+
+function isHex(value: string, length: number): boolean {
+  return value.length === length && /^[0-9a-f]+$/.test(value);
+}
+
+function traceparentParts(traceparent: string): string[] {
+  return traceparent.trim().toLowerCase().split("-");
+}
+
+export function isValidTraceparent(traceparent: string): boolean {
+  const parts = traceparentParts(traceparent);
+  if (parts.length !== 4) return false;
+  const [version, traceId, parentSpanId, flags] = parts;
+  return isNonZeroHex(traceId ?? "", 32) &&
+    isNonZeroHex(parentSpanId ?? "", 16) &&
+    isHex(version ?? "", 2) &&
+    version !== "ff" &&
+    isHex(flags ?? "", 2);
+}
+
+export function traceIdFromTraceparent(traceparent: string): string {
+  const parts = traceparentParts(traceparent);
+  const traceId = parts[1] ?? "";
+  if (!isValidTraceparent(traceparent)) return "";
+  return traceId;
+}
+
+export function parentSpanIdFromTraceparent(traceparent: string): string {
+  const parts = traceparentParts(traceparent);
+  const spanId = parts[2] ?? "";
+  if (!isValidTraceparent(traceparent)) return "";
+  return spanId;
+}
+
 function randomBytes(length: number): Uint8Array {
   const bytes = new Uint8Array(length);
   const cryptoApi = globalThis.crypto;
@@ -30,12 +69,33 @@ function nonZeroHex(bytes: number): string {
 
 @Injectable({ providedIn: "root" })
 export class TraceContextService {
+  private current: TraceSidecar | null = null;
+
   startTrace(): TraceSidecar {
     const traceId = nonZeroHex(16);
     const spanId = nonZeroHex(8);
-    return {
+    this.current = {
       traceparent: `00-${traceId}-${spanId}-01`,
       baggage: "client=loopforge-tauri-im",
     };
+    return this.current;
+  }
+
+  childTrace(parent: TraceSidecar): TraceSidecar {
+    const traceId = traceIdFromTraceparent(parent.traceparent) || nonZeroHex(16);
+    const spanId = nonZeroHex(8);
+    this.current = {
+      traceparent: `00-${traceId}-${spanId}-01`,
+      baggage: parent.baggage,
+    };
+    return this.current;
+  }
+
+  traceId(trace: TraceSidecar): string {
+    return traceIdFromTraceparent(trace.traceparent);
+  }
+
+  currentTraceparent(): string | undefined {
+    return this.current?.traceparent;
   }
 }
