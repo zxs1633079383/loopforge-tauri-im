@@ -295,11 +295,25 @@ export class ImStoreService {
     const trimmed = text.trim();
     if (!trimmed) return;
     const temporaryId = this.genTempId();
+    const trace = this.traceContext.startTrace();
 
     // 瘦投影 im:post:sending 不带 text → 暂存供 sending 行渲染。
     this.pendingText.set(temporaryId, trimmed);
 
     try {
+      await this.bridge.recordTraceEvent({
+        name: "pc.ui.action",
+        layer: "pc.ui",
+        direction: "out",
+        traceparent: trace.traceparent,
+        payload: {
+          action: "im.send",
+          channelId,
+          text: trimmed,
+          temporaryId,
+          type: "TEXT",
+        },
+      });
       await this.bridge.invoke<void>(
         "im_send",
         {
@@ -307,7 +321,7 @@ export class ImStoreService {
           text: trimmed,
           temporaryId,
         },
-        this.traceContext.startTrace(),
+        trace,
       );
     } catch {
       // 出站失败 → 生产失败态由 helix 投影驱动；此处只清本地暂存。
@@ -457,10 +471,24 @@ export class ImStoreService {
     const trimmed = text.trim();
     if (!trimmed) return;
     const temporaryId = this.genTempId();
+    const trace = this.traceContext.startTrace();
     this.pendingText.set(temporaryId, trimmed);
     this.pendingType.set(temporaryId, "DOCUMENT");
 
     try {
+      await this.bridge.recordTraceEvent({
+        name: "pc.ui.action",
+        layer: "pc.ui",
+        direction: "out",
+        traceparent: trace.traceparent,
+        payload: {
+          action: "im.send",
+          channelId,
+          text: trimmed,
+          temporaryId,
+          type: "DOCUMENT",
+        },
+      });
       await this.bridge.invoke<void>(
         "im_send",
         {
@@ -469,7 +497,7 @@ export class ImStoreService {
           temporaryId,
           msgType: "DOCUMENT",
         },
-        this.traceContext.startTrace(),
+        trace,
       );
     } catch {
       this.markSendFailed(temporaryId);
@@ -493,8 +521,23 @@ export class ImStoreService {
   ): Promise<void> {
     const trimmed = text.trim();
     if (!trimmed || !temporaryId || !channelId) return;
+    const trace = this.traceContext.startTrace();
 
     try {
+      await this.bridge.recordTraceEvent({
+        name: "pc.ui.action",
+        layer: "pc.ui",
+        direction: "out",
+        traceparent: trace.traceparent,
+        payload: {
+          action: "im.send",
+          channelId,
+          text: trimmed,
+          temporaryId,
+          type: "TEXT",
+          mode: "resend",
+        },
+      });
       await this.bridge.invoke<void>(
         "im_send",
         {
@@ -502,7 +545,7 @@ export class ImStoreService {
           text: trimmed,
           temporaryId, // 复用原 tmp → upsert，不生成新 id
         },
-        this.traceContext.startTrace(),
+        trace,
       );
     } catch {
       // 出站失败 → 生产失败态由 helix 投影驱动；此处只清本地暂存。
@@ -2589,15 +2632,19 @@ export class ImStoreService {
     const temporaryId = d.temporary_id ?? d.temporaryId ?? "";
     if (!temporaryId) return;
     if (this._rows().some((r) => r.temporaryId === temporaryId)) {
+      let renderedRow: MessageRow | null = null;
       this.patchByTemp(temporaryId, (r) => ({
-        ...r,
-        msgId: d.msgId ?? r.msgId ?? temporaryId,
-        channelId: d.channelId ?? d.channel_id ?? r.channelId,
-        sendStatus: this.toSendStatus(d.sendStatus),
-        readBits: d.readBits ?? r.readBits,
-        text: d.text ?? r.text,
-        type: d.type ?? r.type,
+        ...(renderedRow = {
+          ...r,
+          msgId: d.msgId ?? r.msgId ?? temporaryId,
+          channelId: d.channelId ?? d.channel_id ?? r.channelId,
+          sendStatus: this.toSendStatus(d.sendStatus),
+          readBits: d.readBits ?? r.readBits,
+          text: d.text ?? r.text,
+          type: d.type ?? r.type,
+        }),
       }));
+      if (renderedRow) this.emitRenderTrace(renderedRow);
       return;
     }
 
@@ -2614,6 +2661,7 @@ export class ImStoreService {
     this._rows.update((rows) => [...rows, row]);
     // O(1) 定位锚登记（echo 据此找乐观行·issue #53·替代 findIndex 全表扫）。
     this.rememberRowAnchors(row);
+    this.emitRenderTrace(row);
   }
 
   /** im:post:send-failed：helix 真实 HTTP 失败路径吐出的 row patch，壳按 temporaryId 直绑 sendStatus。 */
@@ -2681,11 +2729,12 @@ export class ImStoreService {
     const targetMsgId = this.locateRowMsgId(keys);
 
     if (targetMsgId !== null) {
+      let renderedRow: MessageRow | null = null;
       // 覆写既有行（按稳定 msgId 命中·壳纯绑定 render-ready 字段·不再壳内合成）。
       this._rows.update((rows) =>
         rows.map((r) =>
           r.msgId === targetMsgId
-            ? {
+            ? (renderedRow = {
                 ...r,
                 msgId: serverId || r.msgId,
                 eventSeq,
@@ -2710,7 +2759,7 @@ export class ImStoreService {
                   typeof d.pinned === "boolean"
                     ? d.pinned || undefined
                     : r.pinned,
-              }
+              })
             : r,
         ),
       );
@@ -2727,6 +2776,7 @@ export class ImStoreService {
         this.pendingText.delete(temporaryId);
         this.pendingType.delete(temporaryId);
       }
+      if (renderedRow) this.emitRenderTrace(renderedRow);
       return;
     }
 
@@ -2748,6 +2798,7 @@ export class ImStoreService {
     };
     this._rows.update((rows) => [...rows, row]);
     this.rememberRowAnchors(row);
+    this.emitRenderTrace(row);
   }
 
   /** helix render-ready sendStatus 归一为壳 SendStatus（缺省/异常 → "sent"·入库成功终态）。 */
@@ -2806,10 +2857,11 @@ export class ImStoreService {
       : [`s:${row.msgId}`];
     const targetMsgId = this.locateRowMsgId(keys);
     if (targetMsgId !== null) {
+      let renderedRow: MessageRow | null = null;
       this._rows.update((rows) =>
         rows.map((r) =>
           r.msgId === targetMsgId
-            ? {
+            ? (renderedRow = {
                 ...r,
                 msgId: row.msgId || r.msgId,
                 channelId: row.channelId || r.channelId,
@@ -2819,16 +2871,33 @@ export class ImStoreService {
                 revoked: row.revoked || r.revoked,
                 createAt: row.createAt ?? r.createAt,
                 userId: row.userId || r.userId,
-              }
+              })
             : r,
         ),
       );
       // 行 msgId 已稳定 → server id 锚指向它（后续 quickReply/系统帧 server id patch O(1) 命中）。
       if (serverId) this.rowAnchorIdx.set(`s:${serverId}`, targetMsgId);
+      if (renderedRow) this.emitRenderTrace(renderedRow);
       return;
     }
     this._rows.update((rows) => (prepend ? [row, ...rows] : [...rows, row]));
     this.rememberRowAnchors(row);
+    this.emitRenderTrace(row);
+  }
+
+  private emitRenderTrace(row: MessageRow): void {
+    void this.bridge.recordTraceEvent({
+      name: "pc.ui.render",
+      layer: "pc.ui",
+      direction: "internal",
+      payload: {
+        msgId: row.msgId,
+        temporaryId: row.temporaryId,
+        channelId: row.channelId,
+        status: row.sendStatus,
+        text: row.text,
+      },
+    });
   }
 
   /**

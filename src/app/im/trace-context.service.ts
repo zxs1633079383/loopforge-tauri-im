@@ -5,6 +5,18 @@ export interface TraceSidecar {
   baggage?: string;
 }
 
+export function traceIdFromTraceparent(traceparent: string): string {
+  const parts = traceparent.trim().toLowerCase().split("-");
+  if (parts.length !== 4 || parts[1]?.length !== 32) return "";
+  return parts[1];
+}
+
+export function parentSpanIdFromTraceparent(traceparent: string): string {
+  const parts = traceparent.trim().toLowerCase().split("-");
+  if (parts.length !== 4 || parts[2]?.length !== 16) return "";
+  return parts[2];
+}
+
 function randomBytes(length: number): Uint8Array {
   const bytes = new Uint8Array(length);
   const cryptoApi = globalThis.crypto;
@@ -37,5 +49,18 @@ export class TraceContextService {
       traceparent: `00-${traceId}-${spanId}-01`,
       baggage: "client=loopforge-tauri-im",
     };
+  }
+
+  childTrace(parent: TraceSidecar): TraceSidecar {
+    const traceId = traceIdFromTraceparent(parent.traceparent) || nonZeroHex(16);
+    const spanId = nonZeroHex(8);
+    return {
+      traceparent: `00-${traceId}-${spanId}-01`,
+      baggage: parent.baggage,
+    };
+  }
+
+  traceId(trace: TraceSidecar): string {
+    return traceIdFromTraceparent(trace.traceparent);
   }
 }
