@@ -58,16 +58,18 @@ function selfTestLines() {
 }
 
 function parseJsonl(text) {
-  return text
-    .split("\n")
-    .filter((line) => line.trim())
-    .map((line, index) => {
+  const events = [];
+  const lines = text.split("\n");
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line.trim()) continue;
       try {
-        return JSON.parse(line);
+        events.push(JSON.parse(line));
       } catch (error) {
         throw new Error(`invalid JSONL line ${index + 1}: ${error.message}`);
       }
-    });
+  }
+  return events;
 }
 
 function main() {

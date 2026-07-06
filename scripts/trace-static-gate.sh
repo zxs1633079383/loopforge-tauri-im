@@ -49,11 +49,15 @@ else
   pass "src/app/im/im-store.service.ts does not write __trace"
 fi
 
-if rg -n --glob '!scripts/trace-static-gate.sh' 'default_trace_jsonl_path\(\).*src-tauri/run\.jsonl|LOOPFORGE_TRACE_JSONL.*src-tauri' crates src-tauri scripts >"$RAW_DANGER"; then
-  fail "trace JSONL default must stay under /tmp"
-  print_hits "$RAW_DANGER"
-else
+TRACE_DEFAULT=$(awk '
+  /fn default_trace_jsonl_path\(\)/ { in_fn=1; next }
+  in_fn && match($0, /"[^"]+"/) { print substr($0, RSTART + 1, RLENGTH - 2); exit }
+' crates/helix-driver-instrument/src/trace_event.rs)
+if [ "$TRACE_DEFAULT" = "/tmp/loopforge-trace/events.jsonl" ]; then
   pass "trace JSONL defaults stay under /tmp"
+else
+  printf "  observed default: %s\n" "${TRACE_DEFAULT:-<missing>}"
+  fail "trace JSONL default must stay exactly /tmp/loopforge-trace/events.jsonl"
 fi
 
 if rg -n 'payload\[[[:space:]]*["'\'']__trace["'\''][[:space:]]*\][[:space:]]*=|\.insert\([[:space:]]*["'\'']__trace["'\'']' \
