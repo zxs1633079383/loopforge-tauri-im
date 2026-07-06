@@ -1,0 +1,28 @@
+{
+  "data": [
+    {
+      "traceID": "11111111111111111111111111111111",
+      "spans": [
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000001","operationName":"pc.ui.action","startTime":1,"logs":[]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000002","operationName":"pc.tauri.invoke","startTime":2,"logs":[]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000003","operationName":"pc.tauri.command","startTime":3,"logs":[]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000004","operationName":"helix.command.accept","startTime":4,"logs":[]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000005","operationName":"helix.core.step","startTime":5,"logs":[]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000006","operationName":"helix.storage.persist","startTime":6,"logs":[]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000007","operationName":"helix.event.emit","startTime":7,"logs":[]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000008","operationName":"helix.http.request","startTime":8,"logs":[{"fields":[{"key":"event","value":"http.request.capture"}]}]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000009","operationName":"cses.http.request","startTime":9,"logs":[{"fields":[{"key":"event","value":"http.request.capture"}]}]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000010","operationName":"cses.handler.create_post","startTime":10,"logs":[]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000011","operationName":"cses.service.create_post","startTime":11,"logs":[]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000012","operationName":"cses.store.create_post","startTime":12,"logs":[]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000013","operationName":"cses.ws.publish","startTime":13,"logs":[{"fields":[{"key":"event","value":"ws.payload.capture"}]}]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000014","operationName":"cses.ws.fanout","startTime":14,"logs":[]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000015","operationName":"cses.ws.deliver","startTime":15,"logs":[{"fields":[{"key":"event","value":"ws.payload.capture"}]}]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000016","operationName":"helix.ws.recv","startTime":16,"logs":[]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000017","operationName":"helix.event.emit","startTime":17,"logs":[]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000018","operationName":"pc.tauri.app_emit","startTime":18,"logs":[]},
+        {"traceID":"11111111111111111111111111111111","spanID":"0000000000000019","operationName":"pc.ui.render","startTime":19,"logs":[]}
+      ]
+    }
+  ]
+}
