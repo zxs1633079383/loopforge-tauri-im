@@ -289,12 +289,24 @@ Capture event 示例：
 
 ## 9. 发送消息完整链路验收
 
+验收命令不暴露 Collector / Jaeger 配置。端点、采样率、capture 规则必须写入各仓脚本读取的 repo-local 配置：
+
+- PC: `loopforge-tauri-im/config/dev-local.json` + `scripts/trace-env.sh`
+- Mobile: `mobile-qucik-c++/config/mobile-local.json` + `scripts/trace-env.sh`
+- Go: `cses-im-server/config.yaml` 或 Consul KV
+- Helix: host profile config 或 FFI host 传入的 trace config
+
+真实运行默认全部开启：
+
+- dev / real-chain profile 中 `observability.otel.enabled=true`。
+- dev / real-chain profile 中 `capture.enabled=true`。
+- HTTP headers/body 默认 include `.*`，WS action/payload 默认 include `.*`。
+- 禁止要求使用者每次在命令行手动传 `OTEL_EXPORTER_OTLP_ENDPOINT` / `JAEGER_QUERY_URL`；脚本内部从配置读取，并允许本地临时 override。
+
 PC 必须可执行：
 
 ```bash
 cd /System/Volumes/Data/workspace/rust/loopforge-tauri-im
-OTEL_EXPORTER_OTLP_ENDPOINT=http://opentelemetry-collector.monitoring.svc.cluster.local:4317 \
-JAEGER_QUERY_URL=http://192.168.6.66:32281 \
 bash scripts/otel-pc-send-trace-smoke.sh
 ```
 
@@ -302,8 +314,6 @@ Mobile 必须可执行：
 
 ```bash
 cd /System/Volumes/Data/workspace/c/mobile-qucik-c++
-OTEL_EXPORTER_OTLP_ENDPOINT=http://opentelemetry-collector.monitoring.svc.cluster.local:4317 \
-JAEGER_QUERY_URL=http://192.168.6.66:32281 \
 REAL_CHAIN_CASE=UC-1.1 make real-chain-trace
 ```
 
@@ -319,7 +329,208 @@ REAL_CHAIN_CASE=UC-1.1 make real-chain-trace
 - 断言 WS capture 中包含 action、target userId、payload full content。
 - 断言 capture disabled profile 下没有 full body / full payload span event。
 
-## 10. Jaeger Gate Required Spans
+## 10. 发送消息 Trace 链路铺开展示
+
+### 10.1 PC 完整链路
+
+```text
+trace_id=<same 32 hex trace id>
+
+pc.ui.action
+  direction=outbound
+  attrs: ui.action=im.send, component=ImComposer, temporary_id=<tmp>
+  event: ui.input.capture(text length only by default; full text only when capture rule allows)
+
+  -> pc.tauri.invoke
+     direction=outbound
+     attrs: tauri.command=im_send, payload.bytes=N
+     sidecar: __trace.traceparent propagated, business payload unchanged
+
+     -> pc.tauri.command
+        direction=inbound
+        attrs: tauri.command=im_send, accepted=true
+        action: strip __trace, pass TraceCarrier to Helix command queue
+
+        -> helix.command.accept
+           direction=inbound
+           attrs: helix.command=im.send, trace.source=pc.tauri
+
+           -> helix.core.step
+              attrs: tick.kind=command, effects.count=N
+
+              -> helix.storage.persist
+                 direction=outbound
+                 attrs: storage.tables=message, storage.ops.count=N, temporary_id=<tmp>
+                 note: local optimistic message persisted
+
+              -> helix.event.emit
+                 direction=outbound
+                 attrs: event.name=im:post:sending, payload.bytes=N
+
+              -> helix.http.request
+                 direction=outbound
+                 attrs: http.method=POST, url.path=/api/cses/posts/create
+                 event: http.request.capture(headers/body by regex policy)
+
+                 -> cses.http.request
+                    direction=inbound
+                    attrs: http.method=POST, http.route=/api/cses/posts/create, user.id=444, company.id=64118eebd2b665246b7880eb
+                    event: http.request.capture(headers/body by regex policy)
+
+                    -> cses.handler.create_post
+                       attrs: handler.name=create_post, channel.id=<channel>, temporary_id=<tmp>
+
+                       -> cses.service.create_post
+                          attrs: service.name=post, operation=create
+
+                          -> cses.store.create_post
+                             attrs: db.system=postgresql, db.operation=insert, table=post, rows.affected=1
+
+                          -> cses.ws.publish
+                             direction=outbound
+                             attrs: ws.action=posted, channel.id=<channel>
+                             event: ws.payload.capture(action,target userId/userIds/viewers,payload full content)
+
+                             -> cses.ws.fanout
+                                attrs: viewer.count=N, local.count=N, remote.count=N
+
+                                -> cses.ws.deliver
+                                   direction=outbound
+                                   attrs: user.id=444, connection.id=<conn>
+                                   event: ws.payload.capture(payload full content)
+
+                                   -> helix.ws.recv
+                                      direction=inbound
+                                      attrs: ws.action=posted, ws.seq=<seq>, payload.bytes=N
+
+                                      -> helix.core.step
+                                         attrs: tick.kind=inbound, effects.count=N
+
+                                         -> helix.storage.persist
+                                            attrs: storage.tables=message/channel_event_cursor, storage.ops.count=N
+
+                                         -> helix.event.emit
+                                            attrs: event.name=im:post:received, payload.bytes=N
+
+                                            -> pc.tauri.app_emit
+                                               direction=outbound
+                                               attrs: event.channel=im:__bus__
+
+                                               -> pc.ui.render
+                                                  direction=inbound
+                                                  attrs: event.channel=im:post:received, dom.anchor=<message row>
+```
+
+PC gate 必须从这条链里证明四件事：
+
+- HTTP capture 看得到请求头和请求体。
+- WS capture 看得到 action、推送 userId / userIds / viewers、payload 全内容。
+- optimistic `im:post:sending` 和 server echo `im:post:received` 都在同一个 trace。
+- DOM/render 不是靠 HTTP 成功推断，而是由 `pc.ui.render` span 和 WDIO evidence 证明。
+
+### 10.2 Mobile 完整链路
+
+```text
+trace_id=<same 32 hex trace id>
+
+mobile.js.im_send
+  direction=outbound
+  attrs: command=im.send, temporary_id=<tmp>, channel.id=<channel>
+  action: TraceContext.localRoot() creates trace internally; public im.send(input) has no trace arg
+
+  -> mobile.quickjs.call
+     direction=outbound
+     attrs: core.command=im_send, payload.bytes=N
+     action: native binding keeps payload and trace as separate JSON values
+
+     -> mobile.cpp.call_with_trace
+        direction=outbound
+        attrs: core.command=im_send, rc=0
+        action: CoreBridge::callWithTrace(payload_json, trace_json)
+
+        -> mobile.ffi.command
+           direction=outbound
+           attrs: ffi.abi=helix_command_with_trace, command=im_send
+
+           -> helix.command.accept
+              direction=inbound
+              attrs: helix.command=im.send, trace.source=mobile-quickjs
+
+              -> helix.core.step
+                 attrs: tick.kind=command, effects.count=N
+
+                 -> helix.storage.persist
+                    attrs: storage.tables=message, storage.ops.count=N, temporary_id=<tmp>
+
+                 -> helix.event.emit
+                    attrs: event.name=im:post:sending, payload.bytes=N
+
+                 -> helix.http.request
+                    direction=outbound
+                    attrs: http.method=POST, url.path=/api/cses/posts/create
+                    event: http.request.capture(headers/body by regex policy)
+
+                    -> cses.http.request
+                       direction=inbound
+                       attrs: http.method=POST, http.route=/api/cses/posts/create, user.id=444, company.id=64118eebd2b665246b7880eb
+                       event: http.request.capture(headers/body by regex policy)
+
+                       -> cses.handler.create_post
+                          attrs: handler.name=create_post, channel.id=<channel>, temporary_id=<tmp>
+
+                          -> cses.service.create_post
+                             attrs: service.name=post, operation=create
+
+                             -> cses.store.create_post
+                                attrs: db.system=postgresql, db.operation=insert, table=post, rows.affected=1
+
+                             -> cses.ws.publish
+                                direction=outbound
+                                attrs: ws.action=posted, channel.id=<channel>
+                                event: ws.payload.capture(action,target userId/userIds/viewers,payload full content)
+
+                                -> cses.ws.fanout
+                                   attrs: viewer.count=N, local.count=N, remote.count=N
+
+                                   -> cses.ws.deliver
+                                      direction=outbound
+                                      attrs: user.id=444, connection.id=<conn>
+                                      event: ws.payload.capture(payload full content)
+
+                                      -> helix.ws.recv
+                                         direction=inbound
+                                         attrs: ws.action=posted, ws.seq=<seq>, payload.bytes=N
+
+                                         -> helix.core.step
+                                            attrs: tick.kind=inbound, effects.count=N
+
+                                            -> helix.storage.persist
+                                               attrs: storage.tables=message/channel_event_cursor, storage.ops.count=N
+
+                                            -> helix.event.emit
+                                               attrs: event.name=im:post:received, payload.bytes=N
+
+                                               -> mobile.cpp.event_batch
+                                                  direction=inbound
+                                                  attrs: batch.bytes=N, events.count=N
+
+                                                  -> mobile.js.event_drain
+                                                     direction=inbound
+                                                     attrs: events.count=N
+
+                                                     -> mobile.render
+                                                        direction=inbound
+                                                        attrs: event.channel=im:post:received
+```
+
+Mobile gate 必须从这条链里证明四件事：
+
+- `im.send(input)` 公共调用面没有 trace 参数。
+- QuickJS / C++ / FFI 三层都保持 payload 和 trace 分离。
+- HTTP 和 WS capture 都在同一个 trace id 内。
+- mobile render 由 real-chain report 的 bus/projection/render evidence 证明，不能只靠 gtest 或 manifest。
+
+## 11. Jaeger Gate Required Spans
 
 PC 必须包含：
 
@@ -371,7 +582,7 @@ mobile.js.event_drain
 mobile.render
 ```
 
-## 11. 实现分层
+## 12. 实现分层
 
 ### Go
 
@@ -400,7 +611,8 @@ mobile.render
 - `src/app/im/trace-context.service.ts`：支持 debug capture baggage。
 - `src/app/im/tauri-bridge.service.ts`：只在 bridge 层注入 `__trace`。
 - `src-tauri/src/otel.rs`：初始化 OTel exporter。
-- `scripts/otel-pc-send-trace-smoke.sh`：真实 PC send trace gate。
+- `scripts/trace-env.sh`：读取 repo-local trace 配置，并只在脚本内部导出 Collector / Jaeger 运行时变量。
+- `scripts/otel-pc-send-trace-smoke.sh`：真实 PC send trace gate；调用方不需要显式传 endpoint。
 - `scripts/otel-trace-check.mjs`：从 count-only 升级为 span 存在 + trace id + ordering + capture event 检查。
 
 ### Mobile
@@ -410,10 +622,11 @@ mobile.render
 - `cpp/TraceContext.*`：保持本地 root trace 生成。
 - `cpp/OtelRuntime.*`：C++ OTel 初始化和 RAII span。
 - `quickjs/bind_mobile_im.cpp`：`im.send(...)` 内部生成 sidecar，调用 `CoreBridge::callWithTrace`。
+- `scripts/trace-env.sh`：读取 `config/mobile-local.json`，并只在脚本内部导出 Collector / Jaeger 运行时变量。
 - `scripts/real-chain/run-real-chain.mjs`：记录 trace id 和 Jaeger evidence。
 - `Makefile`：新增 `real-chain-trace`。
 
-## 12. Test Compensation
+## 13. Test Compensation
 
 每仓最低测试：
 
@@ -424,32 +637,37 @@ mobile.render
 
 Collector 不能说 green；只有 Jaeger gate + repo-local test 都通过后，collector 才能把节点标为 green。
 
-## 13. 安全与性能
+## 14. 安全与性能
 
-- full capture 只用于 debug/test profile；生产 profile 可打开 metadata-only trace。
+- dev / real-chain 真实运行 profile 默认全部开启：OTel enabled、capture enabled、HTTP include `.*`、WS include `.*`。
+- production profile 默认 metadata + headers allowlist；如需 full body / full WS payload capture，必须通过配置显式开启，且带采样率、TTL、redaction 和 max bytes。
+- 脚本必须从 repo-local config 读取 endpoint 与 Jaeger Query base，不把关键端点要求暴露为每次命令行参数。
 - OTel exporter 初始化失败必须降级 noop，不影响业务启动。
 - Capture 不允许二次读 body 导致 handler 收不到 body。
 - Go request body 只在 configured max bytes 内读入；超过上限仍恢复原 body，使业务完整读取。
 - WS payload 已经在内存中时只做一次 bounded copy；不要为了 trace 重新 marshal 大对象。
 - Regex 编译失败时启动失败或该 capture policy 失效并记录配置错误，不在请求热路径编译 regex。
 
-## 14. 验收定义
+## 15. 验收定义
 
 完成态必须同时满足：
 
 - 四仓配置指向同一个 Collector endpoint。
+- PC / mobile 的 trace smoke 命令无需显式传 endpoint；脚本内部从配置读取。
+- PC / mobile 真实运行默认开启 OTel + capture 全量规则。
 - PC 和 mobile 都能跑出一个真实 trace id。
 - Jaeger Query 能查到该 trace id。
 - Gate 断言 required span、父子/顺序、HTTP capture、WS capture 全部通过。
 - `scripts/trace-static-gate.sh` 类静态 gate 证明 trace 不进入业务 payload / core / projection。
 - Debug evidence 明确区分 HTTP 成功、Go DB 成功、WS push 成功、Helix projection 成功、PC DOM / mobile render 成功。
 
-## 15. Open Decisions
+## 16. Open Decisions
 
 本 Spec 已默认选择：
 
-- debug capture 启用后默认全量匹配。
-- production profile 推荐 metadata-only，除非显式打开 full capture。
+- dev / real-chain 真实运行默认全部开启，包含 HTTP headers/body 和 WS action/target/payload full capture。
+- 命令行不暴露 Collector / Jaeger endpoint；脚本从 repo-local config 读取。
+- production profile 推荐 metadata + headers allowlist，除非显式打开 full capture。
 - Jaeger gate 使用 Query API base `http://192.168.6.66:32281`，不是 UI `/search` URL。
 
 需要你 review 的唯一产品取舍：
