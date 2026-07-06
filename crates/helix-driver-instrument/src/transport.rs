@@ -11,12 +11,19 @@ use helix_core::PortError;
 use crate::event::{Facet, Hop};
 use crate::mode::Mode;
 use crate::recording::Recording;
+use crate::TraceDirection;
 use crate::util::payload_from_bytes;
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<T: Transport> Transport for Recording<T> {
     async fn connect(&mut self) -> Result<(), PortError> {
+        self.ctx.trace(
+            "helix.ws.connect",
+            "helix",
+            TraceDirection::Out,
+            serde_json::json!({"op": "connect", "mode": format!("{:?}", self.ctx.mode())}),
+        );
         self.ctx.log(
             Facet::Outbound,
             Hop::Lifecycle,
@@ -30,8 +37,10 @@ impl<T: Transport> Transport for Recording<T> {
 
     async fn send(&self, frame: Bytes) -> Result<(), PortError> {
         // facet ① 出站帧：所有模式都 tee（回放期也要断言 helix 发了什么）。
+        let payload = payload_from_bytes(&frame);
         self.ctx
-            .log(Facet::Outbound, Hop::WsSend, payload_from_bytes(&frame));
+            .trace("helix.ws.send", "helix", TraceDirection::Out, payload.clone());
+        self.ctx.log(Facet::Outbound, Hop::WsSend, payload);
         match self.ctx.mode() {
             Mode::Replay => Ok(()), // 回放不真发
             _ => self.inner.send(frame).await,
@@ -44,16 +53,20 @@ impl<T: Transport> Transport for Recording<T> {
                 // 从 tape 取下一帧（锁内取值后即释放，不跨 await）。
                 let next = self.ctx.with_tape(|t| t.next_inbound());
                 if let Some(b) = &next {
+                    let payload = payload_from_bytes(b);
                     self.ctx
-                        .log(Facet::WsRecv, Hop::WsRecv, payload_from_bytes(b));
+                        .trace("helix.ws.recv", "helix", TraceDirection::In, payload.clone());
+                    self.ctx.log(Facet::WsRecv, Hop::WsRecv, payload);
                 }
                 Ok(next)
             }
             mode => {
                 let frame = self.inner.recv().await?;
                 if let Some(b) = &frame {
+                    let payload = payload_from_bytes(b);
                     self.ctx
-                        .log(Facet::WsRecv, Hop::WsRecv, payload_from_bytes(b));
+                        .trace("helix.ws.recv", "helix", TraceDirection::In, payload.clone());
+                    self.ctx.log(Facet::WsRecv, Hop::WsRecv, payload);
                     if mode == Mode::Record {
                         self.ctx.with_tape(|t| t.record_inbound(b));
                     }
@@ -64,6 +77,12 @@ impl<T: Transport> Transport for Recording<T> {
     }
 
     async fn close(&self) -> Result<(), PortError> {
+        self.ctx.trace(
+            "helix.ws.close",
+            "helix",
+            TraceDirection::Out,
+            serde_json::json!({"op": "close"}),
+        );
         self.ctx
             .log(Facet::Outbound, Hop::Lifecycle, serde_json::json!({"op": "close"}));
         match self.ctx.mode() {

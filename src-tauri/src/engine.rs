@@ -38,9 +38,7 @@ use std::sync::Arc;
 use helix_core::effect::TransportId;
 use helix_core::ports::Transport;
 use helix_core::{ExecutionShell, Tick};
-use helix_driver_host::{
-    run_engine_loop, EngineDeps, RecordingSink, TransportTable,
-};
+use helix_driver_host::{run_engine_loop, EngineDeps, RecordingSink, TransportTable};
 use helix_driver_instrument::util::payload_from_bytes;
 use helix_driver_instrument::{Facet, Hop, InstrumentCtx, Recording};
 use helix_driver_native::{
@@ -182,9 +180,8 @@ pub async fn spawn(
         .iter()
         .map(|(n, v)| (n.to_string(), v.to_string()))
         .collect();
-    let mut transport =
-        NativeTransport::new(ws_url.clone(), main_transport, Some(tick_tx.clone()))
-            .with_handshake_headers(ws_headers);
+    let mut transport = NativeTransport::new(ws_url.clone(), main_transport, Some(tick_tx.clone()))
+        .with_handshake_headers(ws_headers);
     match transport.connect().await {
         Ok(()) => tracing::info!(transport_id = main_transport.raw(), "主 WS 已连接"),
         Err(e) => tracing::error!(error = %e, "主 WS 连接失败——仍进泵，Send 走 warn 兜底"),
@@ -215,7 +212,11 @@ pub async fn spawn(
         event_sink,
         Arc::new(move |ev: &helix_core::effect::DomainEventBytes| {
             // facet② 投影：唯一 tee 落点（bus 桥不再重复 log，防双计）。
-            projection_ctx.log(Facet::Projection, Hop::Projection, payload_from_bytes(&ev.0));
+            projection_ctx.log(
+                Facet::Projection,
+                Hop::Projection,
+                payload_from_bytes(&ev.0),
+            );
         }),
     );
 
@@ -233,7 +234,7 @@ pub async fn spawn(
     };
 
     // ── bus → app.emit 桥 + 就绪 probe（消费 broadcast；facet② tee 已收敛 RecordingSink）──
-    spawn_bus_bridge(app, probe, event_rx);
+    spawn_bus_bridge(app, ctx.clone(), probe, event_rx);
 
     // ── 跑泵（host 泛型壳，单一 pump 核）───────────────────────────────────────────
     let (_shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
@@ -275,6 +276,7 @@ const QUIESCE_WINDOW_MS: u64 = 1500;
 /// resync 信号）。
 fn spawn_bus_bridge(
     app: AppHandle,
+    ctx: InstrumentCtx,
     probe: Arc<ReadinessProbe>,
     rx: tokio::sync::broadcast::Receiver<helix_core::effect::DomainEventBytes>,
 ) {
@@ -310,6 +312,15 @@ fn spawn_bus_bridge(
                     }
                     // im:__bus__ 信封透传前端（单总线，前端 dispatcher 按 event 名分发）。
                     let envelope = to_bus_envelope(&ev);
+                    ctx.trace(
+                        "pc.tauri.event.emit",
+                        "pc.tauri",
+                        helix_driver_instrument::TraceDirection::Out,
+                        serde_json::json!({
+                            "event": BUS_CHANNEL,
+                            "payload": payload_from_bytes(&ev.0),
+                        }),
+                    );
                     if let Err(e) = app.emit(BUS_CHANNEL, &envelope) {
                         tracing::warn!(error = %e, "app.emit(im:__bus__) 失败");
                     }

@@ -11,6 +11,7 @@ use helix_core::PortError;
 use crate::event::{Facet, Hop};
 use crate::mode::Mode;
 use crate::recording::Recording;
+use crate::TraceDirection;
 use crate::util::payload_from_bytes;
 
 fn req_key(req: &HttpRequest) -> String {
@@ -31,8 +32,15 @@ fn req_payload(req: &HttpRequest) -> serde_json::Value {
 impl<H: HttpRequester> HttpRequester for Recording<H> {
     async fn request(&self, req: HttpRequest) -> Result<HttpResponse, PortError> {
         // facet ① 出站命令体：所有模式都 tee。
+        let request_payload = req_payload(&req);
+        self.ctx.trace(
+            "helix.http.request",
+            "helix",
+            TraceDirection::Out,
+            request_payload.clone(),
+        );
         self.ctx
-            .log(Facet::Outbound, Hop::HttpReq, req_payload(&req));
+            .log(Facet::Outbound, Hop::HttpReq, request_payload);
         let key = req_key(&req);
         let mode = self.ctx.mode();
 
@@ -47,10 +55,18 @@ impl<H: HttpRequester> HttpRequester for Recording<H> {
                 let resp = self.ctx.with_tape(|t| t.next_http(&key));
                 match resp {
                     Some(r) => {
+                        let response_payload =
+                            serde_json::json!({"status": r.status, "body": payload_from_bytes(&r.body)});
+                        self.ctx.trace(
+                            "helix.http.response",
+                            "helix",
+                            TraceDirection::In,
+                            response_payload.clone(),
+                        );
                         self.ctx.log(
                             Facet::WsRecv,
                             Hop::HttpResp,
-                            serde_json::json!({"status": r.status, "body": payload_from_bytes(&r.body)}),
+                            response_payload,
                         );
                         Ok(r)
                     }
@@ -64,13 +80,45 @@ impl<H: HttpRequester> HttpRequester for Recording<H> {
                 if mode == Mode::Record {
                     self.ctx.with_tape(|t| t.record_http(key, &resp));
                 }
+                let response_payload =
+                    serde_json::json!({"status": resp.status, "body": payload_from_bytes(&resp.body)});
+                self.ctx.trace(
+                    "helix.http.response",
+                    "helix",
+                    TraceDirection::In,
+                    response_payload.clone(),
+                );
                 self.ctx.log(
                     Facet::WsRecv,
                     Hop::HttpResp,
-                    serde_json::json!({"status": resp.status, "body": payload_from_bytes(&resp.body)}),
+                    response_payload,
                 );
                 Ok(resp)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::Bytes;
+
+    #[test]
+    fn http_trace_payload_includes_headers_and_body() {
+        let req = HttpRequest {
+            method: "POST".to_string(),
+            url: "posts/create?debug=1".to_string(),
+            headers: vec![(
+                "traceparent".to_string(),
+                "00-00000000000000000000000000000001-0000000000000002-01".to_string(),
+            )],
+            body: Some(Bytes::from_static(br#"{"message":"hello"}"#)),
+        };
+        let payload = req_payload(&req);
+        assert_eq!(payload["method"], "POST");
+        assert_eq!(payload["url"], "posts/create?debug=1");
+        assert_eq!(payload["headers"][0][0], "traceparent");
+        assert_eq!(payload["body"]["message"], "hello");
     }
 }
