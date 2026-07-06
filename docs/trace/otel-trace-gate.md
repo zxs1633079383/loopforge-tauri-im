@@ -94,7 +94,7 @@ node scripts/trace-jsonl-check.mjs --input /tmp/loopforge-trace/events.jsonl --t
 node scripts/trace-jsonl-check.mjs --self-test
 ```
 
-The JSONL checker requires one correlated trace id to contain PC action/invoke/listen/render, Tauri command enqueue/event emit, HTTP request/response, and WS connect/send/recv/close events. This is the local sidecar evidence; Jaeger Query remains the remote OTel evidence.
+The JSONL checker requires one correlated `im.send(...)` trace id to contain PC action/invoke/listen/render, Tauri command enqueue/event emit, HTTP request/response, and WS recv events. WS connect/send/close are lifecycle boundaries rather than per-send causal spans, so `scripts/trace-static-gate.sh` guards that those instrumentation points stay present in source. JSONL is the local sidecar evidence; Jaeger Query remains the remote OTel evidence.
 
 ## Span semantics
 

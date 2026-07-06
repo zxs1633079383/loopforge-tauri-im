@@ -68,6 +68,14 @@ else
   pass "business payload builders do not insert __trace"
 fi
 
+for name in helix.ws.connect helix.ws.send helix.ws.recv helix.ws.close; do
+  if rg -q "\"$name\"" crates/helix-driver-instrument/src/transport.rs src-tauri/src/engine.rs; then
+    pass "WS trace event is instrumented: $name"
+  else
+    fail "missing WS trace instrumentation for $name"
+  fi
+done
+
 rg -0 -l 'TraceContext|__trace|traceparent|baggage|otel|opentelemetry' \
   src src-tauri scripts config >"$TRACE_FILES" || true
 
