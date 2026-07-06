@@ -79,6 +79,22 @@ node scripts/otel-trace-check.mjs --self-test
 node scripts/otel-trace-check.mjs --input /path/to/jaeger-trace-response.json <trace-id>
 ```
 
+## Trace JSONL
+
+Loopforge trace events are written to `/tmp/loopforge-trace/events.jsonl` by default.
+Override with:
+
+```bash
+LOOPFORGE_TRACE_JSONL=/tmp/loopforge-trace/my-run.jsonl bash scripts/run.sh -- --spec test/specs/uc-send-1.e2e.mjs
+```
+
+Validate the local evidence:
+
+```bash
+node scripts/trace-jsonl-check.mjs --input /tmp/loopforge-trace/events.jsonl --trace-id <trace-id>
+node scripts/trace-jsonl-check.mjs --self-test
+```
+
 ## Span semantics
 
 The checker accepts one client action span, one client bridge span, all fixed Helix / cses middle spans, and one client render span.
