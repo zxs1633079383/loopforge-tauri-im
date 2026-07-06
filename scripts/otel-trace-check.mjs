@@ -10,7 +10,7 @@ const clientSpanGroups = [
   },
   {
     label: "client bridge",
-    alternatives: ["pc.tauri.invoke", "mobile.core_bridge.call_with_trace"],
+    alternatives: ["pc.tauri.invoke", "pc.tauri.invoke.out", "pc.tauri.invoke.in", "mobile.core_bridge.call_with_trace"],
   },
   {
     label: "client render",

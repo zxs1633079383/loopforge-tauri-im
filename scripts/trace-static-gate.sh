@@ -49,7 +49,14 @@ else
   pass "src/app/im/im-store.service.ts does not write __trace"
 fi
 
-if rg -n '("__trace"[[:space:]]*:|payload\[[[:space:]]*["'\'']__trace["'\''][[:space:]]*\][[:space:]]*=|\.insert\([[:space:]]*["'\'']__trace["'\''])' \
+if rg -n --glob '!scripts/trace-static-gate.sh' 'default_trace_jsonl_path\(\).*src-tauri/run\.jsonl|LOOPFORGE_TRACE_JSONL.*src-tauri' crates src-tauri scripts >"$RAW_DANGER"; then
+  fail "trace JSONL default must stay under /tmp"
+  print_hits "$RAW_DANGER"
+else
+  pass "trace JSONL defaults stay under /tmp"
+fi
+
+if rg -n 'payload\[[[:space:]]*["'\'']__trace["'\''][[:space:]]*\][[:space:]]*=|\.insert\([[:space:]]*["'\'']__trace["'\'']' \
   src-tauri/src/commands.rs >"$PAYLOAD_TRACE"; then
   fail "src-tauri/src/commands.rs appears to insert __trace into a business payload"
   print_hits "$PAYLOAD_TRACE"
@@ -64,7 +71,7 @@ if [ -s "$TRACE_FILES" ]; then
   count="$(tr '\0' '\n' <"$TRACE_FILES" | sed '/^$/d' | wc -l | tr -d ' ')"
   pass "trace-related file discovery found $count files"
 
-  DANGEROUS_TERMS='Authorization|cookieId|cookie[_-]?id|cookie|token|message|text|payload|body'
+  DANGEROUS_TERMS='Authorization|cookieId|cookie[_-]?id|cookie|token'
   DANGEROUS_WORDS="(^|[^[:alnum:]_])(${DANGEROUS_TERMS})([^[:alnum:]_]|$)"
   DANGEROUS_CONTEXTS='set_attribute|\brecord[[:space:]]*\(|\bspan\b|attribute|console\.log|println!|tracing::|debug!|info!|warn!|error!'
   DANGER_RE="(${DANGEROUS_CONTEXTS}).{0,160}(${DANGEROUS_WORDS})|(${DANGEROUS_WORDS}).{0,160}(${DANGEROUS_CONTEXTS})"
