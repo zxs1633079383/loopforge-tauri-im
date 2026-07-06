@@ -38,9 +38,7 @@ use std::sync::Arc;
 use helix_core::effect::TransportId;
 use helix_core::ports::Transport;
 use helix_core::{ExecutionShell, Tick};
-use helix_driver_host::{
-    run_engine_loop, EngineDeps, RecordingSink, TransportTable,
-};
+use helix_driver_host::{run_engine_loop, EngineDeps, RecordingSink, TraceHooks, TransportTable};
 use helix_driver_instrument::util::payload_from_bytes;
 use helix_driver_instrument::{Facet, Hop, InstrumentCtx, Recording};
 use helix_driver_native::{
@@ -229,6 +227,7 @@ pub async fn spawn(
         http: Arc::new(recording_http),
         event_sink: Arc::new(recording_sink),
         clock: recording_clock,
+        trace: TraceHooks::noop(),
         max_http_inflight,
     };
 
