@@ -382,6 +382,7 @@ pub async fn im_send(
             "type": &msg_type,
         }),
     );
+    let mut accepted_traceparent = None;
     if let Some(raw_trace) = __trace.as_ref() {
         match normalize_trace_sidecar(raw_trace) {
             Ok(trace) => {
@@ -401,6 +402,7 @@ pub async fn im_send(
                         }
                     }),
                 );
+                accepted_traceparent = Some(trace.traceparent.clone());
                 tracing::debug!(
                     traceparent = %trace.traceparent,
                     baggage_present = trace.baggage.is_some(),
@@ -419,10 +421,18 @@ pub async fn im_send(
     // helix 兜底——出站 send_build.rs（空→TEXT）+ 入站 parser.rs（空→TEXT）双端下沉。壳不补 type →
     // 纯壳不变量 IpcIn.args ≡ Inbound.args 成立（旧「壳补 TEXT 致 ipc-in.type=null ≠ inbound」已消除）。
     // DOCUMENT 等富媒体仍显式透传真值（UC-1.2·msg_type=Some("DOCUMENT")）。
-    let tick = command(
-        "im_send_message",
-        send_payload(channel_id, text, temporary_id, msg_type),
+    let payload = send_payload(channel_id, text, temporary_id, msg_type);
+    state.ctx.trace_with_ids(
+        "pc.tauri.command.enqueue",
+        "pc.tauri",
+        TraceDirection::Internal,
+        accepted_traceparent.as_deref(),
+        serde_json::json!({
+            "cmd": "im_send_message",
+            "payload": payload.clone(),
+        }),
     );
+    let tick = command("im_send_message", payload);
     state
         .tick_tx
         .send(tick)
