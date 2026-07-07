@@ -18,6 +18,7 @@
 //! `send` 退化为对内层 `mpsc::Sender` 的纯透传。
 
 use helix_core::Tick;
+use helix_driver_host::{CommandTraceQueue, TraceCarrier};
 #[cfg(feature = "webdriver")]
 use helix_driver_instrument::util::payload_from_bytes;
 use helix_driver_instrument::InstrumentCtx;
@@ -28,6 +29,7 @@ use tokio::sync::mpsc;
 #[derive(Clone)]
 pub struct TeeTickSender {
     inner: mpsc::Sender<Tick>,
+    command_traces: CommandTraceQueue,
     /// 仪表上下文（仅 webdriver feature 下 Inbound tee 用）。
     #[cfg(feature = "webdriver")]
     ctx: InstrumentCtx,
@@ -36,25 +38,62 @@ pub struct TeeTickSender {
 impl TeeTickSender {
     /// 包装内层发送端。`ctx` 仅 webdriver feature 下保留（release 丢弃 → 无仪表残留）。
     #[cfg(feature = "webdriver")]
-    pub fn new(inner: mpsc::Sender<Tick>, ctx: InstrumentCtx) -> Self {
-        Self { inner, ctx }
+    pub fn new(
+        inner: mpsc::Sender<Tick>,
+        ctx: InstrumentCtx,
+        command_traces: CommandTraceQueue,
+    ) -> Self {
+        Self {
+            inner,
+            command_traces,
+            ctx,
+        }
     }
 
     /// release 形态：不保留 ctx（Inbound tee 不编入）。
     #[cfg(not(feature = "webdriver"))]
-    pub fn new(inner: mpsc::Sender<Tick>, _ctx: InstrumentCtx) -> Self {
-        Self { inner }
+    pub fn new(
+        inner: mpsc::Sender<Tick>,
+        _ctx: InstrumentCtx,
+        command_traces: CommandTraceQueue,
+    ) -> Self {
+        Self {
+            inner,
+            command_traces,
+        }
     }
 
     /// 入泵（与 `mpsc::Sender::send` 同签名）。webdriver feature 下对 `Tick::Command` 旁路 tee
     /// `Facet::Inbound {command, args}`，再透传内层；release 纯透传。
     pub async fn send(&self, tick: Tick) -> Result<(), mpsc::error::SendError<Tick>> {
+        self.send_with_trace(tick, None).await
+    }
+
+    /// 入泵并携带与该 command 对齐的 trace sidecar。失败时回滚队列槽，避免下一条
+    /// `Tick::Command` 误消费本次 trace。
+    pub async fn send_with_trace(
+        &self,
+        tick: Tick,
+        trace: Option<TraceCarrier>,
+    ) -> Result<(), mpsc::error::SendError<Tick>> {
         #[cfg(feature = "webdriver")]
         if let Tick::Command(ref cmd) = tick {
             // args = payload bytes 解析回 JSON（reducer 纯壳不变量逐字段比对·casing 归一在 reducer）。
             self.ctx
                 .log_inbound(&cmd.name, payload_from_bytes(&cmd.payload));
         }
-        self.inner.send(tick).await
+        let is_command = matches!(tick, Tick::Command(_));
+        if is_command {
+            self.command_traces.push_slot(trace);
+        }
+        match self.inner.send(tick).await {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                if is_command {
+                    self.command_traces.rollback_last();
+                }
+                Err(error)
+            }
+        }
     }
 }

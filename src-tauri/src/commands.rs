@@ -8,6 +8,7 @@
 use bytes::Bytes;
 use helix_core::tick::AppCommand;
 use helix_core::Tick;
+use helix_driver_host::TraceCarrier;
 use helix_driver_instrument::TraceDirection;
 use tauri::State;
 
@@ -383,6 +384,7 @@ pub async fn im_send(
         }),
     );
     let mut accepted_traceparent = None;
+    let mut accepted_trace_carrier = None;
     if let Some(raw_trace) = __trace.as_ref() {
         match normalize_trace_sidecar(raw_trace) {
             Ok(trace) => {
@@ -403,6 +405,11 @@ pub async fn im_send(
                     }),
                 );
                 accepted_traceparent = Some(trace.traceparent.clone());
+                accepted_trace_carrier = Some(TraceCarrier {
+                    traceparent: Some(trace.traceparent.clone()),
+                    baggage: trace.baggage.clone(),
+                    raw_json: None,
+                });
                 tracing::debug!(
                     traceparent = %trace.traceparent,
                     baggage_present = trace.baggage.is_some(),
@@ -435,7 +442,7 @@ pub async fn im_send(
     let tick = command("im_send_message", payload);
     state
         .tick_tx
-        .send(tick)
+        .send_with_trace(tick, accepted_trace_carrier)
         .await
         .map_err(|e| format!("im_send: 入泵失败（泵已退出？）：{e}"))
 }
