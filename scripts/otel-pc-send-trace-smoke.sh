@@ -15,6 +15,7 @@ CSES_IM_ROOT="${CSES_IM_ROOT:-$DEFAULT_CSES_IM_ROOT}"
 CSES_HEALTH_URL="${CSES_HEALTH_URL:-http://127.0.0.1:8066/api/cses/health}"
 CSES_LOG="${CSES_LOG:-/tmp/loopforge/cses-im-server.log}"
 CSES_PID=""
+CSES_OWNER="external"
 
 mkdir -p "$TRACE_DIR" "$(dirname "$TRACE_JSONL")"
 rm -f "$TRACE_ID_FILE"
@@ -22,6 +23,7 @@ export LOOPFORGE_OTEL_FLUSH_GRACE_MS="${LOOPFORGE_OTEL_FLUSH_GRACE_MS:-65000}"
 
 cleanup_cses() {
   if [ -n "$CSES_PID" ] && kill -0 "$CSES_PID" 2>/dev/null; then
+    echo "cses-im-server lifecycle: owner=script action=cleanup pid=$CSES_PID"
     kill "$CSES_PID" 2>/dev/null || true
     wait "$CSES_PID" 2>/dev/null || true
   fi
@@ -43,6 +45,7 @@ wait_cses_health() {
 
 ensure_cses_server() {
   if curl -fsS "$CSES_HEALTH_URL" >/dev/null 2>&1; then
+    echo "cses-im-server lifecycle: owner=external action=reuse health=$CSES_HEALTH_URL"
     echo "cses-im-server health OK (existing)"
     return 0
   fi
@@ -61,7 +64,9 @@ ensure_cses_server() {
       go run ./cmd/server
   ) >"$CSES_LOG" 2>&1 &
   CSES_PID="$!"
-  trap 'cleanup_cses' EXIT
+  CSES_OWNER="script"
+  echo "cses-im-server lifecycle: owner=$CSES_OWNER action=start pid=$CSES_PID log=$CSES_LOG"
+  trap 'cleanup_cses' EXIT INT TERM
   wait_cses_health "started"
 }
 
