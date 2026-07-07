@@ -38,7 +38,9 @@ use std::sync::Arc;
 use helix_core::effect::TransportId;
 use helix_core::ports::Transport;
 use helix_core::{ExecutionShell, Tick};
-use helix_driver_host::{run_engine_loop, EngineDeps, RecordingSink, TraceHooks, TransportTable};
+use helix_driver_host::{
+    run_engine_loop, EngineDeps, RecordingSink, SharedFileUploader, TraceHooks, TransportTable,
+};
 use helix_driver_instrument::util::payload_from_bytes;
 use helix_driver_instrument::{Facet, Hop, InstrumentCtx, Recording};
 use helix_driver_native::{
@@ -217,6 +219,7 @@ pub async fn spawn(
     // emit 旁路喂录放器（facet②），内层 NativeEventSink 仍 broadcast → event_rx 不变。
     let recording_storage = Recording::new(storage, ctx.clone());
     let recording_http = Recording::new(http, ctx.clone());
+    let uploader = SharedFileUploader::default();
     let recording_clock = Recording::new(NativeClock, ctx.clone());
     let projection_ctx = ctx.clone();
     let recording_sink = RecordingSink::new(
@@ -234,11 +237,13 @@ pub async fn spawn(
     let deps: EngineDeps<
         Recording<NativeStorage>,
         Recording<NativeHttp>,
+        SharedFileUploader,
         RecordingSink<NativeEventSink>,
         Recording<NativeClock>,
     > = EngineDeps {
         storage: Arc::new(recording_storage),
         http: Arc::new(recording_http),
+        uploader: Arc::new(uploader),
         event_sink: Arc::new(recording_sink),
         clock: recording_clock,
         trace: TraceHooks::noop(),
