@@ -110,31 +110,31 @@ pub fn run() {
     let ctx_for_setup = ctx.clone();
     let probe_for_setup = probe.clone();
 
-    let builder = builder.setup(move |app| {
-        let app_handle = app.handle().clone();
-        // 引擎装配含 `transport.connect().await`（CLI 可阻塞端，setup 内 block_on 合法）。
-        // 失败不中止 app 启动：前端仍可起，命令入泵会拿到错误（联调可见）。
-        let (tick_tx, identity) = tauri::async_runtime::block_on(engine::spawn(
-            app_handle,
-            ctx_for_setup.clone(),
-            probe_for_setup.clone(),
-        ))
-        .map_err(|e| -> Box<dyn std::error::Error> {
-            tracing::error!(error = %e, "helix 引擎装配失败");
-            e.into()
-        })?;
+    let builder =
+        builder.setup(move |app| {
+            let app_handle = app.handle().clone();
+            // 引擎装配含 `transport.connect().await`（CLI 可阻塞端，setup 内 block_on 合法）。
+            // 失败不中止 app 启动：前端仍可起，命令入泵会拿到错误（联调可见）。
+            let (tick_tx, identity, command_traces) = tauri::async_runtime::block_on(
+                engine::spawn(app_handle, ctx_for_setup.clone(), probe_for_setup.clone()),
+            )
+            .map_err(|e| -> Box<dyn std::error::Error> {
+                tracing::error!(error = %e, "helix 引擎装配失败");
+                e.into()
+            })?;
 
-        // P0b ⓪ Inbound tee：把进泵发送端包一层 TeeTickSender（webdriver feature 下旁路落
-        // Facet::Inbound·release 纯透传）。引擎内部留用的 tick_tx clone 不经此 tee（只捕获 IPC 派发指令）。
-        let tick_tx = crate::tick_tee::TeeTickSender::new(tick_tx, ctx_for_setup.clone());
-        app.manage(AppState {
-            tick_tx,
-            ctx: ctx_for_setup,
-            probe: probe_for_setup,
-            identity,
+            // P0b ⓪ Inbound tee：把进泵发送端包一层 TeeTickSender（webdriver feature 下旁路落
+            // Facet::Inbound·release 纯透传）。引擎内部留用的 tick_tx clone 不经此 tee（只捕获 IPC 派发指令）。
+            let tick_tx =
+                crate::tick_tee::TeeTickSender::new(tick_tx, ctx_for_setup.clone(), command_traces);
+            app.manage(AppState {
+                tick_tx,
+                ctx: ctx_for_setup,
+                probe: probe_for_setup,
+                identity,
+            });
+            Ok(())
         });
-        Ok(())
-    });
 
     // 命令集：`webdriver` feature 多挂 `set_uc`（录放/认领专用），release 不带（守 §2.4）。
     // generate_handler! 的返回闭包类型不透明 → cfg 分支各自调 .invoke_handler，不抽函数。

@@ -39,7 +39,8 @@ use helix_core::effect::TransportId;
 use helix_core::ports::Transport;
 use helix_core::{ExecutionShell, Tick};
 use helix_driver_host::{
-    run_engine_loop, EngineDeps, RecordingSink, SharedFileUploader, TraceHooks, TransportTable,
+    run_engine_loop, CommandTraceQueue, EngineDeps, RecordingSink, SharedFileUploader, TraceHooks,
+    TransportTable,
 };
 use helix_driver_instrument::util::payload_from_bytes;
 use helix_driver_instrument::{Facet, Hop, InstrumentCtx, Recording};
@@ -84,7 +85,7 @@ pub async fn spawn(
     app: AppHandle,
     ctx: InstrumentCtx,
     probe: Arc<ReadinessProbe>,
-) -> Result<(mpsc::Sender<Tick>, ImIdentity), String> {
+) -> Result<(mpsc::Sender<Tick>, ImIdentity, CommandTraceQueue), String> {
     // ── 部署配置（profile 文件真源；creds/端点不再散落 env）────────────────────────
     // debug→dev-local / release→prod；config/active-profile 可覆盖（见 config.rs）。
     let (profile_name, profile) = config::load()?;
@@ -212,6 +213,7 @@ pub async fn spawn(
         .and_then(|s| s.parse::<usize>().ok())
         .filter(|n| *n > 0)
         .unwrap_or(8);
+    let command_traces = CommandTraceQueue::default();
 
     // ── 全 port 包装饰器，组装泛型 EngineDeps ─────────────────────────────────────
     // facet④ storage（tee {op,table,rows}）/ facet① http（tee 请求体 + Record/Replay）/
@@ -246,7 +248,7 @@ pub async fn spawn(
         uploader: Arc::new(uploader),
         event_sink: Arc::new(recording_sink),
         clock: recording_clock,
-        trace: TraceHooks::noop(),
+        trace: TraceHooks::noop().with_command_traces(command_traces.clone()),
         max_http_inflight,
     };
 
@@ -275,7 +277,7 @@ pub async fn spawn(
         team_id: company_id.clone(),
         user_id: cookie_id.clone(),
     };
-    Ok((tick_tx, identity))
+    Ok((tick_tx, identity, command_traces))
 }
 
 /// 投影面静默窗口（ms）：bus 流里 increment 流动后，连续无新事件超此窗口 → 判就绪。
