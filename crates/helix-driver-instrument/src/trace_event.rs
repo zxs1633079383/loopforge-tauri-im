@@ -387,8 +387,18 @@ impl OtlpTraceSink {
         };
         let exporter = self.exporter.clone();
         self.runtime.spawn(async move {
-            if let Err(error) = exporter.export(vec![span]).await {
-                eprintln!("loopforge otel span export failed: {error}");
+            let mut last_error = None;
+            for attempt in 1..=8 {
+                match exporter.export(vec![span.clone()]).await {
+                    Ok(()) => return,
+                    Err(error) => {
+                        last_error = Some(error);
+                        tokio::time::sleep(Duration::from_millis(250 * attempt)).await;
+                    }
+                }
+            }
+            if let Some(error) = last_error {
+                eprintln!("loopforge otel span export failed after retries: {error}");
             }
         });
     }
