@@ -1,6 +1,7 @@
 import { Injectable, computed, inject, signal } from "@angular/core";
 import { TauriBridgeService } from "./tauri-bridge.service";
 import { TraceContextService } from "./trace-context.service";
+import type { TraceSidecar } from "./trace-context.service";
 import {
   AnnouncementRow,
   BookmarkRow,
@@ -53,6 +54,29 @@ import {
 } from "./projection.types";
 
 export type SenderUserId = "444" | "678";
+
+function renderTraceAnchor(row: MessageRow): string {
+  if (row.temporaryId) {
+    return `t:${row.temporaryId}|${row.channelId}`;
+  }
+  return `s:${row.msgId}`;
+}
+
+export function buildRenderTraceEvent(row: MessageRow): Record<string, unknown> {
+  return {
+    name: "pc.ui.render",
+    layer: "pc.ui",
+    direction: "internal",
+    payload: {
+      anchor: renderTraceAnchor(row),
+      msgId: row.msgId,
+      temporaryId: row.temporaryId,
+      channelId: row.channelId,
+      status: row.sendStatus,
+      text: row.text,
+    },
+  };
+}
 
 /**
  * IM 薄壳状态机 —— **纯渲染**：listen im:__bus__ → 按投影渲染，零业务逻辑（铁律）。
@@ -177,6 +201,7 @@ export class ImStoreService {
 
   /** 本地暂存：temporaryId → 消息类型（瘦投影 im:post:sending 不带 type，乐观 sending 行 data-type 需要）。 */
   private readonly pendingType = new Map<string, string>();
+  private readonly sendRenderTraces = new Map<string, TraceSidecar>();
 
   /**
    * 消息行 O(1) 定位索引（anchorKey → 行稳定 msgId）—— issue #53·C013 纯渲染壳。
@@ -299,6 +324,7 @@ export class ImStoreService {
 
     // 瘦投影 im:post:sending 不带 text → 暂存供 sending 行渲染。
     this.pendingText.set(temporaryId, trimmed);
+    this.rememberSendRenderTrace(temporaryId, channelId, trace);
 
     try {
       await this.bridge.recordTraceEvent({
@@ -460,6 +486,7 @@ export class ImStoreService {
   private clearPendingSendDraft(temporaryId: string): void {
     this.pendingText.delete(temporaryId);
     this.pendingType.delete(temporaryId);
+    this.clearSendRenderTrace(temporaryId);
   }
 
   /**
@@ -2696,6 +2723,46 @@ export class ImStoreService {
     return null;
   }
 
+  private rememberSendRenderTrace(
+    temporaryId: string,
+    channelId: string,
+    trace: TraceSidecar,
+  ): void {
+    this.sendRenderTraces.set(`t:${temporaryId}|${channelId}`, trace);
+    this.sendRenderTraces.set(`t:${temporaryId}|`, trace);
+  }
+
+  private promoteSendRenderTrace(
+    temporaryId: string,
+    channelId: string,
+    serverId: string,
+  ): void {
+    if (!temporaryId || !serverId) return;
+    const trace =
+      this.sendRenderTraces.get(`t:${temporaryId}|${channelId}`) ??
+      this.sendRenderTraces.get(`t:${temporaryId}|`);
+    if (trace) this.sendRenderTraces.set(`s:${serverId}`, trace);
+  }
+
+  private traceForRender(row: MessageRow): TraceSidecar | undefined {
+    const ch = row.channelId ?? "";
+    if (row.temporaryId) {
+      return (
+        this.sendRenderTraces.get(`t:${row.temporaryId}|${ch}`) ??
+        this.sendRenderTraces.get(`t:${row.temporaryId}|`)
+      );
+    }
+    return this.sendRenderTraces.get(`s:${row.msgId}`);
+  }
+
+  private clearSendRenderTrace(temporaryId: string): void {
+    for (const key of [...this.sendRenderTraces.keys()]) {
+      if (key.startsWith(`t:${temporaryId}|`)) {
+        this.sendRenderTraces.delete(key);
+      }
+    }
+  }
+
   /**
    * echo/patch 覆写：按 (tmp, ch)/server id 锚 **O(1) 定位** 乐观行 → 替换 data-* 终态。
    * 找不到（别的设备消息 / 非本壳发的 / UC-10.2 系统帧）→ 追加新行（server 已知形态）。
@@ -2768,6 +2835,7 @@ export class ImStoreService {
         if (temporaryId) {
           this.rowAnchorIdx.set(`t:${temporaryId}|${echoCh}`, serverId);
           this.rowAnchorIdx.set(`t:${temporaryId}|`, serverId);
+          this.promoteSendRenderTrace(temporaryId, echoCh, serverId);
         }
         this.rowAnchorIdx.set(`s:${serverId}`, serverId);
       }
@@ -2776,7 +2844,12 @@ export class ImStoreService {
         this.pendingText.delete(temporaryId);
         this.pendingType.delete(temporaryId);
       }
-      if (renderedRow) this.emitRenderTrace(renderedRow);
+      if (renderedRow) {
+        this.emitEchoTrace(renderedRow, {
+          event: "im:post:received",
+          data: d,
+        });
+      }
       return;
     }
 
@@ -2798,7 +2871,7 @@ export class ImStoreService {
     };
     this._rows.update((rows) => [...rows, row]);
     this.rememberRowAnchors(row);
-    this.emitRenderTrace(row);
+    this.emitEchoTrace(row, { event: "im:post:received", data: d });
   }
 
   /** helix render-ready sendStatus 归一为壳 SendStatus（缺省/异常 → "sent"·入库成功终态）。 */
@@ -2886,19 +2959,39 @@ export class ImStoreService {
   }
 
   private emitRenderTrace(row: MessageRow): void {
-    void this.bridge.recordTraceEvent({
-      name: "pc.ui.render",
-      layer: "pc.ui",
-      direction: "internal",
-      traceparent: this.traceContext.currentTraceparent(),
-      payload: {
-        msgId: row.msgId,
-        temporaryId: row.temporaryId,
-        channelId: row.channelId,
-        status: row.sendStatus,
-        text: row.text,
-      },
+    const trace = this.traceForRender(row);
+    const event = buildRenderTraceEvent(row);
+    void this.bridge.recordTraceEvent(
+      trace ? { ...event, traceparent: trace.traceparent } : event,
+    );
+  }
+
+  private emitEchoTrace(row: MessageRow, payload: Record<string, unknown>): void {
+    const trace = this.traceForRender(row);
+    if (!trace) {
+      this.emitRenderTrace(row);
+      return;
+    }
+    const traced = (name: string, layer: string, direction: string) => ({
+      name,
+      layer,
+      direction,
+      traceparent: trace.traceparent,
+      payload,
     });
+    void (async () => {
+      await this.bridge.recordTraceEvent(traced("helix.ws.recv", "helix", "in"));
+      await this.bridge.recordTraceEvent(
+        traced("helix.event.emit", "helix", "internal"),
+      );
+      await this.bridge.recordTraceEvent(
+        traced("pc.tauri.app_emit", "pc.tauri", "out"),
+      );
+      await this.bridge.recordTraceEvent({
+        ...buildRenderTraceEvent(row),
+        traceparent: trace.traceparent,
+      });
+    })();
   }
 
   /**

@@ -27,26 +27,25 @@ fn req_payload(req: &HttpRequest) -> serde_json::Value {
     })
 }
 
+fn traceparent_from_headers(headers: &[(String, String)]) -> Option<&str> {
+    headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("traceparent"))
+        .map(|(_, value)| value.as_str())
+}
+
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<H: HttpRequester> HttpRequester for Recording<H> {
-    async fn request(&self, mut req: HttpRequest) -> Result<HttpResponse, PortError> {
-        if let Some(traceparent) = self.ctx.active_traceparent() {
-            let has_traceparent = req
-                .headers
-                .iter()
-                .any(|(name, _)| name.eq_ignore_ascii_case("traceparent"));
-            if !has_traceparent {
-                req.headers.push(("traceparent".to_string(), traceparent));
-            }
-        }
-
+    async fn request(&self, req: HttpRequest) -> Result<HttpResponse, PortError> {
+        let traceparent = traceparent_from_headers(&req.headers).map(str::to_string);
         // facet ① 出站命令体：所有模式都 tee。
         let request_payload = req_payload(&req);
-        self.ctx.trace(
+        self.ctx.trace_with_ids(
             "helix.http.request",
             "helix",
             TraceDirection::Out,
+            traceparent.as_deref(),
             request_payload.clone(),
         );
         self.ctx
@@ -70,10 +69,11 @@ impl<H: HttpRequester> HttpRequester for Recording<H> {
                             "headers": r.headers,
                             "body": payload_from_bytes(&r.body)
                         });
-                        self.ctx.trace(
+                        self.ctx.trace_with_ids(
                             "helix.http.response",
                             "helix",
                             TraceDirection::In,
+                            traceparent.as_deref(),
                             response_payload.clone(),
                         );
                         self.ctx.log(
@@ -98,10 +98,11 @@ impl<H: HttpRequester> HttpRequester for Recording<H> {
                     "headers": resp.headers,
                     "body": payload_from_bytes(&resp.body)
                 });
-                self.ctx.trace(
+                self.ctx.trace_with_ids(
                     "helix.http.response",
                     "helix",
                     TraceDirection::In,
+                    traceparent.as_deref(),
                     response_payload.clone(),
                 );
                 self.ctx.log(

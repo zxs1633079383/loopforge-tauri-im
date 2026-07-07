@@ -2,6 +2,16 @@
 import { readFileSync } from "node:fs";
 
 const DEFAULT_JAEGER_QUERY_URL = "http://127.0.0.1:16686";
+const DEFAULT_SELF_TEST_TRACE_ID = "self-test-trace";
+const DEFAULT_FORBIDDEN_SEND_PATTERNS = [
+  "/api/cses/channel/sync/notify",
+  "sync.notify",
+  "join notice",
+  "member.change",
+  "presence",
+  "reconnect",
+  "badge",
+];
 
 const middleSpanRequirements = [
   { name: "helix.command.accept", count: 1 },
@@ -119,7 +129,7 @@ function parseArgs(argv) {
   }
 
   if (args.selfTest) {
-    args.traceId = args.traceId || "11111111111111111111111111111111";
+    args.traceId = args.traceId || DEFAULT_SELF_TEST_TRACE_ID;
     return args;
   }
   if (!args.traceId) {
@@ -143,7 +153,7 @@ function jaegerTraceUrl(baseUrl, traceId) {
   return `${base}/api/traces/${encodedTraceId}`;
 }
 
-function fixtureResponse(traceId = "11111111111111111111111111111111") {
+function fixtureResponse(traceId = DEFAULT_SELF_TEST_TRACE_ID) {
   const spanNames = [
     "pc.ui.action",
     "pc.tauri.invoke",
@@ -184,6 +194,19 @@ function fixtureResponse(traceId = "11111111111111111111111111111111") {
       },
     ],
   };
+}
+
+function forbiddenFixtureResponse(traceId = DEFAULT_SELF_TEST_TRACE_ID) {
+  const body = fixtureResponse(traceId);
+  body.data[0].spans.push({
+    traceID: traceId,
+    spanID: "0000000000009999",
+    operationName: "cses.http.request",
+    startTime: 9999,
+    tags: [{ key: "http.route", value: "/api/cses/channel/sync/notify" }],
+    logs: [],
+  });
+  return body;
 }
 
 async function loadTraceResponse(args) {
@@ -350,6 +373,55 @@ function assertCaptureEvents(body) {
   }
 }
 
+function assertNoForbiddenSendTraceEntries(trace, patterns = DEFAULT_FORBIDDEN_SEND_PATTERNS) {
+  const haystack = JSON.stringify(trace).toLowerCase();
+  for (const pattern of patterns) {
+    if (haystack.includes(pattern.toLowerCase())) {
+      throw new Error(`trace contains forbidden background entry: ${pattern}`);
+    }
+  }
+}
+
+function summaryMessage(traceId, counts, satisfiedClientGroups) {
+  const totalObserved = [...counts.values()].reduce((sum, count) => sum + count, 0);
+  const emitCount = counts.get("helix.event.emit") ?? 0;
+  return `trace ${traceId} contains required full-link spans (${formatCount(totalObserved)} observed; helix.event.emit=${emitCount}; ${satisfiedClientGroups.join(", ")}) ordering=ok capture=ok same_trace=ok forbidden=ok`;
+}
+
+function validateTraceBody(body, traceId) {
+  const counts = collectSpanCounts(body);
+  const { missing, satisfiedClientGroups } = evaluateTrace(counts);
+  if (missing.length > 0) {
+    const observed = [...counts.keys()].sort().join(", ") || "(none)";
+    throw new Error(
+      [`trace ${traceId} is missing required spans:`, ...missing.map((item) => `- ${item}`), `observed operation names: ${observed}`].join("\n"),
+    );
+  }
+
+  assertSameTraceId(body, traceId);
+  assertOrdered(body, counts);
+  assertCaptureEvents(body);
+  assertNoForbiddenSendTraceEntries(body);
+  return summaryMessage(traceId, counts, satisfiedClientGroups);
+}
+
+function runSelfTest(traceId) {
+  console.log(validateTraceBody(fixtureResponse(traceId), traceId));
+
+  const expectedError = "trace contains forbidden background entry: /api/cses/channel/sync/notify";
+  try {
+    validateTraceBody(forbiddenFixtureResponse(traceId), traceId);
+  } catch (error) {
+    if (error.message !== expectedError) {
+      throw new Error(`forbidden self-test failed with unexpected error: ${error.message}`);
+    }
+    console.log(`forbidden self-test rejected as expected: ${error.message}`);
+    return;
+  }
+
+  throw new Error("forbidden self-test unexpectedly passed");
+}
+
 async function main() {
   let args;
   try {
@@ -368,31 +440,16 @@ async function main() {
     process.exit(1);
   }
 
-  const counts = collectSpanCounts(body);
-  const { missing, satisfiedClientGroups } = evaluateTrace(counts);
-  if (missing.length > 0) {
-    console.error(`trace ${args.traceId} is missing required spans:`);
-    for (const item of missing) {
-      console.error(`- ${item}`);
-    }
-    console.error(`observed operation names: ${[...counts.keys()].sort().join(", ") || "(none)"}`);
-    process.exit(1);
-  }
-
   try {
-    assertSameTraceId(body, args.traceId);
-    assertOrdered(body, counts);
-    assertCaptureEvents(body);
+    if (args.selfTest) {
+      runSelfTest(args.traceId);
+      return;
+    }
+    console.log(validateTraceBody(body, args.traceId));
   } catch (error) {
     console.error(error.message);
     process.exit(1);
   }
-
-  const totalObserved = [...counts.values()].reduce((sum, count) => sum + count, 0);
-  const emitCount = counts.get("helix.event.emit") ?? 0;
-  console.log(
-    `trace ${args.traceId} contains required full-link spans (${formatCount(totalObserved)} observed; helix.event.emit=${emitCount}; ${satisfiedClientGroups.join(", ")}) ordering=ok capture=ok same_trace=ok`,
-  );
 }
 
 await main();

@@ -1,6 +1,7 @@
 use std::io::Write;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+#[cfg(feature = "otel")]
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -388,12 +389,13 @@ impl OtlpTraceSink {
         let exporter = self.exporter.clone();
         self.runtime.spawn(async move {
             let mut last_error = None;
-            for attempt in 1..=8 {
+            for attempt in 1..=60 {
                 match exporter.export(vec![span.clone()]).await {
                     Ok(()) => return,
                     Err(error) => {
                         last_error = Some(error);
-                        tokio::time::sleep(Duration::from_millis(250 * attempt)).await;
+                        let backoff_ms = (250 * attempt).min(1_000);
+                        tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                     }
                 }
             }

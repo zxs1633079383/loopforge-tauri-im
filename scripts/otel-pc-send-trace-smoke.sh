@@ -7,10 +7,70 @@ source "$ROOT/scripts/trace-env.sh"
 TRACE_DIR="${LOOPFORGE_TRACE_DIR:-/tmp/loopforge/trace}"
 TRACE_ID_FILE="$TRACE_DIR/pc-send-trace-id.txt"
 TRACE_JSONL="${LOOPFORGE_TRACE_JSONL:-/tmp/loopforge-trace/events.jsonl}"
+DEFAULT_CSES_IM_ROOT="/System/Volumes/Data/workspace/golang/cses-im-server/worktrees/trace-scope-guard-20260707"
+if [ ! -d "$DEFAULT_CSES_IM_ROOT" ]; then
+  DEFAULT_CSES_IM_ROOT="/System/Volumes/Data/workspace/golang/cses-im-server"
+fi
+CSES_IM_ROOT="${CSES_IM_ROOT:-$DEFAULT_CSES_IM_ROOT}"
+CSES_HEALTH_URL="${CSES_HEALTH_URL:-http://127.0.0.1:8066/api/cses/health}"
+CSES_LOG="${CSES_LOG:-/tmp/loopforge/cses-im-server.log}"
+CSES_PID=""
+CSES_OWNER="external"
 
 mkdir -p "$TRACE_DIR" "$(dirname "$TRACE_JSONL")"
 rm -f "$TRACE_ID_FILE"
-export LOOPFORGE_OTEL_FLUSH_GRACE_MS="${LOOPFORGE_OTEL_FLUSH_GRACE_MS:-15000}"
+export LOOPFORGE_OTEL_FLUSH_GRACE_MS="${LOOPFORGE_OTEL_FLUSH_GRACE_MS:-65000}"
+
+cleanup_cses() {
+  if [ -n "$CSES_PID" ] && kill -0 "$CSES_PID" 2>/dev/null; then
+    echo "cses-im-server lifecycle: owner=script action=cleanup pid=$CSES_PID"
+    kill "$CSES_PID" 2>/dev/null || true
+    wait "$CSES_PID" 2>/dev/null || true
+  fi
+}
+
+wait_cses_health() {
+  local label="$1"
+  for attempt in $(seq 1 90); do
+    if curl -fsS "$CSES_HEALTH_URL" >/dev/null 2>&1; then
+      echo "cses-im-server health OK ($label)"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "cses-im-server health timeout ($label): $CSES_HEALTH_URL" >&2
+  tail -n 120 "$CSES_LOG" 2>/dev/null || true
+  return 1
+}
+
+ensure_cses_server() {
+  if curl -fsS "$CSES_HEALTH_URL" >/dev/null 2>&1; then
+    echo "cses-im-server lifecycle: owner=external action=reuse health=$CSES_HEALTH_URL"
+    echo "cses-im-server health OK (existing)"
+    return 0
+  fi
+  if [ ! -d "$CSES_IM_ROOT" ]; then
+    echo "cses-im-server root not found: $CSES_IM_ROOT" >&2
+    return 1
+  fi
+  mkdir -p "$(dirname "$CSES_LOG")"
+  : >"$CSES_LOG"
+  echo "starting cses-im-server for PC trace smoke: $CSES_IM_ROOT"
+  (
+    cd "$CSES_IM_ROOT"
+    env \
+      CSES_IM_LOG_FORMAT=json \
+      OTEL_EXPORTER_OTLP_ENDPOINT="$OTEL_EXPORTER_OTLP_ENDPOINT" \
+      go run ./cmd/server
+  ) >"$CSES_LOG" 2>&1 &
+  CSES_PID="$!"
+  CSES_OWNER="script"
+  echo "cses-im-server lifecycle: owner=$CSES_OWNER action=start pid=$CSES_PID log=$CSES_LOG"
+  trap 'cleanup_cses' EXIT INT TERM
+  wait_cses_health "started"
+}
+
+ensure_cses_server
 
 cd "$ROOT"
 bash scripts/run.sh -- --spec test/specs/uc-send-1.e2e.mjs
