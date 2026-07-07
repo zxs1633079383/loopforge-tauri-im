@@ -41,8 +41,6 @@ const pcOrderedGroups = [
   ["pc.tauri.invoke", "pc.tauri.invoke.out", "pc.tauri.invoke.in"],
   ["pc.tauri.command", "pc.tauri.command.enqueue"],
   ...middleOrderedGroups,
-  ["pc.tauri.app_emit", "pc.tauri.app.emit"],
-  ["pc.ui.render"],
 ];
 
 const mobileOrderedGroups = [
@@ -293,16 +291,29 @@ function assertOrdered(body, counts) {
   const spans = sortedSpans(body);
   const requiredGroups = chooseOrderedGroups(counts);
   let cursor = 0;
+  let lastMatchedIndex = -1;
 
-  for (const span of spans) {
+  for (let index = 0; index < spans.length; index += 1) {
+    const span = spans[index];
     const group = requiredGroups[cursor];
     if (group?.includes(span.operationName)) {
       cursor += 1;
+      lastMatchedIndex = index;
     }
   }
 
   if (cursor !== requiredGroups.length) {
     throw new Error(`ordering check failed at ${requiredGroups[cursor].join(" | ")}`);
+  }
+
+  if (requiredGroups === pcOrderedGroups) {
+    const tail = spans.slice(lastMatchedIndex + 1);
+    const tailNames = new Set(tail.map((span) => span.operationName));
+    const hasAppEmit = ["pc.tauri.app_emit", "pc.tauri.app.emit"].some((name) => tailNames.has(name));
+    const hasRender = tailNames.has("pc.ui.render");
+    if (!hasAppEmit || !hasRender) {
+      throw new Error("ordering check failed at pc tail: expected pc.tauri.app_emit and pc.ui.render after helix.event.emit");
+    }
   }
 }
 
