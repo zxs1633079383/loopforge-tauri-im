@@ -10,7 +10,7 @@ TRACE_JSONL="${LOOPFORGE_TRACE_JSONL:-/tmp/loopforge-trace/events.jsonl}"
 
 mkdir -p "$TRACE_DIR" "$(dirname "$TRACE_JSONL")"
 rm -f "$TRACE_ID_FILE"
-export LOOPFORGE_OTEL_FLUSH_GRACE_MS="${LOOPFORGE_OTEL_FLUSH_GRACE_MS:-5000}"
+export LOOPFORGE_OTEL_FLUSH_GRACE_MS="${LOOPFORGE_OTEL_FLUSH_GRACE_MS:-15000}"
 
 cd "$ROOT"
 bash scripts/run.sh -- --spec test/specs/uc-send-1.e2e.mjs
