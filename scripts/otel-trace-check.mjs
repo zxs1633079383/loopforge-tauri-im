@@ -82,6 +82,89 @@ const clientSpanGroups = [
   },
 ];
 
+const diagnosticHints = {
+  "client action": {
+    repo: "loopforge-tauri-im or mobile-qucik-c++",
+    boundary: "root send action span",
+    next: "rerun the PC/Mobile smoke and inspect the client send entry instrumentation",
+  },
+  "client bridge": {
+    repo: "loopforge-tauri-im or mobile-qucik-c++",
+    boundary: "Tauri invoke / QuickJS / C++ bridge",
+    next: "check whether the explicit send trace is propagated through the native bridge",
+  },
+  "client render": {
+    repo: "loopforge-tauri-im or mobile-qucik-c++",
+    boundary: "app emit / drainEvents / final render",
+    next: "verify the echo/render path reuses the send trace instead of starting a fresh trace",
+  },
+  "helix.command.accept": {
+    repo: "helix",
+    boundary: "host command inbound",
+    next: "HELIX_OTEL_PROTOCOL=noop cargo test -p helix-driver-host --test otel_boundary_test -- --nocapture",
+  },
+  "helix.core.step": {
+    repo: "helix",
+    boundary: "deterministic core tick",
+    next: "check TraceHooks::on_tick_start and rerun helix-driver-host otel boundary tests",
+  },
+  "helix.storage.persist": {
+    repo: "helix",
+    boundary: "local store persistence",
+    next: "check host storage instrumentation and SQLite trace capture",
+  },
+  "helix.event.emit": {
+    repo: "helix",
+    boundary: "domain event emission",
+    next: "check event sink trace propagation and ordering",
+  },
+  "helix.http.request": {
+    repo: "helix",
+    boundary: "outbound HTTP request",
+    next: "check http_cross request instrumentation and traceparent injection",
+  },
+  "cses.http.request": {
+    repo: "cses-im-server",
+    boundary: "server HTTP ingress",
+    next: "check Go OTel HTTP middleware and traceparent extraction",
+  },
+  "cses.handler.create_post": {
+    repo: "cses-im-server",
+    boundary: "create post handler",
+    next: "check create-post handler span wrapper",
+  },
+  "cses.service.create_post": {
+    repo: "cses-im-server",
+    boundary: "create post service/usecase",
+    next: "check service span and context propagation from handler",
+  },
+  "cses.store.create_post": {
+    repo: "cses-im-server",
+    boundary: "store / SQL write",
+    next: "check repository/sql instrumentation and params capture",
+  },
+  "cses.ws.publish": {
+    repo: "cses-im-server",
+    boundary: "WS publish",
+    next: "check server publish span keeps the original send trace context",
+  },
+  "cses.ws.fanout": {
+    repo: "cses-im-server",
+    boundary: "WS fanout",
+    next: "check fanout span records target userId/channel scope without creating a new trace",
+  },
+  "cses.ws.deliver": {
+    repo: "cses-im-server",
+    boundary: "WS deliver",
+    next: "check per-connection deliver span and payload capture",
+  },
+  "helix.ws.recv": {
+    repo: "helix",
+    boundary: "client inbound WS receive",
+    next: "check WS receive trace extraction and corr_key matching",
+  },
+};
+
 function usage() {
   return [
     "usage: node scripts/otel-trace-check.mjs [--jaeger-url <url>] [--input <json>] <trace-id>",
@@ -270,6 +353,30 @@ function evaluateTrace(counts) {
   return { missing, satisfiedClientGroups };
 }
 
+function diagnosticKey(missingItem) {
+  if (missingItem.startsWith("client action:")) return "client action";
+  if (missingItem.startsWith("client bridge:")) return "client bridge";
+  if (missingItem.startsWith("client render:")) return "client render";
+  return missingItem.split(":")[0];
+}
+
+function formatDiagnostics(missingItems) {
+  if (missingItems.length === 0) {
+    return "";
+  }
+  const lines = ["diagnostics:"];
+  for (const item of missingItems) {
+    const key = diagnosticKey(item);
+    const hint = diagnosticHints[key] ?? {
+      repo: "unknown",
+      boundary: key,
+      next: "inspect the trace-scope contract and the nearest instrumentation boundary",
+    };
+    lines.push(`- ${key}: repo=${hint.repo}; boundary=${hint.boundary}; next=${hint.next}`);
+  }
+  return lines.join("\n");
+}
+
 function assertSameTraceId(body, expectedTraceId) {
   const traces = Array.isArray(body?.data) ? body.data : [];
   const ids = new Set();
@@ -377,7 +484,13 @@ function assertNoForbiddenSendTraceEntries(trace, patterns = DEFAULT_FORBIDDEN_S
   const haystack = JSON.stringify(trace).toLowerCase();
   for (const pattern of patterns) {
     if (haystack.includes(pattern.toLowerCase())) {
-      throw new Error(`trace contains forbidden background entry: ${pattern}`);
+      throw new Error(
+        [
+          `trace contains forbidden background entry: ${pattern}`,
+          "diagnostics:",
+          "- scope pollution: repo=checker/config or producing boundary; boundary=corr_key/action/channel/user filter; next=tighten send trace scope and reject notify/connect/presence/background payloads",
+        ].join("\n"),
+      );
     }
   }
 }
@@ -394,7 +507,12 @@ function validateTraceBody(body, traceId) {
   if (missing.length > 0) {
     const observed = [...counts.keys()].sort().join(", ") || "(none)";
     throw new Error(
-      [`trace ${traceId} is missing required spans:`, ...missing.map((item) => `- ${item}`), `observed operation names: ${observed}`].join("\n"),
+      [
+        `trace ${traceId} is missing required spans:`,
+        ...missing.map((item) => `- ${item}`),
+        `observed operation names: ${observed}`,
+        formatDiagnostics(missing),
+      ].join("\n"),
     );
   }
 
@@ -412,7 +530,7 @@ function runSelfTest(traceId) {
   try {
     validateTraceBody(forbiddenFixtureResponse(traceId), traceId);
   } catch (error) {
-    if (error.message !== expectedError) {
+    if (!error.message.startsWith(expectedError)) {
       throw new Error(`forbidden self-test failed with unexpected error: ${error.message}`);
     }
     console.log(`forbidden self-test rejected as expected: ${error.message}`);
