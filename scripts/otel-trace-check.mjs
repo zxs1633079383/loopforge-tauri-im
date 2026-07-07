@@ -3,22 +3,7 @@ import { readFileSync } from "node:fs";
 
 const DEFAULT_JAEGER_QUERY_URL = "http://127.0.0.1:16686";
 
-const clientSpanGroups = [
-  {
-    label: "client action",
-    alternatives: ["pc.ui.action", "mobile.js.im_send"],
-  },
-  {
-    label: "client bridge",
-    alternatives: ["pc.tauri.invoke", "pc.tauri.invoke.out", "pc.tauri.invoke.in", "mobile.core_bridge.call_with_trace"],
-  },
-  {
-    label: "client render",
-    alternatives: ["pc.ui.render", "mobile.render"],
-  },
-];
-
-const requiredMiddleSpans = [
+const middleSpanRequirements = [
   { name: "helix.command.accept", count: 1 },
   { name: "helix.core.step", count: 1 },
   { name: "helix.storage.persist", count: 1 },
@@ -32,6 +17,61 @@ const requiredMiddleSpans = [
   { name: "cses.ws.fanout", count: 1 },
   { name: "cses.ws.deliver", count: 1 },
   { name: "helix.ws.recv", count: 1 },
+];
+
+const middleOrderedGroups = [
+  ["helix.command.accept"],
+  ["helix.core.step"],
+  ["helix.storage.persist"],
+  ["helix.event.emit"],
+  ["helix.http.request"],
+  ["cses.http.request"],
+  ["cses.handler.create_post"],
+  ["cses.service.create_post"],
+  ["cses.store.create_post"],
+  ["cses.ws.publish"],
+  ["cses.ws.fanout"],
+  ["cses.ws.deliver"],
+  ["helix.ws.recv"],
+  ["helix.event.emit"],
+];
+
+const pcOrderedGroups = [
+  ["pc.ui.action"],
+  ["pc.tauri.invoke", "pc.tauri.invoke.out", "pc.tauri.invoke.in"],
+  ["pc.tauri.command", "pc.tauri.command.enqueue"],
+  ...middleOrderedGroups,
+  ["pc.tauri.app_emit", "pc.tauri.app.emit"],
+  ["pc.ui.render"],
+];
+
+const mobileOrderedGroups = [
+  ["mobile.js.im_send", "mobile.ui.action"],
+  ["mobile.core_bridge.call_with_trace", "mobile.native.invoke", "mobile.helix.invoke"],
+  ...middleOrderedGroups,
+  ["mobile.render", "mobile.ui.render"],
+];
+
+const clientSpanGroups = [
+  {
+    label: "client action",
+    alternatives: ["pc.ui.action", "mobile.js.im_send", "mobile.ui.action"],
+  },
+  {
+    label: "client bridge",
+    alternatives: [
+      "pc.tauri.invoke",
+      "pc.tauri.invoke.out",
+      "pc.tauri.invoke.in",
+      "mobile.core_bridge.call_with_trace",
+      "mobile.native.invoke",
+      "mobile.helix.invoke",
+    ],
+  },
+  {
+    label: "client render",
+    alternatives: ["pc.ui.render", "mobile.render", "mobile.ui.render"],
+  },
 ];
 
 function usage() {
@@ -81,7 +121,7 @@ function parseArgs(argv) {
   }
 
   if (args.selfTest) {
-    args.traceId = args.traceId || "self-test-trace";
+    args.traceId = args.traceId || "11111111111111111111111111111111";
     return args;
   }
   if (!args.traceId) {
@@ -105,10 +145,11 @@ function jaegerTraceUrl(baseUrl, traceId) {
   return `${base}/api/traces/${encodedTraceId}`;
 }
 
-function fixtureResponse() {
+function fixtureResponse(traceId = "11111111111111111111111111111111") {
   const spanNames = [
     "pc.ui.action",
     "pc.tauri.invoke",
+    "pc.tauri.command",
     "helix.command.accept",
     "helix.core.step",
     "helix.storage.persist",
@@ -123,16 +164,24 @@ function fixtureResponse() {
     "cses.ws.deliver",
     "helix.ws.recv",
     "helix.event.emit",
+    "pc.tauri.app_emit",
     "pc.ui.render",
   ];
   return {
     data: [
       {
-        traceID: "self-test-trace",
+        traceID: traceId,
         spans: spanNames.map((operationName, index) => ({
-          traceID: "self-test-trace",
+          traceID: traceId,
           spanID: String(index + 1).padStart(16, "0"),
           operationName,
+          startTime: index + 1,
+          logs:
+            operationName === "helix.http.request" || operationName === "cses.http.request"
+              ? [{ fields: [{ key: "event", value: "http.request.capture" }] }]
+              : operationName === "cses.ws.publish" || operationName === "cses.ws.deliver"
+                ? [{ fields: [{ key: "event", value: "ws.payload.capture" }] }]
+                : [],
         })),
       },
     ],
@@ -141,7 +190,7 @@ function fixtureResponse() {
 
 async function loadTraceResponse(args) {
   if (args.selfTest) {
-    return fixtureResponse();
+    return fixtureResponse(args.traceId);
   }
   if (args.input) {
     return JSON.parse(readFileSync(args.input, "utf8"));
@@ -155,18 +204,19 @@ async function loadTraceResponse(args) {
   return res.json();
 }
 
-function collectSpanCounts(body) {
+function spansFromResponse(body) {
   const traces = Array.isArray(body?.data) ? body.data : [];
+  return traces.flatMap((trace) => (Array.isArray(trace?.spans) ? trace.spans : []));
+}
+
+function collectSpanCounts(body) {
   const counts = new Map();
 
-  for (const trace of traces) {
-    const spans = Array.isArray(trace?.spans) ? trace.spans : [];
-    for (const span of spans) {
-      if (typeof span?.operationName !== "string" || span.operationName.length === 0) {
-        continue;
-      }
-      counts.set(span.operationName, (counts.get(span.operationName) ?? 0) + 1);
+  for (const span of spansFromResponse(body)) {
+    if (typeof span?.operationName !== "string" || span.operationName.length === 0) {
+      continue;
     }
+    counts.set(span.operationName, (counts.get(span.operationName) ?? 0) + 1);
   }
 
   return counts;
@@ -189,7 +239,7 @@ function evaluateTrace(counts) {
     }
   }
 
-  for (const expected of requiredMiddleSpans) {
+  for (const expected of middleSpanRequirements) {
     const actual = counts.get(expected.name) ?? 0;
     if (actual < expected.count) {
       missing.push(`${expected.name}: expected >=${expected.count}, got ${actual}`);
@@ -197,6 +247,96 @@ function evaluateTrace(counts) {
   }
 
   return { missing, satisfiedClientGroups };
+}
+
+function assertSameTraceId(body, expectedTraceId) {
+  const traces = Array.isArray(body?.data) ? body.data : [];
+  const ids = new Set();
+  let spanCount = 0;
+
+  for (const trace of traces) {
+    if (typeof trace?.traceID === "string" && trace.traceID.length > 0) {
+      ids.add(trace.traceID);
+    }
+    const spans = Array.isArray(trace?.spans) ? trace.spans : [];
+    for (const span of spans) {
+      spanCount += 1;
+      if (typeof span?.traceID === "string" && span.traceID.length > 0) {
+        ids.add(span.traceID);
+      } else {
+        ids.add("(missing span traceID)");
+      }
+    }
+  }
+
+  if (spanCount === 0 || ids.size !== 1 || !ids.has(expectedTraceId)) {
+    throw new Error(`trace id mismatch: expected exactly ${expectedTraceId}, got ${[...ids].join(", ") || "(none)"}`);
+  }
+}
+
+function sortedSpans(body) {
+  return spansFromResponse(body).slice().sort((a, b) => {
+    const startDelta = (Number(a?.startTime) || 0) - (Number(b?.startTime) || 0);
+    if (startDelta !== 0) {
+      return startDelta;
+    }
+    return String(a?.spanID ?? "").localeCompare(String(b?.spanID ?? ""));
+  });
+}
+
+function chooseOrderedGroups(counts) {
+  const hasMobileStart = ["mobile.js.im_send", "mobile.ui.action"].some((name) => (counts.get(name) ?? 0) > 0);
+  return hasMobileStart ? mobileOrderedGroups : pcOrderedGroups;
+}
+
+function assertOrdered(body, counts) {
+  const spans = sortedSpans(body);
+  const requiredGroups = chooseOrderedGroups(counts);
+  let cursor = 0;
+
+  for (const span of spans) {
+    const group = requiredGroups[cursor];
+    if (group?.includes(span.operationName)) {
+      cursor += 1;
+    }
+  }
+
+  if (cursor !== requiredGroups.length) {
+    throw new Error(`ordering check failed at ${requiredGroups[cursor].join(" | ")}`);
+  }
+}
+
+function fieldValue(field) {
+  if (field && typeof field === "object" && "value" in field) {
+    return field.value;
+  }
+  if (field && typeof field === "object" && "stringValue" in field) {
+    return field.stringValue;
+  }
+  return undefined;
+}
+
+function spanHasLogEvent(span, eventName) {
+  const logs = Array.isArray(span?.logs) ? span.logs : [];
+  const logMatch = logs.some((log) =>
+    (Array.isArray(log?.fields) ? log.fields : []).some((field) => field.key === "event" && fieldValue(field) === eventName),
+  );
+  if (logMatch) {
+    return true;
+  }
+
+  const tags = Array.isArray(span?.tags) ? span.tags : [];
+  return tags.some((tag) => tag.key === "event" && fieldValue(tag) === eventName);
+}
+
+function assertCaptureEvents(body) {
+  const spans = spansFromResponse(body);
+  if (!spans.some((span) => spanHasLogEvent(span, "http.request.capture"))) {
+    throw new Error("missing http.request.capture event");
+  }
+  if (!spans.some((span) => spanHasLogEvent(span, "ws.payload.capture"))) {
+    throw new Error("missing ws.payload.capture event");
+  }
 }
 
 async function main() {
@@ -228,10 +368,19 @@ async function main() {
     process.exit(1);
   }
 
+  try {
+    assertSameTraceId(body, args.traceId);
+    assertOrdered(body, counts);
+    assertCaptureEvents(body);
+  } catch (error) {
+    console.error(error.message);
+    process.exit(1);
+  }
+
   const totalObserved = [...counts.values()].reduce((sum, count) => sum + count, 0);
   const emitCount = counts.get("helix.event.emit") ?? 0;
   console.log(
-    `trace ${args.traceId} contains required full-link spans (${formatCount(totalObserved)} observed; helix.event.emit=${emitCount}; ${satisfiedClientGroups.join(", ")})`,
+    `trace ${args.traceId} contains required full-link spans (${formatCount(totalObserved)} observed; helix.event.emit=${emitCount}; ${satisfiedClientGroups.join(", ")}) ordering=ok capture=ok same_trace=ok`,
   );
 }
 

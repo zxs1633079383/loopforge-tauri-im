@@ -114,6 +114,10 @@ wait_http "http://127.0.0.1:$WEBDRIVER_PORT/status" "webdriver(tauri-plugin)" 60
 info "跑 wdio（四面断言：① 出站 / ② 投影 / ③ DOM / ④ 落库）"
 if run_wdio "${WDIO_ARGS[@]+"${WDIO_ARGS[@]}"}"; then
   ok "四面报告全绿"
+  if [ -n "${LOOPFORGE_OTEL_FLUSH_GRACE_MS:-}" ] && [ "${LOOPFORGE_OTEL_FLUSH_GRACE_MS:-0}" -gt 0 ] 2>/dev/null; then
+    info "OTel flush grace：等待 ${LOOPFORGE_OTEL_FLUSH_GRACE_MS}ms 后清理 app"
+    sleep "$(node -e "console.log(Number(process.env.LOOPFORGE_OTEL_FLUSH_GRACE_MS || 0) / 1000)")"
+  fi
   exit 0
 else
   die "wdio 红 —— reducer「断在哪一跳」报告见上方输出 / $APP_LOG" 1

@@ -1,0 +1,26 @@
+{
+  "data": [
+    {
+      "traceID": "22222222222222222222222222222222",
+      "spans": [
+        {"traceID":"22222222222222222222222222222222","spanID":"0000000000000001","operationName":"mobile.js.im_send","startTime":1,"logs":[]},
+        {"traceID":"22222222222222222222222222222222","spanID":"0000000000000002","operationName":"mobile.core_bridge.call_with_trace","startTime":2,"logs":[]},
+        {"traceID":"22222222222222222222222222222222","spanID":"0000000000000003","operationName":"helix.command.accept","startTime":3,"logs":[]},
+        {"traceID":"22222222222222222222222222222222","spanID":"0000000000000004","operationName":"helix.core.step","startTime":4,"logs":[]},
+        {"traceID":"22222222222222222222222222222222","spanID":"0000000000000005","operationName":"helix.storage.persist","startTime":5,"logs":[]},
+        {"traceID":"22222222222222222222222222222222","spanID":"0000000000000006","operationName":"helix.event.emit","startTime":6,"logs":[]},
+        {"traceID":"22222222222222222222222222222222","spanID":"0000000000000007","operationName":"helix.http.request","startTime":7,"logs":[{"fields":[{"key":"event","value":"http.request.capture"}]}]},
+        {"traceID":"22222222222222222222222222222222","spanID":"0000000000000008","operationName":"cses.http.request","startTime":8,"logs":[{"fields":[{"key":"event","value":"http.request.capture"}]}]},
+        {"traceID":"22222222222222222222222222222222","spanID":"0000000000000009","operationName":"cses.handler.create_post","startTime":9,"logs":[]},
+        {"traceID":"22222222222222222222222222222222","spanID":"0000000000000010","operationName":"cses.service.create_post","startTime":10,"logs":[]},
+        {"traceID":"22222222222222222222222222222222","spanID":"0000000000000011","operationName":"cses.store.create_post","startTime":11,"logs":[]},
+        {"traceID":"22222222222222222222222222222222","spanID":"0000000000000012","operationName":"cses.ws.publish","startTime":12,"logs":[{"fields":[{"key":"event","value":"ws.payload.capture"}]}]},
+        {"traceID":"22222222222222222222222222222222","spanID":"0000000000000013","operationName":"cses.ws.fanout","startTime":13,"logs":[]},
+        {"traceID":"22222222222222222222222222222222","spanID":"0000000000000014","operationName":"cses.ws.deliver","startTime":14,"logs":[{"fields":[{"key":"event","value":"ws.payload.capture"}]}]},
+        {"traceID":"22222222222222222222222222222222","spanID":"0000000000000015","operationName":"helix.ws.recv","startTime":15,"logs":[]},
+        {"traceID":"22222222222222222222222222222222","spanID":"0000000000000016","operationName":"helix.event.emit","startTime":16,"logs":[]},
+        {"traceID":"22222222222222222222222222222222","spanID":"0000000000000017","operationName":"mobile.render","startTime":17,"logs":[]}
+      ]
+    }
+  ]
+}

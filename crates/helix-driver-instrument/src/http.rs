@@ -30,7 +30,17 @@ fn req_payload(req: &HttpRequest) -> serde_json::Value {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<H: HttpRequester> HttpRequester for Recording<H> {
-    async fn request(&self, req: HttpRequest) -> Result<HttpResponse, PortError> {
+    async fn request(&self, mut req: HttpRequest) -> Result<HttpResponse, PortError> {
+        if let Some(traceparent) = self.ctx.active_traceparent() {
+            let has_traceparent = req
+                .headers
+                .iter()
+                .any(|(name, _)| name.eq_ignore_ascii_case("traceparent"));
+            if !has_traceparent {
+                req.headers.push(("traceparent".to_string(), traceparent));
+            }
+        }
+
         // facet ① 出站命令体：所有模式都 tee。
         let request_payload = req_payload(&req);
         self.ctx.trace(

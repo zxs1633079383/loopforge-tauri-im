@@ -24,6 +24,36 @@
         "storage": true,
         "event": true,
         "render": true
+      },
+      "jaegerQueryUrl": "http://192.168.6.66:32281",
+      "capture": {
+        "enabled": true,
+        "maxBodyBytes": 65536,
+        "maxHeaderBytes": 16384,
+        "http": {
+          "headers": {
+            "include": [".*"],
+            "exclude": []
+          },
+          "requestBody": {
+            "includePath": [".*"],
+            "excludePath": []
+          }
+        },
+        "ws": {
+          "actions": {
+            "include": [".*"],
+            "exclude": []
+          },
+          "payload": {
+            "include": [".*"],
+            "exclude": []
+          }
+        },
+        "redact": {
+          "headers": ["(?i)^authorization$", "(?i)^cookie$", "(?i)^set-cookie$"],
+          "jsonPaths": ["$.password", "$.token", "$.accessToken", "$.refreshToken"]
+        }
       }
     }
   }
