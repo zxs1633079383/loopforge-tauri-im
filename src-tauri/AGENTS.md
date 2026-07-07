@@ -34,8 +34,8 @@ native `EngineConfig` 字段是**具体** ports（`NativeStorage`/`NativeHttp`/`
 → 不能把 `Recording<P>` 直接塞进引擎（要么改 helix 违零改铁律，要么走 driver-host `BatchSink` 泛型缝
 补 ffi 同款装饰 sink）。故 W1 落地的仪表面 = **投影面（facet ②）**：broadcast 消费 loop 在 emit 抵达
 `app.emit` 之前 tee 一条 `Facet::Projection` 日志。Transport/Http/Storage/Clock/IdSource 的 Record/Replay
-tape（facet ① outbound / ④ storage + 确定性回放）需引擎接受被装饰 port，是后续集成项——见根
-`docs/CHECKLIST.md` W1「BatchSink vs EventSink 集成缝」+ integration_todos。
+tape（facet ① outbound / ④ storage + 确定性回放）需引擎接受被装饰 port，是后续集成项——见
+`docs/INTEGRATION-STATUS.md` 的 W1 仪表化现实边界与后续 integration_todos。
 
 就绪 probe 同理：精确 `inflight==0` 需 Http 装饰器注入引擎；W1 用「bus 静默窗口」近似
 （increment 流动后连续无新 bus 事件 → ready），不冒充精确计数（守可证伪）。

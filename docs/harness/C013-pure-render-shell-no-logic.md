@@ -46,4 +46,4 @@ echo "✅ C013：未新增本仓处理逻辑（冻结生效）"
 
 - 铁律真源 `docs/纯渲染壳-铁律与helix迁移台账.md`（含 apply\* 台账 + 迁移设计）。
 - 上游对照：helix `HX-C001` sans-IO（本仓不改 helix 引擎·只在 helix 补投影/指令）。
-- 第一北极星 `docs/NORTH-STAR.md`（UC 覆盖）正交互补。
+- 第一北极星入口 `docs/uc-rollout/README.md`（UC 覆盖）正交互补。

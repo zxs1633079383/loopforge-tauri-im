@@ -22,7 +22,7 @@
 | Loop Engine | `docs/loop-engine/`、`.loop-engine/runs/*/next.md` | worker report 不是 green |
 | 编排规划 | `docs/orchestration/README.md` | 长 loop / migration 计划，非当前 runtime 状态 |
 | superpowers | `docs/superpowers/README.md` | spec/plan provenance |
-| 历史成果 | `docs/0628全链路最终成果.md`、`docs/CHECKLIST.md`、`docs/RUNBOOK.md` | 保留历史，引用当前状态时回到 UC 入口 |
+| 历史成果 | `docs/0628全链路最终成果.md`、`docs/RUNBOOK.md`、`docs/INTEGRATION-STATUS.md` | 保留历史，引用当前状态时回到 UC 入口 |
 
 ## Evidence Guardrail
 
