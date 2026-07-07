@@ -1,0 +1,186 @@
+{
+  "runId": "realchain-uc45-20260706-154915",
+  "nodeId": "N3",
+  "status": "PASS",
+  "mobileReportRunId": "mrc-20260707022823-607fda",
+  "jsonReport": "/System/Volumes/Data/workspace/c/mobile-qucik-c++/worktrees/mobile-query-green/real-chain/reports/mrc-20260707022823-607fda.json",
+  "markdownReport": "/System/Volumes/Data/workspace/c/mobile-qucik-c++/worktrees/mobile-query-green/real-chain/reports/mrc-20260707022823-607fda.md",
+  "summary": {
+    "commands": "9/9",
+    "http": "9/9",
+    "ws": "9/9",
+    "bus": "9/9",
+    "projection": "9/9",
+    "status": "PASS"
+  },
+  "cases": [
+    "UC-1.9-urgent",
+    "UC-1.9-confirm",
+    "UC-3.3-template",
+    "UC-5.6w-announcement-save",
+    "UC-5.6w-announcement-read",
+    "UC-5.6w-announcement-delete",
+    "UC-5.2-topic",
+    "UC-11.1-team-upsert",
+    "UC-11.2-team-quit"
+  ],
+  "caseEvidence": [
+    {
+      "ucId": "UC-1.9-urgent",
+      "httpTrackId": "mrc-20260707022823-607fda:UC-1.9-urgent",
+      "httpProbeIndex": 29,
+      "wsTrackId": "mrc-20260707022823-607fda:UC-1.9-urgent",
+      "wsProbeIndex": 158,
+      "wsAction": "post_update",
+      "wsRequiredAnchors": [
+        "bd7ctyqcq3d4tqozurtr3qzhrc"
+      ],
+      "busRequiredAnchors": [
+        "bd7ctyqcq3d4tqozurtr3qzhrc"
+      ],
+      "bus": true,
+      "projection": true
+    },
+    {
+      "ucId": "UC-1.9-confirm",
+      "httpTrackId": "mrc-20260707022823-607fda:UC-1.9-confirm",
+      "httpProbeIndex": 30,
+      "wsTrackId": "mrc-20260707022823-607fda:UC-1.9-confirm",
+      "wsProbeIndex": 163,
+      "wsAction": "post_update",
+      "wsRequiredAnchors": [
+        "bd7ctyqcq3d4tqozurtr3qzhrc"
+      ],
+      "busRequiredAnchors": [
+        "bd7ctyqcq3d4tqozurtr3qzhrc"
+      ],
+      "bus": true,
+      "projection": true
+    },
+    {
+      "ucId": "UC-3.3-template",
+      "httpTrackId": "mrc-20260707022823-607fda:UC-3.3-template",
+      "httpProbeIndex": 32,
+      "wsTrackId": "",
+      "wsProbeIndex": 230,
+      "wsAction": "post_update",
+      "wsRequiredAnchors": [
+        "w1qq8k6u67rq3fqqdmtfb4yusa"
+      ],
+      "busRequiredAnchors": [
+        "w1qq8k6u67rq3fqqdmtfb4yusa",
+        "templateReceived"
+      ],
+      "bus": true,
+      "projection": true,
+      "projectionRawHasTemplateReceived": true
+    },
+    {
+      "ucId": "UC-5.6w-announcement-save",
+      "httpTrackId": "mrc-20260707022823-607fda:UC-5.6w-announcement-save",
+      "httpProbeIndex": 33,
+      "wsTrackId": "",
+      "wsProbeIndex": 294,
+      "wsAction": "post",
+      "wsRequiredAnchors": [
+        "mrc title UC-5-6w-announcement-save"
+      ],
+      "busRequiredAnchors": [
+        "mrc title UC-5-6w-announcement-save",
+        "ANNOUNCEMENT"
+      ],
+      "bus": true,
+      "projection": true
+    },
+    {
+      "ucId": "UC-5.6w-announcement-read",
+      "httpTrackId": "mrc-20260707022823-607fda:UC-5.6w-announcement-read",
+      "httpProbeIndex": 34,
+      "wsTrackId": "",
+      "wsProbeIndex": 358,
+      "wsAction": "post_update",
+      "wsRequiredAnchors": [
+        "bd7ctyqcq3d4tqozurtr3qzhrc"
+      ],
+      "busRequiredAnchors": [
+        "bd7ctyqcq3d4tqozurtr3qzhrc",
+        "acceptList"
+      ],
+      "bus": true,
+      "projection": true
+    },
+    {
+      "ucId": "UC-5.6w-announcement-delete",
+      "httpTrackId": "mrc-20260707022823-607fda:UC-5.6w-announcement-delete",
+      "httpProbeIndex": 35,
+      "wsTrackId": "",
+      "wsProbeIndex": 422,
+      "wsAction": "post_update",
+      "wsRequiredAnchors": [
+        "bd7ctyqcq3d4tqozurtr3qzhrc"
+      ],
+      "busRequiredAnchors": [
+        "bd7ctyqcq3d4tqozurtr3qzhrc",
+        "Delete"
+      ],
+      "bus": true,
+      "projection": true
+    },
+    {
+      "ucId": "UC-5.2-topic",
+      "httpTrackId": "mrc-20260707022823-607fda:UC-5.2-topic",
+      "httpProbeIndex": 36,
+      "wsTrackId": "mrc-20260707022823-607fda:UC-5.2-topic",
+      "wsProbeIndex": 486,
+      "wsAction": "channel_created",
+      "wsRequiredAnchors": [
+        "bd7ctyqcq3d4tqozurtr3qzhrc"
+      ],
+      "busRequiredAnchors": [
+        "bd7ctyqcq3d4tqozurtr3qzhrc"
+      ],
+      "bus": true,
+      "projection": true
+    },
+    {
+      "ucId": "UC-11.1-team-upsert",
+      "httpTrackId": "mrc-20260707022823-607fda:UC-11.1-team-upsert",
+      "httpProbeIndex": 37,
+      "wsTrackId": "mrc-20260707022823-607fda:UC-11.1-team-upsert",
+      "wsProbeIndex": 552,
+      "wsAction": "channel_created",
+      "wsRequiredAnchors": [
+        "64118eebd2b665246b7880eb",
+        "mrc team mrc-20260707022823-607fda"
+      ],
+      "busRequiredAnchors": [
+        "64118eebd2b665246b7880eb",
+        "mrc team mrc-20260707022823-607fda"
+      ],
+      "bus": true,
+      "projection": true
+    },
+    {
+      "ucId": "UC-11.2-team-quit",
+      "httpTrackId": "mrc-20260707022823-607fda:UC-11.2-team-quit",
+      "httpProbeIndex": 38,
+      "wsTrackId": "",
+      "wsProbeIndex": 682,
+      "wsAction": "quit_company",
+      "wsRequiredAnchors": [],
+      "busRequiredAnchors": [],
+      "bus": true,
+      "projection": true
+    }
+  ],
+  "notes": [
+    "CSES_IM_SERVER_ROOT was proven effective after stale 8066 server was killed.",
+    "start-cses-server now fails closed on occupied 8066 unless CSES_IM_REUSE_EXISTING_SERVER=1.",
+    "Reviewer blocker fixed: urgent/confirm now carry exact Cses-Track-Id through HTTP and WS; collector also prevents WS probe index reuse.",
+    "Bus evidence is now matched by event name plus all required anchors instead of event name only.",
+    "Non-track WS fallback is now strict payload plus required anchors plus publish identity dedupe, preventing multi-hub duplicate reuse across UC.",
+    "UC-3.3-template now creates a real TEMPLATE post and proves projection templateReceived=true.",
+    "Helix query/render-ready shared projection now emits templateReceived from explicit field or props.template.",
+    "Some non-urgent WS paths still rely on strict anchor/time-window fallback because their business fanout does not yet propagate trackId."
+  ]
+}
