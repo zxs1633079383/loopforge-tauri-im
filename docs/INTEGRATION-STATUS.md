@@ -98,7 +98,7 @@
 
 ## 5. 竖切 DoD（Definition of Done）还差什么
 
-对照 [`CHECKLIST.md`](CHECKLIST.md) §3：
+对照旧竖切验收 checklist（已由 `docs/uc-rollout/README.md` / `docs/README.md` 路由替代）：
 
 | DoD 项 | 状态 | 还差 |
 |---|---|---|

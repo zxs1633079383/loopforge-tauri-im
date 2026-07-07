@@ -126,7 +126,7 @@ Conductor 动态 loop 接管轮转
 
 ## 8. 两条北极星（验收）
 
-- **第一**（`docs/NORTH-STAR.md`）：L1 四面契约全绿 UC 数 / 31。
+- **第一**（`docs/uc-rollout/README.md`）：UC real-chain / 四面证据当前状态。
 - **第二**（`docs/纯渲染壳-铁律与helix迁移台账.md`）：纯绑定覆盖率 → 100%（禁区 grep → 0 · 全 19 行 ✅）。
 - 两者正交：UC 铺得多**且**壳越纯 → helix 投影越被证明 render-ready。掉任一即红灯。
 

@@ -1,7 +1,7 @@
 # loopforge-im 设计稿 ↔ UC ↔ data-* 映射
 
 > 设计源文件：`design/loopforge-im.pen`（Pencil · 加密 · 只能用 pencil MCP 工具读写，禁 `cat`/`grep`）。
-> 由 Pencil MCP 生成，Discord 深色质感。**铁约束**：导出代码必须保留 `data-*` 语义锚点，四面契约 e2e 不掉绿（见 `docs/NORTH-STAR.md` 北极星 22/31）。
+> 由 Pencil MCP 生成，Discord 深色质感。**铁约束**：导出代码必须保留 `data-*` 语义锚点，四面契约 e2e 不掉绿（当前状态看 `docs/uc-rollout/README.md`）。
 > 决策来源：2026-06-26 用户拍板「升级本仓薄壳·保留 data-*」。
 
 ## 为什么 data-* 必须保留
