@@ -9,8 +9,7 @@ const requiredNames = [
   "helix.http.request",
   "helix.http.response",
   "helix.ws.recv",
-  "pc.tauri.event.emit",
-  "pc.tauri.event.listen",
+  "pc.tauri.app_emit",
   "pc.ui.render",
 ];
 
