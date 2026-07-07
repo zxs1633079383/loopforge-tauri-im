@@ -49,7 +49,7 @@ export class TauriBridgeService {
     }
     const { invoke } = await import("@tauri-apps/api/core");
     const started = performance.now();
-    const envelope = trace ? { ...(args ?? {}), __trace: trace } : args;
+    const envelope = trace ? { ...(args ?? {}), __trace: trace, trace } : args;
     await this.recordTraceEvent({
       name: "pc.tauri.invoke.out",
       layer: "pc.tauri",
