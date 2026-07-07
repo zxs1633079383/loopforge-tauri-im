@@ -161,8 +161,7 @@ impl InstrumentCtx {
         direction: TraceDirection,
         payload: Value,
     ) {
-        let traceparent = self.active_traceparent();
-        self.trace_with_ids(name, layer, direction, traceparent.as_deref(), payload);
+        self.trace_with_ids(name, layer, direction, None, payload);
     }
 
     pub fn set_active_traceparent(&self, traceparent: impl Into<String>) {
@@ -206,7 +205,6 @@ impl InstrumentCtx {
         ev.corr_key = extract_corr_key(&payload);
         if let Some(tp) = traceparent {
             if let Some((trace_id, parent_span_id)) = parse_traceparent_ids(tp) {
-                self.set_active_traceparent(tp.to_string());
                 ev.trace_id = Some(trace_id);
                 ev.parent_span_id = Some(parent_span_id);
                 ev.span_id = Some(emitter.next_span_id());
@@ -321,7 +319,7 @@ mod tests {
     }
 
     #[test]
-    fn trace_inherits_active_traceparent() {
+    fn trace_does_not_inherit_last_active_traceparent() {
         let traceparent = "00-00000000000000000000000000000001-0000000000000002-01";
         let rows = capture_trace(|ctx| {
             ctx.trace_with_ids(
@@ -341,7 +339,7 @@ mod tests {
 
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0]["trace_id"], "00000000000000000000000000000001");
-        assert_eq!(rows[1]["trace_id"], "00000000000000000000000000000001");
-        assert_eq!(rows[1]["parent_span_id"], "0000000000000002");
+        assert!(rows[1].get("trace_id").is_none());
+        assert!(rows[1].get("parent_span_id").is_none());
     }
 }
