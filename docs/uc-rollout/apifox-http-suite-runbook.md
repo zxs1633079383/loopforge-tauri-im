@@ -2,7 +2,7 @@
 
 > 本文件沉淀 `scripts/apifox-suite-create.py` 的使用约束、踩坑、修复流程。
 > 目标：用 Apifox CLI 生成并运行 loopforge/cses-im-server 的 **HTTP 面**自动化集合，后续作为 WebdriverIO e2e 前置流程。
-> Apifox 只做 HTTP preflight，不代表 WS / DOM / reducer / L1 / L2 通过。
+> Apifox 只做 HTTP preflight，不代表 WS / DOM / reducer / storage / projection / L1 / L2 通过。当前 UC/real-chain 状态入口见 `docs/uc-rollout/README.md` 与 `docs/uc-rollout/all-uc-real-chain-status.md`。
 
 ---
 
