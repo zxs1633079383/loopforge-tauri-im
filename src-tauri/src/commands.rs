@@ -362,6 +362,7 @@ pub async fn im_send(
     temporary_id: String,
     msg_type: Option<String>,
     __trace: Option<serde_json::Value>,
+    trace: Option<serde_json::Value>,
 ) -> Result<(), String> {
     if channel_id.is_empty() {
         return Err("im_send: channelId 为空".into());
@@ -385,7 +386,8 @@ pub async fn im_send(
     );
     let mut accepted_traceparent = None;
     let mut accepted_trace_carrier = None;
-    if let Some(raw_trace) = __trace.as_ref() {
+    let raw_trace = __trace.as_ref().or(trace.as_ref());
+    if let Some(raw_trace) = raw_trace {
         match normalize_trace_sidecar(raw_trace) {
             Ok(trace) => {
                 state.ctx.trace_with_ids(
