@@ -22,13 +22,18 @@ export class TauriBridgeService {
       ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
   }
 
-  async recordTraceEvent(event: Record<string, unknown>): Promise<void> {
+  async recordTraceEvent(
+    event: Record<string, unknown>,
+    options: { inheritCurrent?: boolean } = {},
+  ): Promise<void> {
     if (!this.isTauri()) return;
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       const traceparent = typeof event["traceparent"] === "string"
         ? event["traceparent"]
-        : this.traceContext.currentTraceparent();
+        : options.inheritCurrent === true
+          ? this.traceContext.currentTraceparent()
+          : undefined;
       const tracedEvent = traceparent ? { ...event, traceparent } : event;
       await invoke("trace_record_event", { event: tracedEvent });
     } catch {
@@ -100,7 +105,6 @@ export class TauriBridgeService {
         name: "pc.tauri.event.listen",
         layer: "pc.tauri",
         direction: "in",
-        traceparent: this.traceContext.currentTraceparent(),
         payload: { event, payload: e.payload },
       });
       handler(e.payload);

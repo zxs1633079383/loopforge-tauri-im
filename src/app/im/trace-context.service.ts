@@ -67,6 +67,13 @@ function nonZeroHex(bytes: number): string {
   return Array.from(data, (value) => value.toString(16).padStart(2, "0")).join("");
 }
 
+function isPromiseLike<T>(value: T): value is Extract<T, PromiseLike<unknown>> {
+  const candidate = value as unknown as { then?: unknown } | null;
+  return typeof candidate === "object" &&
+    candidate !== null &&
+    typeof candidate.then === "function";
+}
+
 @Injectable({ providedIn: "root" })
 export class TraceContextService {
   private current: TraceSidecar | null = null;
@@ -74,21 +81,55 @@ export class TraceContextService {
   startTrace(): TraceSidecar {
     const traceId = nonZeroHex(16);
     const spanId = nonZeroHex(8);
-    this.current = {
+    return {
       traceparent: `00-${traceId}-${spanId}-01`,
       baggage: "client=loopforge-tauri-im",
     };
-    return this.current;
   }
 
   childTrace(parent: TraceSidecar): TraceSidecar {
     const traceId = traceIdFromTraceparent(parent.traceparent) || nonZeroHex(16);
     const spanId = nonZeroHex(8);
-    this.current = {
+    return {
       traceparent: `00-${traceId}-${spanId}-01`,
       baggage: parent.baggage,
     };
-    return this.current;
+  }
+
+  withTraceScope<T>(trace: TraceSidecar, fn: () => T): T {
+    const previous = this.current;
+    this.current = trace;
+    try {
+      const result = fn();
+      if (isPromiseLike(result)) {
+        return Promise.resolve(result).finally(() => {
+          this.current = previous;
+        }) as T;
+      }
+      this.current = previous;
+      return result;
+    } catch (error) {
+      this.current = previous;
+      throw error;
+    }
+  }
+
+  withoutTrace<T>(fn: () => T): T {
+    const previous = this.current;
+    this.current = null;
+    try {
+      const result = fn();
+      if (isPromiseLike(result)) {
+        return Promise.resolve(result).finally(() => {
+          this.current = previous;
+        }) as T;
+      }
+      this.current = previous;
+      return result;
+    } catch (error) {
+      this.current = previous;
+      throw error;
+    }
   }
 
   traceId(trace: TraceSidecar): string {

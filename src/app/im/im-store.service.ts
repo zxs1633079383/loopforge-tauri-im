@@ -301,28 +301,30 @@ export class ImStoreService {
     this.pendingText.set(temporaryId, trimmed);
 
     try {
-      await this.bridge.recordTraceEvent({
-        name: "pc.ui.action",
-        layer: "pc.ui",
-        direction: "out",
-        traceparent: trace.traceparent,
-        payload: {
-          action: "im.send",
-          channelId,
-          text: trimmed,
-          temporaryId,
-          type: "TEXT",
-        },
+      await this.traceContext.withTraceScope(trace, async () => {
+        await this.bridge.recordTraceEvent({
+          name: "pc.ui.action",
+          layer: "pc.ui",
+          direction: "out",
+          traceparent: trace.traceparent,
+          payload: {
+            action: "im.send",
+            channelId,
+            text: trimmed,
+            temporaryId,
+            type: "TEXT",
+          },
+        });
+        await this.bridge.invoke<void>(
+          "im_send",
+          {
+            channelId,
+            text: trimmed,
+            temporaryId,
+          },
+          trace,
+        );
       });
-      await this.bridge.invoke<void>(
-        "im_send",
-        {
-          channelId,
-          text: trimmed,
-          temporaryId,
-        },
-        trace,
-      );
     } catch {
       // 出站失败 → 生产失败态由 helix 投影驱动；此处只清本地暂存。
       this.markSendFailed(temporaryId);
@@ -476,29 +478,31 @@ export class ImStoreService {
     this.pendingType.set(temporaryId, "DOCUMENT");
 
     try {
-      await this.bridge.recordTraceEvent({
-        name: "pc.ui.action",
-        layer: "pc.ui",
-        direction: "out",
-        traceparent: trace.traceparent,
-        payload: {
-          action: "im.send",
-          channelId,
-          text: trimmed,
-          temporaryId,
-          type: "DOCUMENT",
-        },
+      await this.traceContext.withTraceScope(trace, async () => {
+        await this.bridge.recordTraceEvent({
+          name: "pc.ui.action",
+          layer: "pc.ui",
+          direction: "out",
+          traceparent: trace.traceparent,
+          payload: {
+            action: "im.send",
+            channelId,
+            text: trimmed,
+            temporaryId,
+            type: "DOCUMENT",
+          },
+        });
+        await this.bridge.invoke<void>(
+          "im_send",
+          {
+            channelId,
+            text: trimmed,
+            temporaryId,
+            msgType: "DOCUMENT",
+          },
+          trace,
+        );
       });
-      await this.bridge.invoke<void>(
-        "im_send",
-        {
-          channelId,
-          text: trimmed,
-          temporaryId,
-          msgType: "DOCUMENT",
-        },
-        trace,
-      );
     } catch {
       this.markSendFailed(temporaryId);
     }
@@ -524,29 +528,31 @@ export class ImStoreService {
     const trace = this.traceContext.startTrace();
 
     try {
-      await this.bridge.recordTraceEvent({
-        name: "pc.ui.action",
-        layer: "pc.ui",
-        direction: "out",
-        traceparent: trace.traceparent,
-        payload: {
-          action: "im.send",
-          channelId,
-          text: trimmed,
-          temporaryId,
-          type: "TEXT",
-          mode: "resend",
-        },
+      await this.traceContext.withTraceScope(trace, async () => {
+        await this.bridge.recordTraceEvent({
+          name: "pc.ui.action",
+          layer: "pc.ui",
+          direction: "out",
+          traceparent: trace.traceparent,
+          payload: {
+            action: "im.send",
+            channelId,
+            text: trimmed,
+            temporaryId,
+            type: "TEXT",
+            mode: "resend",
+          },
+        });
+        await this.bridge.invoke<void>(
+          "im_send",
+          {
+            channelId,
+            text: trimmed,
+            temporaryId, // 复用原 tmp → upsert，不生成新 id
+          },
+          trace,
+        );
       });
-      await this.bridge.invoke<void>(
-        "im_send",
-        {
-          channelId,
-          text: trimmed,
-          temporaryId, // 复用原 tmp → upsert，不生成新 id
-        },
-        trace,
-      );
     } catch {
       // 出站失败 → 生产失败态由 helix 投影驱动；此处只清本地暂存。
       this.markSendFailed(temporaryId);
