@@ -7,6 +7,7 @@ PROBE_BIN="/tmp/cses-im-server-reconnect-probe"
 LOG_ROOT="/tmp/loopforge"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
 LOG_DIR="$LOG_ROOT/reconnect-probe-$RUN_ID"
+BACKEND_PORT="${LOOPFORGE_PROBE_BACKEND_PORT:-18066}"
 
 mkdir -p "$LOG_DIR"
 
@@ -18,6 +19,9 @@ HELIX_RUN_JSONL_PATH="$LOG_DIR/run.jsonl"
 WDIO_FIRST_LOG="$LOG_DIR/wdio-before-restart.log"
 WDIO_SECOND_LOG="$LOG_DIR/wdio-after-restart.log"
 EVIDENCE_DIR="$LOG_DIR/evidence"
+CONFIG_PATH="$ROOT/config/dev-local.json"
+CONFIG_BACKUP="$LOG_DIR/dev-local.json.before-probe"
+CONFIG_RESTORE_NEEDED=0
 
 GO_PID=""
 FRONTEND_PID=""
@@ -46,6 +50,9 @@ cleanup() {
     wait "$FRONTEND_PID" 2>/dev/null || true
   fi
   cleanup_probe_bin
+  if [ "$CONFIG_RESTORE_NEEDED" = "1" ] && [ -f "$CONFIG_BACKUP" ]; then
+    cp "$CONFIG_BACKUP" "$CONFIG_PATH" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT
 
@@ -104,16 +111,30 @@ wait_pattern() {
   fail "未观察到 ${label}（file=${file}）"
 }
 
+prepare_probe_config() {
+  if ! git -C "$ROOT" diff --quiet -- "$CONFIG_PATH"; then
+    fail "config/dev-local.json 已有未提交改动；为避免覆盖用户配置，本探针停止。"
+  fi
+  cp "$CONFIG_PATH" "$CONFIG_BACKUP"
+  CONFIG_RESTORE_NEEDED=1
+  perl -0pi -e "s/localhost:8066/localhost:${BACKEND_PORT}/g" "$CONFIG_PATH"
+  log "临时切换 loopforge dev-local profile 到 backend port ${BACKEND_PORT}（退出时恢复）"
+}
+
 start_backend() {
   local phase="$1"
   local backend_log="$LOG_DIR/cses-reconnect-probe-$phase.log"
   log "启动 cses-im-server 探针后端（phase=${phase}，log=${backend_log}）"
   (
     cd "$GO_ROOT"
-    exec "$PROBE_BIN"
+    exec env \
+      CSES_IM_LISTEN_ADDR=":${BACKEND_PORT}" \
+      CSES_IM_NODE_ID="loopforge-reconnect-${RUN_ID}-${phase}" \
+      USER="loopforge_reconnect_${RUN_ID}" \
+      "$PROBE_BIN"
   ) >"$backend_log" 2>&1 &
   GO_PID=$!
-  wait_http "http://127.0.0.1:8066/api/cses/health" "cses-im-server phase=$phase" 120
+  wait_http "http://127.0.0.1:${BACKEND_PORT}/api/cses/health" "cses-im-server phase=$phase" 120
 }
 
 stop_backend() {
@@ -123,7 +144,7 @@ stop_backend() {
     wait "$GO_PID" 2>/dev/null || true
     GO_PID=""
   fi
-  wait_port_free 8066 "cses-im-server" 30
+  wait_port_free "$BACKEND_PORT" "cses-im-server" 30
 }
 
 run_wdio_phase() {
@@ -150,9 +171,10 @@ require_cmd pnpm "启动前端和 WebdriverIO"
 log "restart probe log dir: $LOG_DIR"
 
 cleanup_probe_bin
-assert_port_free 8066 "cses-im-server"
+assert_port_free "$BACKEND_PORT" "cses-im-server"
 assert_port_free 1420 "loopforge 前端"
 assert_port_free 4445 "tauri webdriver"
+prepare_probe_config
 
 log "构建 cses-im-server 探针二进制：$PROBE_BIN"
 (
@@ -194,12 +216,12 @@ sleep 1
 start_backend 2
 
 wait_pattern 'helix\.ws\.reconnect\.success|helix\.ws\.reconnect success' "$TRACE_JSONL" "helix reconnect success trace" 60
-wait_pattern 'ws connection lifecycle.*action=register|action=register.*ws connection lifecycle' "$LOG_DIR/cses-reconnect-probe-2.log" "后端新 WS register" 60
+wait_pattern 'ws connection lifecycle.*action=.*register|action=.*register.*ws connection lifecycle' "$LOG_DIR/cses-reconnect-probe-2.log" "后端新 WS register" 60
 
 run_wdio_phase "backend restart 后（同一旧 Tauri app）" "$WDIO_SECOND_LOG"
 
 rg 'helix\.ws\.reconnect\.success|helix\.ws\.reconnect success' "$TRACE_JSONL" | tee -a "$RUN_LOG"
-rg 'ws connection lifecycle.*action=register|action=register.*ws connection lifecycle' "$LOG_DIR/cses-reconnect-probe-2.log" | tee -a "$RUN_LOG"
+rg 'ws connection lifecycle.*action=.*register|action=.*register.*ws connection lifecycle' "$LOG_DIR/cses-reconnect-probe-2.log" | tee -a "$RUN_LOG"
 rg 'UC-send-1 六面报告|Spec Files:[[:space:]]+1 passed' "$WDIO_FIRST_LOG" "$WDIO_SECOND_LOG" | tee -a "$RUN_LOG"
 
 log "✅ restart probe PASS：旧 Tauri/helix 在后端重启后完成重连并通过 UC-send-1"
