@@ -10,8 +10,8 @@ description = "Recording<P> port 装饰器：日志/金标帧录制/回放三合
 # helix-driver-host::run_engine_loop 的 trait bound（E0277 multiple versions）。
 # 统一到 git 快照另有稳定性收益：另一条 workflow 正在改 helix 工作树，path dep 会让
 # 构建吃到漂移的 helix；git pin 给冻结快照，验证期不被扰动（CLAUDE.md §0 release 形态）。
-# 当前 pin: helix 65b1f27（必须与 src-tauri 同一 git 快照）。
-helix-core  = { git = "file:///System/Volumes/Data/workspace/rust/helix", rev = "65b1f2790d543aa24d4065e2c24dbbe7710b097a" }
+# 当前 pin: helix 7c8a037（必须与 src-tauri 同一 git 快照）。
+helix-core  = { git = "file:///System/Volumes/Data/workspace/rust/helix", rev = "7c8a03730581fd442de2f9b4ec4326697c008ff0" }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
 bytes       = { workspace = true }

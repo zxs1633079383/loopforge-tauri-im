@@ -39,8 +39,8 @@ use helix_core::effect::TransportId;
 use helix_core::ports::Transport;
 use helix_core::{ExecutionShell, Tick};
 use helix_driver_host::{
-    run_engine_loop, CommandTraceQueue, EngineDeps, RecordingSink, SharedFileUploader, TraceHooks,
-    TransportTable,
+    run_engine_loop, spawn_reconnect_supervisor, CommandTraceQueue, EngineDeps, ReconnectPolicy,
+    ReconnectTraceSink, RecordingSink, SharedFileUploader, TraceHooks, TransportTable,
 };
 use helix_driver_instrument::util::payload_from_bytes;
 use helix_driver_instrument::{Facet, Hop, InstrumentCtx, Recording};
@@ -56,6 +56,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::config;
 use crate::state::ReadinessProbe;
+use crate::ws_reconnect;
 
 /// env 读取小工具（host 是 ambient API 合法落点；本壳与 host 同级）。
 ///
@@ -183,30 +184,109 @@ pub async fn spawn(
         .iter()
         .map(|(n, v)| (n.to_string(), v.to_string()))
         .collect();
-    ctx.trace(
-        "helix.ws.connect",
-        "helix",
-        helix_driver_instrument::TraceDirection::Out,
-        serde_json::json!({
-            "op": "connect",
-            "url": &ws_url,
-            "headers": &ws_headers,
-            "mode": format!("{:?}", ctx.mode()),
-        }),
-    );
+
+    let (transport_tx, transport_rx) =
+        mpsc::unbounded_channel::<(TransportId, Arc<Recording<NativeTransport>>)>();
+    let (transport_lifecycle_tx, transport_lifecycle_rx) =
+        mpsc::unbounded_channel::<helix_driver_host::engine::TransportLifecycleEvent>();
+    let (transport_trace_tx, mut transport_trace_rx) =
+        mpsc::unbounded_channel::<helix_driver_host::engine::TransportTraceEvent>();
+
+    let trace_ctx = ctx.clone();
+    tokio::spawn(async move {
+        while let Some(event) = transport_trace_rx.recv().await {
+            let mut payload = serde_json::json!({
+                "transport_id": event.transport_id.raw(),
+                "action": event.action,
+            });
+            if let Some(attempt) = event.attempt {
+                payload["attempt"] = serde_json::json!(attempt);
+            }
+            if let Some(delay_ms) = event.delay_ms {
+                payload["delay_ms"] = serde_json::json!(delay_ms);
+            }
+            if let Some(reason) = event.reason {
+                payload["reason"] = serde_json::json!(reason);
+            }
+            if let Some(error_class) = event.error_class {
+                payload["error_class"] = serde_json::json!(error_class);
+            }
+            trace_ctx.trace(
+                event.name,
+                "helix",
+                helix_driver_instrument::TraceDirection::Out,
+                payload,
+            );
+        }
+    });
+
     let mut transport = NativeTransport::new(ws_url.clone(), main_transport, Some(tick_tx.clone()))
         .with_handshake_headers(ws_headers.clone());
-    match transport.connect().await {
-        Ok(()) => tracing::info!(transport_id = main_transport.raw(), "主 WS 已连接"),
-        Err(e) => tracing::error!(error = %e, "主 WS 连接失败——仍进泵，Send 走 warn 兜底"),
-    }
-    // 装饰：facet① ws 帧（send tee）+ Replay 入站供帧；连接已完成，wrap 后只用 `&self`。
-    let recording_transport = Recording::new(transport, ctx.clone());
     let mut transports: TransportTable<Recording<NativeTransport>> = TransportTable::new();
-    transports.insert(main_transport, Arc::new(recording_transport));
-    // native 走预填表路径：注册通道留空（transport_rx 永不收到句柄，仅对齐泛型壳签名）。
-    let (_transport_tx, transport_rx) =
-        mpsc::unbounded_channel::<(TransportId, Arc<Recording<NativeTransport>>)>();
+    match transport.connect().await {
+        Ok(()) => {
+            ctx.trace(
+                "helix.ws.connect",
+                "helix",
+                helix_driver_instrument::TraceDirection::Out,
+                serde_json::json!({
+                    "transport_id": main_transport.raw(),
+                    "action": "connect",
+                    "attempt": 0,
+                    "reason": "initial_connect_success",
+                }),
+            );
+            tracing::info!(transport_id = main_transport.raw(), "主 WS 已连接");
+            let recording_transport = Recording::new(transport, ctx.clone());
+            transports.insert(main_transport, Arc::new(recording_transport));
+        }
+        Err(_e) => {
+            tracing::error!(
+                error_class = "transport",
+                "主 WS 连接失败——仍进泵，Send 走 warn 兜底"
+            );
+            transport_trace_tx
+                .send(helix_driver_host::engine::TransportTraceEvent {
+                    transport_id: main_transport,
+                    name: "helix.ws.connect",
+                    action: "connect",
+                    attempt: Some(0),
+                    delay_ms: None,
+                    reason: Some("initial_connect_failed"),
+                    error_class: Some("transport".to_string()),
+                })
+                .ok();
+            transport_lifecycle_tx
+                .send(
+                    helix_driver_host::engine::TransportLifecycleEvent::Disconnected {
+                        transport_id: main_transport,
+                        reason: "initial_connect_failed",
+                    },
+                )
+                .ok();
+        }
+    }
+
+    let reconnect_ws_url = ws_url.clone();
+    let reconnect_headers = ws_headers.clone();
+    let reconnect_tick_tx = tick_tx.clone();
+    let reconnect_ctx = ctx.clone();
+    let _reconnect_supervisor = spawn_reconnect_supervisor(
+        main_transport,
+        ReconnectPolicy::default(),
+        transport_lifecycle_rx,
+        transport_tx.clone(),
+        ReconnectTraceSink::new(Some(transport_trace_tx.clone())),
+        move || {
+            ws_reconnect::connect_recording_transport(
+                reconnect_ws_url.clone(),
+                main_transport,
+                reconnect_tick_tx.clone(),
+                reconnect_headers.clone(),
+                reconnect_ctx.clone(),
+            )
+        },
+    );
 
     let max_http_inflight = std::env::var("HELIX_HTTP_MAX_INFLIGHT")
         .ok()
@@ -250,6 +330,8 @@ pub async fn spawn(
         clock: recording_clock,
         trace: TraceHooks::noop().with_command_traces(command_traces.clone()),
         max_http_inflight,
+        transport_lifecycle_tx: Some(transport_lifecycle_tx),
+        transport_trace_tx: Some(transport_trace_tx),
     };
 
     // ── bus → app.emit 桥 + 就绪 probe（消费 broadcast；facet② tee 已收敛 RecordingSink）──

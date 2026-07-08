@@ -17,6 +17,7 @@ mod engine;
 mod state;
 mod tick_tee;
 mod trace;
+mod ws_reconnect;
 
 use std::sync::Arc;
 
