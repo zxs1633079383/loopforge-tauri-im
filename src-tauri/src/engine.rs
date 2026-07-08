@@ -205,6 +205,9 @@ pub async fn spawn(
             if let Some(delay_ms) = event.delay_ms {
                 payload["delay_ms"] = serde_json::json!(delay_ms);
             }
+            if let Some(next_delay_ms) = event.next_delay_ms {
+                payload["next_delay_ms"] = serde_json::json!(next_delay_ms);
+            }
             if let Some(reason) = event.reason {
                 payload["reason"] = serde_json::json!(reason);
             }
@@ -252,6 +255,7 @@ pub async fn spawn(
                     action: "connect",
                     attempt: Some(0),
                     delay_ms: None,
+                    next_delay_ms: None,
                     reason: Some("initial_connect_failed"),
                     error_class: Some("transport".to_string()),
                 })

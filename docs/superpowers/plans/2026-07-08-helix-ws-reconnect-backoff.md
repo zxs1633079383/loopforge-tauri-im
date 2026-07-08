@@ -14,7 +14,7 @@
 - 不改 `helix-core`。
 - 不把重连策略塞进 `helix-im` 业务模块。
 - 不记录 cookie/header/body/token/message text。
-- WS `connect` / `disconnect` / `reconnect` 生命周期必须上报 trace；trace payload 只允许安全字段：`transport_id`、`action`、`attempt`、`delay_ms`、`reason`、`error_class`、`run_id` / trace 上下文。
+- WS `connect` / `disconnect` / `reconnect` 生命周期必须上报 trace；trace payload 只允许安全字段：`transport_id`、`action`、`attempt`、`delay_ms`、`next_delay_ms`、`reason`、`error_class`、`run_id` / trace 上下文。
 - trace / log 禁止出现 `headers`、`cookieId`、`companyId`、`token`、`body`、`message`、`text`。
 - 不把 HTTP 成功当 WS/projection/storage/DOM 成功。
 - Cargo 纪律：完整模块改完后再跑 `cargo check` / `cargo test`，不要改一行跑一次。
@@ -82,6 +82,7 @@ pub struct TransportTraceEvent {
     pub action: &'static str,
     pub attempt: Option<u32>,
     pub delay_ms: Option<u64>,
+    pub next_delay_ms: Option<u64>,
     pub reason: Option<&'static str>,
     pub error_class: Option<String>,
 }
@@ -125,6 +126,7 @@ if let Tick::Disconnected(transport_id) = &tick {
             action: "disconnect",
             attempt: None,
             delay_ms: None,
+            next_delay_ms: None,
             reason: Some("reader_closed_or_error"),
             error_class: None,
         })
@@ -284,6 +286,7 @@ where
                     action: "reconnect_schedule",
                     attempt: Some(attempt),
                     delay_ms: Some(delay.as_millis() as u64),
+                    next_delay_ms: None,
                     reason: Some(reason),
                     error_class: None,
                 });
@@ -301,6 +304,7 @@ where
                     action: "reconnect_attempt",
                     attempt: Some(attempt),
                     delay_ms: Some(delay.as_millis() as u64),
+                    next_delay_ms: None,
                     reason: None,
                     error_class: None,
                 });
@@ -328,6 +332,7 @@ where
                                 action: "reconnect_success",
                                 attempt: Some(attempt),
                                 delay_ms: None,
+                                next_delay_ms: None,
                                 reason: None,
                                 error_class: None,
                             });
@@ -347,6 +352,7 @@ where
                             action: "reconnect_failed",
                             attempt: Some(attempt),
                             delay_ms: None,
+                            next_delay_ms: Some(next_delay.as_millis() as u64),
                             reason: None,
                             error_class: Some(classify_port_error(&error)),
                         });
@@ -442,6 +448,7 @@ fn reconnect_trace_sink_emits_safe_payload_shape() {
         action: "reconnect_schedule",
         attempt: Some(2),
         delay_ms: Some(400),
+        next_delay_ms: None,
         reason: Some("reader_closed_or_error"),
         error_class: None,
     });
@@ -552,6 +559,9 @@ tokio::spawn(async move {
         if let Some(delay_ms) = event.delay_ms {
             payload["delay_ms"] = serde_json::json!(delay_ms);
         }
+        if let Some(next_delay_ms) = event.next_delay_ms {
+            payload["next_delay_ms"] = serde_json::json!(next_delay_ms);
+        }
         if let Some(reason) = event.reason {
             payload["reason"] = serde_json::json!(reason);
         }
@@ -607,6 +617,7 @@ transport_trace_tx
         action: "connect",
         attempt: Some(0),
         delay_ms: None,
+        next_delay_ms: None,
         reason: Some("initial_connect_failed"),
         error_class: Some("transport".to_string()),
     })

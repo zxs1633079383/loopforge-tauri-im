@@ -15,6 +15,7 @@ RUN_LOG="$LOG_DIR/uc-send-1-reconnect.log"
 NG_LOG="$LOG_DIR/run-ng.log"
 APP_LOG="$LOG_DIR/run-app.log"
 TRACE_JSONL="$LOG_DIR/trace-events.jsonl"
+RECONNECT_TRACE_JSONL="$LOG_DIR/reconnect-trace-events.jsonl"
 HELIX_RUN_JSONL_PATH="$LOG_DIR/run.jsonl"
 WDIO_FIRST_LOG="$LOG_DIR/wdio-before-restart.log"
 WDIO_SECOND_LOG="$LOG_DIR/wdio-after-restart.log"
@@ -30,26 +31,19 @@ APP_PID=""
 log() { printf '%s\n' "$*" | tee -a "$RUN_LOG"; }
 fail() { log "⛔ $*"; exit 1; }
 
-cleanup_probe_bin() {
-  pkill -f "$PROBE_BIN" 2>/dev/null || true
-}
-
 cleanup() {
   if [ -n "${GO_PID:-}" ]; then
     kill "$GO_PID" 2>/dev/null || true
     wait "$GO_PID" 2>/dev/null || true
   fi
   if [ -n "${APP_PID:-}" ]; then
-    kill "$APP_PID" 2>/dev/null || true
+    kill "-$APP_PID" 2>/dev/null || kill "$APP_PID" 2>/dev/null || true
     wait "$APP_PID" 2>/dev/null || true
   fi
-  pkill -f "$ROOT/target/debug/loopforge-tauri-im" 2>/dev/null || true
   if [ -n "${FRONTEND_PID:-}" ]; then
-    pkill -P "$FRONTEND_PID" 2>/dev/null || true
-    kill "$FRONTEND_PID" 2>/dev/null || true
+    kill "-$FRONTEND_PID" 2>/dev/null || kill "$FRONTEND_PID" 2>/dev/null || true
     wait "$FRONTEND_PID" 2>/dev/null || true
   fi
-  cleanup_probe_bin
   if [ "$CONFIG_RESTORE_NEEDED" = "1" ] && [ -f "$CONFIG_BACKUP" ]; then
     cp "$CONFIG_BACKUP" "$CONFIG_PATH" 2>/dev/null || true
   fi
@@ -111,6 +105,28 @@ wait_pattern() {
   fail "未观察到 ${label}（file=${file}）"
 }
 
+assert_no_probe_process() {
+  local pids
+  pids="$(pgrep -f "$PROBE_BIN" 2>/dev/null || true)"
+  if [ -n "$pids" ]; then
+    local ps_pids
+    ps_pids="$(printf '%s\n' "$pids" | paste -sd, -)"
+    log "发现已有探针后端进程，拒绝误杀："
+    ps -p "$ps_pids" -o pid=,command= 2>/dev/null | tee -a "$RUN_LOG" || true
+    fail "请先确认并清理旧探针进程后重跑。"
+  fi
+}
+
+write_reconnect_trace_evidence() {
+  if ! rg '"name":"helix\.ws\.(connect|disconnect|reconnect\.(schedule|attempt|failed|success))"' \
+    "$TRACE_JSONL" >"$RECONNECT_TRACE_JSONL"; then
+    fail "未生成 reconnect-only trace evidence，详见 ${TRACE_JSONL}"
+  fi
+  if rg -q '"(headers|cookieId|companyId|token|body|message|text)"' "$RECONNECT_TRACE_JSONL"; then
+    fail "reconnect-only trace evidence 含敏感字段，详见 ${RECONNECT_TRACE_JSONL}"
+  fi
+}
+
 prepare_probe_config() {
   if ! git -C "$ROOT" diff --quiet -- "$CONFIG_PATH"; then
     fail "config/dev-local.json 已有未提交改动；为避免覆盖用户配置，本探针停止。"
@@ -164,13 +180,16 @@ run_wdio_phase() {
 require_cmd curl "健康检查"
 require_cmd lsof "端口占用检查"
 require_cmd rg "日志断言"
+require_cmd pgrep "探针进程占用检查"
+require_cmd ps "探针进程详情输出"
+require_cmd perl "独立进程组启动前端/Tauri app"
 require_cmd go "构建 cses-im-server 探针后端"
 require_cmd cargo "启动 Tauri debug app"
 require_cmd pnpm "启动前端和 WebdriverIO"
 
 log "restart probe log dir: $LOG_DIR"
 
-cleanup_probe_bin
+assert_no_probe_process
 assert_port_free "$BACKEND_PORT" "cses-im-server"
 assert_port_free 1420 "loopforge 前端"
 assert_port_free 4445 "tauri webdriver"
@@ -183,6 +202,7 @@ log "构建 cses-im-server 探针二进制：$PROBE_BIN"
 )
 
 : >"$TRACE_JSONL"
+: >"$RECONNECT_TRACE_JSONL"
 : >"$HELIX_RUN_JSONL_PATH"
 mkdir -p "$EVIDENCE_DIR"
 
@@ -191,7 +211,7 @@ start_backend 1
 log "启动 loopforge 前端（log=${NG_LOG}）"
 (
   cd "$ROOT"
-  exec pnpm start
+  exec perl -e 'setpgrp(0, 0) or die "setpgrp: $!"; exec @ARGV or die "exec: $!"' pnpm start
 ) >"$NG_LOG" 2>&1 &
 FRONTEND_PID=$!
 wait_http "http://localhost:1420" "loopforge 前端" 180
@@ -199,7 +219,7 @@ wait_http "http://localhost:1420" "loopforge 前端" 180
 log "启动旧 Tauri/helix app（log=${APP_LOG}）"
 (
   cd "$ROOT"
-  exec env \
+  exec perl -e 'setpgrp(0, 0) or die "setpgrp: $!"; exec @ARGV or die "exec: $!"' env \
     LOOPFORGE_MODE=live \
     HELIX_RUN_JSONL="$HELIX_RUN_JSONL_PATH" \
     LOOPFORGE_TRACE_JSONL="$TRACE_JSONL" \
@@ -217,10 +237,12 @@ start_backend 2
 
 wait_pattern 'helix\.ws\.reconnect\.success|helix\.ws\.reconnect success' "$TRACE_JSONL" "helix reconnect success trace" 60
 wait_pattern 'ws connection lifecycle.*action=.*register|action=.*register.*ws connection lifecycle' "$LOG_DIR/cses-reconnect-probe-2.log" "后端新 WS register" 60
+write_reconnect_trace_evidence
 
 run_wdio_phase "backend restart 后（同一旧 Tauri app）" "$WDIO_SECOND_LOG"
+write_reconnect_trace_evidence
 
-rg 'helix\.ws\.reconnect\.success|helix\.ws\.reconnect success' "$TRACE_JSONL" | tee -a "$RUN_LOG"
+rg 'helix\.ws\.reconnect\.success|helix\.ws\.reconnect success' "$RECONNECT_TRACE_JSONL" | tee -a "$RUN_LOG"
 rg 'ws connection lifecycle.*action=.*register|action=.*register.*ws connection lifecycle' "$LOG_DIR/cses-reconnect-probe-2.log" | tee -a "$RUN_LOG"
 rg 'UC-send-1 六面报告|Spec Files:[[:space:]]+1 passed' "$WDIO_FIRST_LOG" "$WDIO_SECOND_LOG" | tee -a "$RUN_LOG"
 

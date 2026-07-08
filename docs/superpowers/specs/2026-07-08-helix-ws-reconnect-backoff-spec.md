@@ -20,7 +20,7 @@
 - 不在 Angular/前端层轮询重连；前端仍只消费 helix 投影。
 - 不用 HTTP 成功替代 WS/projection/storage/DOM 证据。
 - 不把 cookie/header/body 写入重连日志。
-- 不把 cookie/header/body 写入 trace payload；trace 只允许记录 transport_id、action、attempt、delay_ms、reason、error_class、run_id/trace 上下文这类安全字段。
+- 不把 cookie/header/body 写入 trace payload；trace 只允许记录 transport_id、action、attempt、delay_ms、next_delay_ms、reason、error_class、run_id/trace 上下文这类安全字段。
 
 ## 当前事实
 
